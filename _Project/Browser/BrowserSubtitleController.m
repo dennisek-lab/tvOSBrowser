@@ -37,6 +37,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 @property (nonatomic, strong) NSMutableSet<NSString *> *triedSources;
 @property (nonatomic) BOOL suppressedByExistingSubtitles;
 @property (nonatomic) BOOL userForcedOn;  // im Player-Menü eingeschaltet: auch neben vorhandenen Untertiteln
+/// Ob erkannte Untertitel eingeblendet werden. Aus, sobald der Nutzer im Menü „Aus“ wählt oder vorhandene Untertitel
+/// laufen: dann bleibt die Anzeige leer, auch wenn noch vorausgewertete oder gerade fertig gewordene Sätze vorliegen.
+@property (nonatomic) BOOL cuesVisible;
 /// Bei „auto“: für dieses Video festgelegte Sprache (überlebt Neustarts der Erkennung, z. B. Tonquellenwechsel).
 @property (nonatomic, copy, nullable) NSString *sessionLanguage;
 @property (nonatomic) BOOL streamingPlaylist;
@@ -161,13 +164,14 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     self.overlay = [[BrowserSubtitleOverlayView alloc] initWithFrame:container.bounds];
     [container addSubview:self.overlay];
+    self.cuesVisible = self.preferences.autoSubtitlesEnabled && !self.existingSubtitlesShown;
     [self installMenu];
     [self observePlayer:playerViewController.player];
     NSLog(@"%@ eingehängt, an=%d, Sprache %@, whisper=%d, Modell %@", kSubtitleControllerLogPrefix,
           self.preferences.autoSubtitlesEnabled, self.preferences.autoSubtitlesLanguage,
           [BrowserSubtitleEngine isCompiledWithWhisper],
           [BrowserSubtitleEngine modelPathForLanguage:self.preferences.autoSubtitlesLanguage].lastPathComponent ?: @"–");
-    if (self.preferences.autoSubtitlesEnabled && !self.existingSubtitlesShown) {
+    if (self.cuesVisible) {
         [self startRecognition];
     }
 }
@@ -186,11 +190,17 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     if (existing && self.running && !self.userForcedOn) {
         NSLog(@"%@ vorhandene Untertitel aktiv, Erkennung pausiert", kSubtitleControllerLogPrefix);
         self.suppressedByExistingSubtitles = YES;
+        self.cuesVisible = NO;
         [self stopRecognitionClearing:NO];
         [self.overlay showStatus:@"Video hat eigene Untertitel" duration:4.0];
-    } else if (!existing && self.suppressedByExistingSubtitles && self.preferences.autoSubtitlesEnabled && !self.running) {
+        [self installMenu];
+    } else if (!existing && self.suppressedByExistingSubtitles) {
+        // Eigene Untertitel des Videos im Untertitel-Menü des Players auf „Aus“ gestellt: Der Nutzer will gerade keine
+        // Untertitel. Früher sprang hier die automatische Erkennung wieder an. Jetzt bleibt sie aus, bis er im Menü
+        // „Automatische Untertitel“ „An“ wählt (das Menü zeigt „Aus“).
         self.suppressedByExistingSubtitles = NO;
-        [self startRecognition];
+        NSLog(@"%@ vorhandene Untertitel ausgeschaltet – automatische bleiben aus", kSubtitleControllerLogPrefix);
+        [self installMenu];
     }
 }
 
@@ -259,7 +269,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 
 - (UIMenu *)buildMenu {
     __weak typeof(self) weakSelf = self;
-    BOOL enabled = self.preferences.autoSubtitlesEnabled;
+    // Häkchen danach, ob in diesem Video automatische Untertitel gezeigt werden (nicht nach der globalen Einstellung:
+    // neben eigenen Untertiteln des Videos stehen sie still und das Menü zeigt „Aus“).
+    BOOL enabled = self.cuesVisible;
     UIAction *on = [UIAction actionWithTitle:@"An" image:nil identifier:nil handler:^(__kindof UIAction *action) {
         [weakSelf setEnabledFromMenu:YES];
     }];
@@ -268,7 +280,10 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         [weakSelf setEnabledFromMenu:NO];
     }];
     off.state = enabled ? UIMenuElementStateOff : UIMenuElementStateOn;
-    NSMutableArray<UIMenuElement *> *children = [NSMutableArray arrayWithObjects:on, off, nil];
+    // Als Einzelauswahl: das System setzt das Häkchen sofort beim Auswählen, nicht erst beim nächsten Menüaufbau.
+    UIMenu *toggle = [UIMenu menuWithTitle:@"" image:nil identifier:nil
+                                   options:UIMenuOptionsDisplayInline | UIMenuOptionsSingleSelection children:@[on, off]];
+    NSMutableArray<UIMenuElement *> *children = [NSMutableArray arrayWithObjects:toggle, nil];
 
     NSString *language = self.preferences.autoSubtitlesLanguage;
     if ([BrowserSubtitleEngine hasMultilingualModel]) {
@@ -321,9 +336,17 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     NSLog(@"%@ Menü: %@", kSubtitleControllerLogPrefix, enabled ? @"an" : @"aus");
     self.preferences.autoSubtitlesEnabled = enabled;
     self.userForcedOn = enabled;
+    self.cuesVisible = enabled;
     if (enabled) {
+        self.suppressedByExistingSubtitles = NO;
         [self startRecognition];
+        NSTimeInterval now = [self timelinePositionForTime:self.observedPlayer.currentTime];
+        if (isfinite(now)) {
+            [self updateOverlayAtTime:now];  // schon ausgewertete Sätze gleich wieder zeigen
+        }
     } else {
+        // Erkennung und Anzeige sofort aus. Die schon erkannten Sätze bleiben im Speicher (wieder „An“ zeigt sie
+        // gleich), werden aber nicht mehr eingeblendet – vorher lief die Anzeige mit den vorausgewerteten weiter.
         [self stopRecognitionClearing:NO];
         [self.overlay showStatus:@"Automatische Untertitel aus" duration:2.5];
     }
@@ -617,7 +640,9 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
         }
         // Kam der Untertitel nach seinem Sprechbeginn an (Mithören), steht er ab jetzt mindestens eine Lesezeit lang.
         NSTimeInterval reading = MIN(4.0, MAX(1.2, cue.text.length * 0.06));
-        cue.visibleUntil = isfinite(now) && now > cue.start + 0.3 ? MAX(cue.end + 0.8, now + reading) : cue.end + 0.8;
+        // Längst vorbei (z. B. Abschnitt nach Spracherkennung neu ausgewertet, langsame Auswertung): nicht nachreichen.
+        BOOL stale = isfinite(now) && now > cue.end + 1.0;
+        cue.visibleUntil = isfinite(now) && now > cue.start + 0.3 && !stale ? MAX(cue.end + 0.8, now + reading) : cue.end + 0.8;
         NSUInteger index = [self.cues indexOfObject:cue inSortedRange:NSMakeRange(0, self.cues.count)
                                             options:NSBinarySearchingInsertionIndex
                                     usingComparator:^NSComparisonResult(BrowserSubtitleCue *a, BrowserSubtitleCue *b) {
@@ -653,6 +678,10 @@ static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
 /// Rollend wie Live-Untertitel: der neue Untertitel erscheint sofort (unten), der vorige bleibt darüber stehen, bis
 /// seine Mindestanzeigedauer um ist. Höchstens zwei, und nur, wenn zusammen ≤ 3 Zeilen (sonst nur der neue).
 - (void)updateOverlayAtTime:(NSTimeInterval)time {
+    if (!self.cuesVisible) {
+        [self.overlay setSubtitleText:nil];
+        return;
+    }
     NSMutableArray<BrowserSubtitleCue *> *visible = [NSMutableArray array];
     BrowserSubtitleCue *following = nil;   // der nächstspätere schon begonnene Untertitel
     for (NSInteger i = (NSInteger)self.cues.count - 1; i >= 0 && visible.count < 2; i--) {
@@ -662,6 +691,10 @@ static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
         }
         if (cue.start < time - 30.0) {
             break;
+        }
+        if (isnan(cue.shownAt) && time > cue.visibleUntil) {
+            following = cue;
+            continue;   // nie gezeigt und schon vorbei (Spulen, verspätet): nicht mehr einblenden
         }
         BOOL late = cue.visibleUntil > cue.end + 0.85;   // kam nach dem Sprechbeginn an
         NSTimeInterval shownSince = isnan(cue.shownAt) ? time : MAX(cue.start, cue.shownAt);
