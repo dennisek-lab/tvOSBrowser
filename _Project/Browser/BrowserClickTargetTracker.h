@@ -30,6 +30,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// YES, wenn das Ziel unter dem Punkt ein reines Textziel ist (Textlink ohne Bild, Fläche oder Feld; Feld 7 der Meldung).
 - (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
 
+/// Form des Ziels, aus dem `rect` stammt (Koordinaten der WebView ohne Leisteneinschub, ggf. auf den sichtbaren Bereich
+/// beschnitten): das kleinste gemeldete Ziel, das `rect` enthält. `cornerRadius` in Punkten (Eckenradius des sichtbaren
+/// Elements), `surface` YES bei eigener sichtbarer Fläche (Hintergrund, Rahmen, Schatten, Bild), `text` wie oben.
+/// NO, wenn kein Ziel passt. Nur Zwischenspeicher, kein JavaScript.
+- (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat * _Nullable)cornerRadius surface:(BOOL * _Nullable)surface text:(BOOL * _Nullable)text;
+
 /// Sichtbare Videos (mindestens 120 × 80 CSS-Pixel), in Koordinaten der WebView.
 - (NSArray<NSValue *> *)videoRectsForViewWidth:(CGFloat)viewWidth;
 

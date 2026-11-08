@@ -39,6 +39,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable UIColor *)glowColorAtPoint:(CGPoint)point;
 /// YES, wenn das Ziel unter dem Punkt ein reines Textziel ist (s. BrowserClickTargetTracker).
 - (BOOL)isTextTargetAtPoint:(CGPoint)point;
+/// Form des Klickziels, aus dem `rect` stammt (Koordinaten dieser Ansicht), s. BrowserClickTargetTracker; NO = unbekannt.
+- (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat * _Nullable)cornerRadius surface:(BOOL * _Nullable)surface text:(BOOL * _Nullable)text;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)videoRects;
 /// Läuft auf der Seite gerade ein Video?

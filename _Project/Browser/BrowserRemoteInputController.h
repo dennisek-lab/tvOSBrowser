@@ -34,15 +34,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// Clickpad rechts: über laufendem Video spulen, sonst nächstes Element.
 - (void)browserRemoteInputControllerNavigateForward;
 @optional
-/// Ansicht, deren Inhalt die Hervorhebung als Linse vergrößert (WebView); nil = keine Linse.
+/// Ansicht, deren Inhalt die Hervorhebung als Linse vergrößert (WebView); nil = keine Linse. Die Linse ist seit
+/// 8. November 2026 aus und nur noch in DEBUG-Vergleichsvarianten zu sehen (MagneticVariant Z/A/C/E).
 - (nullable UIView *)browserRemoteInputControllerLensSourceView;
 /// Optional: NO, wenn für dieses Ziel keine Linse gezeigt werden soll (z. B. Knöpfe der oberen Leiste,
 /// deren Inhalt nicht in der Quellansicht liegt).
 - (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target;
 /// Leuchtfarbe für das Ziel (Koordinaten von rootView); nil = Standardblau.
 - (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
-/// YES, wenn das Ziel ein reines Textziel ist (Textlink, Link im Fließtext); nur für die DEBUG-Varianten der Hervorhebung.
-- (BOOL)browserRemoteInputControllerTargetIsText:(CGRect)target;
+/// Form eines Seitenziels (Koordinaten von rootView) für die Hervorhebung: Eckenradius des sichtbaren Elements in pt,
+/// eigene sichtbare Fläche (Hintergrund, Rahmen, Schatten, Bild) und reines Textziel (Textlink, Link im Fließtext).
+/// NO = keine Angabe (z. B. Knöpfe der oberen Leiste), dann gilt die Vorgabe-Rundung.
+- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
 /// Adressleiste im Bearbeiten-Zustand mit Aufklapp-Bereich: Pfeiltasten springen räumlich zwischen den Zielen,

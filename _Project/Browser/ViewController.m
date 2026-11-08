@@ -2457,16 +2457,16 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     return [webView glowColorAtPoint:center];
 }
 
-- (BOOL)browserRemoteInputControllerTargetIsText:(CGRect)target {
+- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
     BrowserWebView *webView = self.webview;
     if (self.addressPanel != nil || webView == nil || webView.window == nil) {
         return NO;
     }
     CGPoint center = [webView convertPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) fromView:self.view];
     if (!CGRectContainsPoint(webView.bounds, center) || ![self browserRemoteInputControllerLensAllowedForTarget:target]) {
-        return NO; // Knöpfe der oberen Leiste
+        return NO; // Knöpfe der oberen Leiste: eigene Form, Vorgabe-Rundung
     }
-    return [webView isTextTargetAtPoint:center];
+    return [webView clickTargetShapeForRect:[webView convertRect:target fromView:self.view] cornerRadius:cornerRadius surface:surface text:text];
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
