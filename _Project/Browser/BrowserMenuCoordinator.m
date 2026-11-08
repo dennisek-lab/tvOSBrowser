@@ -1211,6 +1211,34 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Zeigertempo durchschalten: Langsam → Normal → Schnell → Sehr schnell.
+- (BrowserAdvancedMenuItem *)pointerSpeedMenuItem {
+    NSArray<NSNumber *> *speeds = @[@0.7, @1.0, @1.4, @2.0];
+    NSArray<NSString *> *names = @[@"Langsam", @"Normal", @"Schnell", @"Sehr schnell"];
+    double current = self.preferencesStore.pointerSpeed;
+    NSUInteger index = 1;
+    double best = DBL_MAX;
+    for (NSUInteger i = 0; i < speeds.count; i++) {
+        double distance = fabs(speeds[i].doubleValue - current);
+        if (distance < best) { best = distance; index = i; }
+    }
+    return [self advancedMenuItemWithTitle:@"Zeigertempo"
+                                    detail:names[index]
+                                   handler:^{
+        self.preferencesStore.pointerSpeed = speeds[(index + 1) % speeds.count].doubleValue;
+    }];
+}
+
+/// Auslaufen des Zeigers nach schnellem Wischen.
+- (BrowserAdvancedMenuItem *)pointerGlideMenuItem {
+    BOOL enabled = self.preferencesStore.pointerGlideEnabled;
+    return [self advancedMenuItemWithTitle:@"Zeiger gleitet aus"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.pointerGlideEnabled = !enabled;
+    }];
+}
+
 /// Zeigerstil durchschalten: macOS dunkel → macOS hell → SF Symbols.
 - (BrowserAdvancedMenuItem *)cursorStyleMenuItem {
     NSUInteger style = self.preferencesStore.cursorStyle % 3;
@@ -1317,6 +1345,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             [self rainbowGlowMenuItem],
             [self liquidGlassAnimationsMenuItem],
             [self cursorStyleMenuItem],
+            [self pointerSpeedMenuItem],
+            [self pointerGlideMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
             [self userAgentModeMenuItem],

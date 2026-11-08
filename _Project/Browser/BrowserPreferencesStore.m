@@ -21,6 +21,8 @@ static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerA
 static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
 static NSString * const kLiquidGlassAnimationsEnabledDefaultsKey = @"LiquidGlassAnimationsEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
+static NSString * const kPointerSpeedDefaultsKey = @"PointerSpeed";
+static NSString * const kPointerGlideEnabledDefaultsKey = @"PointerGlideEnabled";
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
 static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
@@ -252,6 +254,27 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerExceptionHosts:(NSArray<NSString *> *)cookieBannerExceptionHosts {
     [[self defaults] setObject:cookieBannerExceptionHosts ?: @[] forKey:kCookieBannerExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (double)pointerSpeed {
+    id value = [[self defaults] objectForKey:kPointerSpeedDefaultsKey];
+    double speed = [value respondsToSelector:@selector(doubleValue)] ? [value doubleValue] : 1.0;
+    return MIN(3.0, MAX(0.3, speed));
+}
+
+- (void)setPointerSpeed:(double)pointerSpeed {
+    [[self defaults] setDouble:MIN(3.0, MAX(0.3, pointerSpeed)) forKey:kPointerSpeedDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)pointerGlideEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kPointerGlideEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setPointerGlideEnabled:(BOOL)pointerGlideEnabled {
+    [[self defaults] setBool:pointerGlideEnabled forKey:kPointerGlideEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

@@ -31,6 +31,7 @@
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "BrowserSpeechRecognizerStub.h"
+#import "BrowserWhisperSpeechRecognizer.h"
 #import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
 
@@ -67,6 +68,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @property (nonatomic, nullable) BrowserAddressPanelView *addressPanel;
 /// Untertitel für Videos in der Webseite (Weg B), angelegt beim ersten Einschalten.
 @property (nonatomic, nullable) BrowserWebSubtitleController *webSubtitleController;
+/// Hinweis, falls die Web-Untertitel nur mit dem Platzhalter laufen (kein whisper/Modell), sonst nil.
+@property (nonatomic, copy, nullable) NSString *webSubtitleRecognizerHint;
 
 @end
 
@@ -202,6 +205,28 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     NSLog(@"[SelfTest] load %@", url);
                     if (url != nil) {
                         [self.webview loadRequest:[NSURLRequest requestWithURL:url]];
+                    }
+                    return;
+                }
+                if ([step hasPrefix:@"ring:"]) {
+                    // ring:radius,grad,ms – Kreis im Uhrzeigersinn auf dem Clickpad (Radius in Einheiten, Rand = 1).
+                    NSArray<NSString *> *args = [[step substringFromIndex:5] componentsSeparatedByString:@","];
+                    if (args.count >= 3) {
+                        [self.remoteInputController debugRunRingWithRadius:args[0].doubleValue degrees:args[1].doubleValue
+                                                                  duration:args[2].doubleValue / 1000.0];
+                    }
+                    return;
+                }
+                if ([step hasPrefix:@"swipe:"]) {
+                    // swipe:dx,dy,ms[,flick|clean|flickclean] – Strecke in Clickpad-Einheiten (ganze Breite = 2),
+                    // Dauer in ms; flick: Loslassen in voller Fahrt, clean: ohne nachgebildete Hardware-Eigenheiten.
+                    NSArray<NSString *> *args = [[step substringFromIndex:6] componentsSeparatedByString:@","];
+                    if (args.count >= 3) {
+                        NSString *flags = args.count >= 4 ? args[3] : @"";
+                        [self.remoteInputController debugRunSwipeWithPadDelta:CGVectorMake(args[0].doubleValue, args[1].doubleValue)
+                                                                     duration:args[2].doubleValue / 1000.0
+                                                                        flick:[flags containsString:@"flick"]
+                                                                    artifacts:![flags containsString:@"clean"]];
                     }
                     return;
                 }
@@ -437,8 +462,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     return;
                 }
                 if ([step isEqualToString:@"websubs"] || [step hasPrefix:@"websubs:"]) {
-                    // Untertitel-Abgriff (Weg B) fürs aktuelle Video: websubs, websubs:sp,force (ScriptProcessor, ohne
-                    // Herkunftsprüfung), websubs:slow (Stub mit whisper-ähnlichem Takt), websubs:status, websubs:off
+                    // Untertitel-Abgriff (Weg B) fürs aktuelle Video: websubs (whisper, Sprache aus der Einstellung),
+                    // websubs:en / websubs:auto (Sprache für diesen Test), websubs:stub (Platzhalter), websubs:sp,force
+                    // (ScriptProcessor, ohne Herkunftsprüfung), websubs:slow (Stub mit whisper-ähnlichem Takt),
+                    // websubs:status, websubs:off
                     NSArray<NSString *> *options = step.length > 8 ? [[step substringFromIndex:8] componentsSeparatedByString:@","] : @[];
                     if ([options containsObject:@"status"]) {
                         BrowserWebSubtitleController *controller = self.webSubtitleController;
@@ -452,9 +479,9 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                         NSLog(@"[SelfTest] websubs aus");
                         return;
                     }
-                    if (self.webSubtitleController == nil) {
-                        self.webSubtitleController = [BrowserWebSubtitleController new];
-                    }
+                    NSString *language = [options containsObject:@"auto"] ? @"auto" : ([options containsObject:@"en"] ? @"en" : nil);
+                    [self prepareWebSubtitleControllerUsingStub:[options containsObject:@"stub"] || [options containsObject:@"slow"]
+                                                       language:language];
                     if ([options containsObject:@"slow"]) {
                         // Wie whisper: Abschnitt 3 s, Überlappung 0,5 s, 1,2 s Rechenzeit.
                         BrowserSpeechRecognizerStub *stub = [BrowserSpeechRecognizerStub new];
@@ -468,6 +495,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     self.webSubtitleController.capture.ignoreCrossOriginCheck = [options containsObject:@"force"];
                     [self.webSubtitleController stop];
                     [self.webSubtitleController startForWebView:self.webview userInitiated:YES];
+                    [self showWebSubtitleRecognizerHintIfNeeded];
                     NSLog(@"[SelfTest] websubs start %@", [options componentsJoinedByString:@","]);
                     return;
                 }
@@ -1526,11 +1554,64 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     if (!self.preferencesStore.webSubtitlesEnabled || self.webview == nil) {
         return;
     }
-    if (self.webSubtitleController == nil) {
-        self.webSubtitleController = [BrowserWebSubtitleController new];
-    }
+    [self prepareWebSubtitleControllerUsingStub:NO language:nil];
     if (!self.webSubtitleController.running || self.webSubtitleController.webView != self.webview) {
         [self.webSubtitleController startForWebView:self.webview userInitiated:NO];
+    }
+}
+
+/// Legt den Untertitel-Controller (Weg B) an bzw. setzt die passende Erkennung: whisper (Modell nach
+/// `autoSubtitlesLanguage` bzw. `language`, wie im nativen Player), den Platzhalter nur, wenn whisper oder ein
+/// Modell fehlt oder `useStub` (Selbsttest). Eine vorhandene whisper-Erkennung mit gleicher Sprache bleibt
+/// (Modell bleibt geladen); bei anderer Sprache wird der Controller vorher angehalten.
+- (void)prepareWebSubtitleControllerUsingStub:(BOOL)useStub language:(nullable NSString *)language {
+    NSString *wanted = language.length > 0 ? language : (self.preferencesStore.autoSubtitlesLanguage ?: @"en");
+    if (self.webSubtitleController == nil) {
+        self.webSubtitleController = [[BrowserWebSubtitleController alloc] initWithRecognizer:[BrowserSpeechRecognizerStub new]];
+    }
+    BrowserWebSubtitleController *controller = self.webSubtitleController;
+    id<BrowserSpeechRecognizing> current = controller.recognizer;
+    if (useStub) {
+        if (![current isKindOfClass:BrowserSpeechRecognizerStub.class]) {
+            [controller stop];
+            controller.recognizer = [BrowserSpeechRecognizerStub new];
+        }
+        self.webSubtitleRecognizerHint = nil;
+        return;
+    }
+    if ([current isKindOfClass:BrowserWhisperSpeechRecognizer.class]
+        && [((BrowserWhisperSpeechRecognizer *)current).language isEqualToString:wanted]) {
+        return;
+    }
+    BrowserWhisperSpeechRecognizer *whisper = [[BrowserWhisperSpeechRecognizer alloc] initWithLanguage:wanted];
+    if (whisper == nil) {
+        NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: @"nicht verfügbar";
+        NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@): Platzhalter-Erkennung, zeigt nur den Pegel", reason, wanted);
+        self.webSubtitleRecognizerHint = [NSString stringWithFormat:@"Untertitel: %@, es wird nur der Tonpegel angezeigt", reason];
+        if (![current isKindOfClass:BrowserSpeechRecognizerStub.class]) {
+            [controller stop];
+            controller.recognizer = [BrowserSpeechRecognizerStub new];
+        }
+        return;
+    }
+    self.webSubtitleRecognizerHint = nil;
+    __weak typeof(controller) weakController = controller;
+    whisper.loadHandler = ^(BOOL loaded, NSString *message) {
+        if (!loaded && weakController.running) {
+            [weakController.overlay showHint:message duration:6.0];
+        }
+    };
+    if (controller.running) {
+        [controller stop];
+    }
+    controller.recognizer = whisper;
+}
+
+/// Hinweis, wenn statt whisper nur der Platzhalter läuft (einmal je Einschalten).
+- (void)showWebSubtitleRecognizerHintIfNeeded {
+    NSString *hint = self.webSubtitleRecognizerHint;
+    if (hint.length > 0 && self.webSubtitleController.running) {
+        [self.webSubtitleController.overlay showHint:hint duration:6.0];
     }
 }
 
@@ -1541,11 +1622,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self.webSubtitleController stop];
         return;
     }
-    if (self.webSubtitleController == nil) {
-        self.webSubtitleController = [BrowserWebSubtitleController new];
-    }
+    [self prepareWebSubtitleControllerUsingStub:NO language:nil];
     if (self.webview != nil) {
         [self.webSubtitleController startForWebView:self.webview userInitiated:YES];
+        [self showWebSubtitleRecognizerHintIfNeeded];
     }
 }
 

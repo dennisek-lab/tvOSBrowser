@@ -380,21 +380,21 @@ Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang v
 **Dateien.** `BrowserRemoteInputController.m/.h` (Logik, Hervorhebung, Linse), `UIApplication+BrowserSelectPressForwarding.m` (globale Tastenweiterleitung), Host-Implementierung in `ViewController.m` (Methoden `browserRemoteInputController…`), `BrowserPageActionCoordinator.m` (Klick), `BrowserDOMInteractionService.m` (DOM-Koordinaten).
 
 ### 8.1 Eingabewege
-- **GameController (bevorzugt):** `GCControllerDidConnectNotification` → `attachToGameController:` setzt `microGamepad.reportsAbsoluteDpadValues = YES`, `allowsRotation = NO` und `dpad.valueChangedHandler`. Rohwerte −1…1 werden mit `kPadPointsPerUnit = 640` in Punkte umgerechnet, dann Beschleunigung (`PointerSpeed` aus `NSUserDefaults`, begrenzt 0,3…3,0). Log: `[Input] Clickpad über GameController: <Name>`.
-- **UIKit-Fallback:** `handleTouchesBegan/Moved/Ended:` mit Indirect-Touches (auch iPhone/iPad-Fernbedienung). Wird ignoriert, solange in den letzten 0,25 s eine GameController-Probe kam (`padLastSampleTime`), damit nicht doppelt bewegt wird. DEBUG-Log: `[Input] Raten: GameController N/s, UIKit-Berührungen N/s`.
+- **GameController (bevorzugt):** `GCControllerDidConnectNotification` → `attachToGameController:` setzt `microGamepad.reportsAbsoluteDpadValues = YES`, `allowsRotation = NO` und `dpad.valueChangedHandler` → `handlePadValue:`. Rohwerte −1…1, `(0,0)` = Finger weg. Bewegung nur aus Differenzen (`kPadPointsPerUnit = 640` Rohpunkte je Einheit), Einzelheiten in 8.8. Log: `[Input] Clickpad über GameController: <Name>`.
+- **UIKit-Fallback:** `handleTouchesBegan/Moved/Ended:` mit Indirect-Touches (iPhone/iPad-Fernbedienung). Bewegt nur, wenn der GameController-Weg die Geste nicht hat (`gameControllerOwnsTouch`: Finger liegt auf dem Clickpad oder letzte Probe < `kTouchFallbackQuietTime` 0,3 s); ist ein GameController verbunden, wartet der Rückfall zu Beginn 50 ms, ob von dort Proben kommen. Beide Wege speisen dieselbe Pipeline (8.8), nie gleichzeitig. Ignorierte UIKit-Proben zählt das Gestenlog (`UIKit ignoriert N`).
 - **Presses** (`handlePressesBegan/Ended`, weitergeleitet aus `ViewController`; `UIApplication browser_sendEvent:` fängt Tasten vorab ab, Abschnitt 12).
 
 ### 8.2 Belegung (im Code)
 | Eingabe | Aktion |
 |:--|:--|
-| Wischen | Zeiger bewegen, rastet ein (`kSnapRadius` 36 pt, löst bei `kReleaseMargin` 28 pt; Ziele größer als 420 × 140 werden nur hervorgehoben); Randscrollen am Bildschirmrand |
+| Wischen | Zeiger bewegen (8.8), rastet ein mit Hysterese (ein bei `kSnapEnterRadius` 24 pt vom Zielrand, aus erst bei `kSnapReleaseRadius` 48 pt; Ziele größer als 420 × 140 werden nur hervorgehoben); Randscrollen am Bildschirmrand (nur der Finger, nicht das Gleiten) |
 | Auswahl (Mitte) | Klick (`performSelectAction` → Host `browserRemoteInputControllerHandlePrimaryAction`); Doppelzustellung wird mit 0,15 s entprellt |
 | Oben/unten | eine Seite scrollen (`kPageScrollFraction` 0,8); **oben zweimal** (< 0,4 s) → `browserRemoteInputControllerOpenAddressBar` (Leiste ausklappen, Bearbeiten-Zustand mit Aufklapp-Bereich, Abschnitt 13; keine Tastatur); **unten zweimal** → `browserRemoteInputControllerCompactTopBar` |
 | Links/rechts | `browserRemoteInputControllerNavigateBack/Forward`: Zeiger auf laufendem Video → ±10 s (`sendVideoCommand:… seek:±10`), sonst `stepTargetBy:∓1` (Element-zu-Element; Reihenfolge nach Zeilen à 24 pt, dann links→rechts; am Ende des Sichtbaren `scrollThenStep:` scrollt weiter und springt zum nächsten Ziel, nach 0,45 s Wartezeit auf die neue Meldung). Ziele: `browserRemoteInputControllerStepTargets` (Zeigerziele plus Videos ohne eigene Bedienelemente, obere Leiste nur am Seitenanfang) |
 | Play/Pause | kurz (nach 0,3 s Doppeltipp-Fenster): Video steuern, sonst Adressdialog; lang (≥ 0,6 s): `…HandlePlayPauseLongPress` (Suche/Diktat); doppelt: `…HandleAdvancedMenuPress` (•••-Menü) |
 | Menü/Zurück | `browserRemoteInputControllerHandleMenuPress`: Seitenvollbild verlassen → Dialog schließen → Seite zurück → sonst `NO` (System geht zum Home-Bildschirm, vorher Sitzung sichern) |
 | Im Aufklapp-Bereich der Adresse | optionale Host-Methode `browserRemoteInputControllerAddressPanelActive`: Pfeile → `stepTargetInDirection:` (räumlicher Sprung: Kandidaten in Blickrichtung, Wertung Abstand + 2 × seitlicher Versatz ab Zielkante), kein Seiten- oder Randscrollen, Zeiger wird nicht ausgeblendet; Select → `browserHandlePrimaryAction` → `handleAddressEditingSelectionAtPoint:`; Play/Pause → Eingabedialog; Menü → schließen. Eckenradius der Hervorhebung per `browserRemoteInputControllerCornerRadiusForTarget:` (Feld: Kapselform, Kacheln: Radius des Icons), keine Linse |
-| Ring (Kreisbewegung) | `trackRotationWithDelta:`: Eintritt bei ≥ 200° akkumulierter Drehung (`kRotationEnterAngle`), danach je 60° (`kRotationStepAngle`) ein Schritt; im Uhrzeigersinn vor, dagegen zurück; Zeiger kehrt zum Gestenstart zurück |
+| Ring (Kreisbewegung) | GameController: `trackRingWithPadPosition:` über die **absolute** Fingerlage: Finger am Rand (Abstand zur Mitte ≥ `kRingMinRadius` 0,8) und ≥ 110° um die Mitte (`kRingEnterAngle`), danach je 60° (`kRingStepAngle`) ein Schritt, Ringmodus bis zum Abheben (oder Finger < 0,55). Gerades Wischen kann das nicht auslösen. UIKit-Rückfall: wie bisher `trackRotationWithDelta:` (Drehung der Wischrichtung, ≥ 200°). Im Uhrzeigersinn vor, dagegen zurück; Zeiger kehrt zum Gestenstart zurück |
 
 ### 8.3 Magnetic Buttons (Hervorhebung)
 Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInputControllerPointerTargets` (Seitenziele aus Abschnitt 7 plus Knöpfe der oberen Leiste per `enumeratePointerTargetsUsingBlock:`; was unter der Leiste liegt, wird verworfen). Darstellung in `BrowserRemoteInputController`:
@@ -410,12 +410,15 @@ Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInpu
 - GameController: Verhalten von `GCMicroGamepad` mit absoluten Werten (Wertebereich, Nullwert beim Loslassen als „nicht berührt“: `handlePadValue:` wertet `(0,0)` als Loslassen). Ohne `respondsToSelector`-Fallback, aber der UIKit-Fallback übernimmt, wenn keine Proben kommen.
 - Hängt von `UIPress`-Typen und davon ab, dass die Taste sowohl über `pressesEnded` als auch global ankommt (Doppelzustellung, Entprellung 0,15 s).
 - Linse nutzt öffentliche UIKit-API, ist aber layoutabhängig (`source.window`, Rechteck innerhalb der Quelle).
-- Abstimmungswerte (`kSnapRadius`, `kPadPointsPerUnit`, Beschleunigung) sind laut PLAN.md noch nicht endgültig mit echter Fernbedienung abgestimmt.
+- Abstimmungswerte (`kSnapEnterRadius`/`kSnapReleaseRadius`, `kPadPointsPerUnit`, Beschleunigung, `kRingMinRadius`, Gleiten) sind nur synthetisch geprüft, noch nicht mit echter Fernbedienung abgestimmt.
+- Annahmen über die Hardware, die das Gestenlog am Gerät bestätigen oder widerlegen soll: Achsen kommen beim Aufsetzen/Abheben einzeln (`Achsen einzeln N`), Ausreißer beim Abheben (`Ausreißer verworfen N`), Wertebereich am Ring (`Radius max`).
 
 ### 8.5 Woran man merkt, dass es kaputt ist
 | Symptom | Ursache |
 |:--|:--|
-| Zeiger ruckelt/träge | kein `[Input] Clickpad über GameController`-Log → UIKit-Fallback; DEBUG-Rate-Log vergleichen |
+| Zeiger ruckelt/träge | kein `[Input] Clickpad über GameController`-Log → UIKit-Fallback; Gestenlog `[Pointer] Geste …`: Proben/s, `Δt` max (Hauptschleife blockiert), `Alter Fingerlage` |
+| Zeiger hüpft zurück | Gestenlog `Rückschritte` > 0; `Ausreißer verworfen`/`Achsen einzeln` prüfen; Selbsttest `swipe:` (`zurück nach Loslassen` muss 0 sein) |
+| Ring löst nie aus | `Radius max` im Gestenlog < 0,8 → `kRingMinRadius` senken |
 | Zeiger springt beim Drücken | `pressInProgress`-Unterdrückung greift nicht (Presses kommen nicht an) |
 | Doppelte Klicks | Entprellung/`lastDirectSelectPressTimestamp` |
 | Kein Einrasten | `move`-Selbsttest meldet `targets=0` (Abschnitt 7) |
@@ -424,11 +427,50 @@ Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInpu
 | Tasten kommen im nativen Player doppelt an | `[InputTrace][App] …`-Zeilen, Abschnitt 12 |
 
 ### 8.6 Test
-- Selbsttest (ohne Fernbedienung, DEBUG): `x,y` (Zeiger setzen, loggt `move … targets=N`), `click`, `left`/`right` (loggt `overVideo`, danach `Zeiger … scroll=…`), `next`/`prev` (Sprung), `gestures` (loggt `cw1.5`, `ccw1`, `line`, `quarter`; erwartet: Kreise > 0, Gerade und Viertelkreis = 0), `playpause`, `menu`.
+- Selbsttest (ohne Fernbedienung, DEBUG): `x,y` (Zeiger setzen, loggt `move … targets=N`), `click`, `left`/`right` (loggt `overVideo`, danach `Zeiger … scroll=…`), `next`/`prev` (Sprung), `gestures` (loggt `cw1.5`, `ccw1`, `line`, `quarter`; erwartet: Kreise > 0, Gerade und Viertelkreis = 0), `swipe:dx,dy,ms[,flick|clean|flickclean]` und `ring:radius,grad,ms` (8.8), `playpause`, `menu`.
 - Echte Fernbedienung: Zeigerbewegung, oben/unten, links/rechts über Video, Ring, Play/Pause kurz/doppelt/lang, Menü.
 
 ### 8.7 Aktualisieren
-Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten der Abschnitte „Clickpad über GameController“ und „Kreisgeste“ anpassen.
+Kein externer Teil. Werte in `#pragma mark - Abstimmung` und `#pragma mark - Abstimmung Zeigerpipeline` (oben in der Datei) sowie in den Konstanten der Abschnitte „Ring über die absolute Fingerlage“ und „Kreisgeste“ anpassen.
+
+### 8.8 Zeiger-Pipeline
+
+**Warum.** Rückmeldung vom Gerät (8. November 2026): Zeiger „nicht flüssig, verzögert, springt, hüpft zurück“. Gefundene Ursachen in der alten Fassung (jede Probe bewegte sofort, Beschleunigung pro Probe):
+1. Beschleunigung aus dem Abstand zweier Proben (`dx/dt` mit der Uhrzeit beim Eintreffen): gebündelt eintreffende Proben ergeben winzige `dt`, die Verstärkung springt von Probe zu Probe zwischen etwa 0,9 und 2,6.
+2. Ausreißer beim Abheben (Fingerkuppe rollt ab) wurde voll angewandt und durch (1) noch verstärkt: synthetisch 75–83 pt Rücksprung.
+3. Achsen, die beim Abheben einzeln auf 0 fallen (`(0, y)` vor `(0, 0)`), galten als Bewegung zur Mitte: synthetisch bis 357 pt Rücksprung. Ebenso beim Aufsetzen (`(x, 0)` vor `(x, y)`): Sprung.
+4. Kreiserkennung über die Drehung der Wischrichtung: lange, leicht krumme Bewegungen summieren Rauschen auf; bei 200° setzte sie den Zeiger an den Gestenstart zurück.
+5. Einrasten: Sprung zur Zielmitte (animiert 0,09 s) und beim Lösen Sprung zur Fingerposition; Lösen (28 pt) enger als Einrasten (36 pt), also keine Hysterese.
+6. Nach 4 s Ruhe schluckte die ganze erste Wischbewegung (nur Einblenden); das fühlte sich wie Verzögerung an (`kRevealConsumesFirstSwipe`, jetzt NO; der erste Klick nach Ruhe zeigt weiterhin nur den Zeiger).
+7. Ungleichmäßig: pro Bild mal keine, mal zwei Proben (synthetisch Schwankung der Schrittweite 60–86 %, 2–3 von 8 Bildern ohne Bewegung).
+
+Nicht die Ursache: Hit-Tests per JavaScript während der Bewegung (Ziele kommen aus dem Zwischenspeicher von `BrowserClickTargetTracker`; synchrones JS nur beim Klick). Rechenzeit pro Bild gemessen 0,1–0,3 ms.
+
+**Ablauf.**
+1. *Eingabe:* GameController-Probe → `handlePadValue:`. Aufsetzen setzt nur den Bezugspunkt. Proben mit genau einer Achse 0 bewegen nichts (Übergang), der Bezugspunkt bleibt. Sprünge > `kPadMaxSampleJump` (0,35) werden verworfen. Verdächtige Proben (entgegen der Bewegung oder > 3 × übliche Schrittweite) hält `padHeldDelta` zurück, bis die nächste sie bestätigt (höchstens `kPadHoldMaxAge` 25 ms); kommt das Abheben, werden sie verworfen. UIKit-Rückfall: `enqueueRawPointerDelta:…`.
+2. *Proben:* `acceptRawDelta:atTime:` speichert Ankunftszeit und aufsummierte Rohbewegung (Ring mit 32 Einträgen).
+3. *Bildtakt:* `CADisplayLink` (`pointerFrame:`, 60–120 Hz, läuft nur bei Bedarf). Nachabtastung: Fingerlage zum Zeitpunkt „jetzt − `kResampleFactor` × mittlerer Probenabstand“ (4–12 ms), linear zwischen den umgebenden Proben, **nie extrapoliert** (kein Vorauslaufen, kein Zurückfedern).
+4. *Beschleunigung:* Verstärkung aus der Fingergeschwindigkeit über `kSpeedWindow` (35 ms), S-Kurve `kGainMin` 0,8 … `kGainMax` 2,6 zwischen 150 und 1700 Rohpunkten/s, mal Zeigertempo (`BrowserPreferencesStore.pointerSpeed`, Schlüssel `PointerSpeed`, 0,3–3, Standard 1; kein Menüeintrag).
+5. *Glättung:* 1-€-Filter (`kFilterMinCutoff` 20 Hz + `kFilterBeta` × Geschwindigkeit) von `rawPoint` nach `freePoint`; Tiefpass erster Ordnung, schießt nie über.
+6. *Einrasten:* `targetWithHysteresisFor:`. Kleine Ziele ziehen den sichtbaren Punkt Richtung Mitte (`kSnapPull` 0,85, im Ziel geklemmt); die Anziehung nimmt mit dem Abstand der Fingerposition vom Zielrand stufenlos ab und ist an der Lösegrenze null (`visiblePointForTarget:emergence:`). Lösen also ohne Sprung, der Pfeil taucht ab halbem Weg wieder auf. Zielwechsel und Sprünge (links/rechts, Ring) gleiten mit `kSnapEaseTimeConstant` 45 ms. Liegt der Finger in einem anderen Ziel, wechselt es sofort (dicht stehende Links).
+7. *Zeigerebene:* `placeCursorAtPoint:` setzt `cursorView.frame` in `CATransaction setDisableActions:YES`, keine UIView-Animation. Die Hervorhebung wird nur bei neuem Ziel neu aufgebaut (`highlightShownTarget`), Ziele einmal pro Bild geholt (`frameTargets`).
+8. *Gleiten:* Hebt der Finger in Fahrt ab (letzte Bewegung ≤ 40 ms vorher, ≥ `kGlideMinSpeed` 600 pt/s), läuft der Zeiger exponentiell aus (`kGlideTimeConstant` 90 ms, höchstens `kGlideMaxDistance` 140 pt). Endet am Bildschirmrand (scrollt nie) und wenn ein kleines Ziel ihn fängt. Abschaltbar: `BrowserPreferencesStore.pointerGlideEnabled` (Schlüssel `PointerGlideEnabled`, Standard an; kein Menüeintrag). Neue Berührung oder Klick hält sofort an der sichtbaren Stelle an (`discardPendingMotion`).
+9. *Klick:* `commitPointerForClick` beendet Gleiten und Übergang und setzt die Zeigerebene in einem eingerasteten Ziel auf den angezogenen Punkt im Ziel, damit `cursorView.frame.origin` es sicher trifft.
+
+**Messung (DEBUG).** Nach jeder Geste: `[Pointer] Geste GameController|UIKit: Dauer, Proben (N/s, Abstand ms, UIKit ignoriert N), Bilder (Δt mittel/max), Alter Fingerlage beim Anzeigen mittel/max ms, Rechenzeit, größter Schritt, Sprünge (Schritt > 20 pt und > 2,5 × vorheriger), Rückschritte (Schritt > 1 pt gegen die Bewegungsrichtung), Achsen einzeln, Sprünge verworfen, Ausreißer verworfen, Auslauf pt, Radius max`.
+
+**Selbsttest.** `swipe:dx,dy,ms[,flick|clean|flickclean]` speist künstliche Clickpad-Werte (Einheiten, ganze Breite = 2) über `handlePadValue:` ein, Proben im Wechsel 7/15 ms. Ohne `clean` mit nachgebildeten Hardware-Eigenheiten (Achsen einzeln beim Aufsetzen und Abheben, Ausreißer 0,05 entgegen der Richtung vor dem Abheben); `flick` hebt in voller Fahrt ab. Gemessen wird die sichtbare Zeigerebene (`presentationLayer`) pro Bild: `[PointerTest] … Schritt (CV = Schwankung der Schrittweite im mittleren Abschnitt), Rücksprünge, Weg bis Loslassen, Auslauf, zurück nach Loslassen, Ende`. `ring:radius,grad,ms` kreist im Uhrzeigersinn: `ring:0.9,300,700` → 4 Schritte, `ring:0.5,300,700` → 0. Beispiel:
+`POINTER_SELFTEST="url:about:blank;500,600;swipe:0.6,0,300;500,600;swipe:0.6,0,300,flick;960,700;ring:0.9,300,700"`
+
+| Messung (Simulator, synthetisch) | alt | neu |
+|:--|:--|:--|
+| Rücksprung nach Loslassen, mit Hardware-Eigenheiten | 75–357 pt | 0 pt |
+| Rücksprung ohne Eigenheiten | 0 pt | 0 pt |
+| Schwankung der Schrittweite (CV), gleichmäßiges Wischen | 60–86 % | 35–45 % |
+| Bilder ohne Bewegung, während der Finger wischt | 2–3 von 8 | 0 |
+| Alter der gezeigten Fingerlage beim Anzeigen | sofort beim Eintreffen, dann bis zum nächsten Bild (ungleichmäßig) | ~26 ms, davon 16,7 ms Bildaufbau |
+| Ring bei Kreis im inneren Bereich (r 0,5) | (Richtungs-Erkennung, rauschanfällig) | 0 Schritte |
+| Rechenzeit pro Bild | – | 0,1–0,3 ms |
 
 ---
 
@@ -609,7 +651,8 @@ url:https://example.org/;wait;js:(window.f=document.createElement('iframe'),f.sr
 | `BrowserSubtitleAudioTapSource.m/.h` | Dateien (MP4/MOV/M4A): `MTAudioProcessingTap` über `AVAudioMix`, Abwärtsmischung im Audio-Thread, Umrechnung auf 16 kHz mit `AVAudioConverter` |
 | `BrowserSubtitleHLSAudioSource.m/.h` | HLS: Playlist selbst lesen, Audio-Segmente vor der Abspielposition laden und dekodieren |
 | `BrowserSubtitleOverlayView.m/.h` | Ebene in `contentOverlayView`, Stil nach `MACaptionAppearance` |
-| `vendor/whisper.xcframework` | whisper.cpp v1.9.5, statisch, tvOS arm64 + Simulator arm64, Metal + Accelerate (committet, ≈17 MB) |
+| `vendor/whisper.xcframework` | whisper.cpp v1.9.5, statisch, tvOS arm64 + Simulator arm64, Metal + Accelerate (committet, ≈12 MB) |
+| `vendor/whisper-metal/appletvos/default.metallib` | vorkompilierte Metal-Kernel fürs Gerät (committet, ≈15 MB) |
 | `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | Framework bauen, Modell laden |
 | `_Project/Browser/WhisperModels/` | Ordnerreferenz im App-Paket; Modelle `ggml-*.bin` sind nicht im Repo |
 
@@ -620,7 +663,7 @@ tools/fetch_whisper_model.sh      # Pflicht: lädt ggml-base.en-q5_1.bin (57 MB)
 ```
 - `build_whisper.sh` holt die Quelle nach `vendor/whisper.cpp` (nicht im Repo), lädt bei Bedarf CMake per pip nach `vendor/tools-venv`, baut beide Slices mit dem Xcode-Generator, fasst `libwhisper`, `libggml*` (base, cpu, blas, metal) und `libparakeet` per `libtool` zu einem statischen `whisper.framework` zusammen und erzeugt `vendor/whisper.xcframework`. Version: `WHISPER_TAG=v1.9.5`, Mindest-tvOS: `TVOS_MIN=17.0`.
 - Einbindung ins Projekt ohne Framework-Eintrag: `FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]` bzw. `[sdk=appletvsimulator*]` zeigen auf die Slices, gelinkt wird per Modul-Autolink (`#import <whisper/whisper.h>`, Modulkarte mit `link framework "whisper"`, `c++`, Accelerate, Metal, MetalKit). Fehlt das Framework, kompiliert `BrowserSubtitleEngine.m` ohne whisper (`__has_include`), die App baut, der Player meldet „nicht verfügbar“.
-- Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. Ohne installierte Metal-Toolchain (`xcodebuild -downloadComponent MetalToolchain`) wird der Kernel-Quelltext eingebettet (`GGML_METAL_EMBED_LIBRARY=ON`) und **beim ersten Laden zur Laufzeit übersetzt** (im Simulator ≈14 s, auf dem Gerät unbekannt, danach greift der Metal-Cache des Systems). Mit Toolchain baut das Skript `vendor/whisper-metal/<sdk>/default.metallib`; die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Ist sie nicht da, meldet die Phase nur einen Hinweis.
+- Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. **Gerät** (Stand 2026-11-08): mit installierter Metal-Toolchain vorkompiliert für tvOS (`GGML_METAL_TARGET_OS=tvos`) nach `vendor/whisper-metal/appletvos/default.metallib` (committet, ≈15 MB); die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Das Geräte-Framework enthält dann keinen Kernel-Quelltext mehr: fehlt die Datei, kann ggml auf dem Gerät kein Metal (Hinweis in der Build-Phase; `tools/build_whisper.sh` ausführen). Ohne Toolchain (oder `WHISPER_METAL_EMBED=ON`) wird der Quelltext eingebettet und beim ersten Laden zur Laufzeit übersetzt. **Simulator**: immer eingebettet (`WHISPER_METAL_SIM_EMBED=ON`); ggml übersetzt die Kernel dort beim ersten Laden im Prozess auch bei `use_gpu = NO` (≈16 s nach Neuinstallation, danach aus dem Metal-Cache 0,06 s).
 - Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write io.github.tvosbrowser.app AutoSubtitlesCPUOnly -bool YES`.
 
 **Modell.** Reihenfolge in `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`: für „en“ `base.en-q5_1`, `base.en-q8_0`, `base.en`, `tiny.en-q5_1` …, danach mehrsprachige; für „auto“ zuerst mehrsprachige (`base-q5_1`, …). Bei Leistungsproblemen `tools/fetch_whisper_model.sh tiny.en-q5_1` und das base-Modell aus dem Ordner löschen. Mehrsprachig (Deutsch): `tools/fetch_whisper_model.sh base-q5_1`; dann erscheint im Player-Menü „Sprache automatisch“ (`autoSubtitlesLanguage = auto`, whisper erkennt die Sprache je Abschnitt).
@@ -686,12 +729,13 @@ Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tea
 | `WebSubtitles/web_audio_tap.js` (Ordnerreferenz, Ressource) | Seiten-Skript: Web Audio ans Video, 16 kHz mono, Blöcke, Zeit/Rechteck, Zustände |
 | `BrowserWebAudioCapture.m/.h` | Rückkanal `browserWebAudio`, Base64 → Float32, Ringpuffer 30 s, Rechteck-Umrechnung, Status |
 | `BrowserSpeechRecognizing.h/.m` | Protokoll `BrowserSpeechRecognizing`, Cue-Typ `BrowserWebSubtitleCue` (start, end, text) |
-| `BrowserSpeechRecognizerStub.m/.h` | Platzhalter-Erkennung: „[Ton erkannt: 1,0 s · −18 dB]“ |
+| `BrowserWhisperSpeechRecognizer.m/.h` | Erkennung mit whisper.cpp: Adapter um `BrowserSubtitleEngine` (Weg A), eigene Queue, Modell nach `autoSubtitlesLanguage`, Filter für Überlappung und Wiederholungen |
+| `BrowserSpeechRecognizerStub.m/.h` | Platzhalter-Erkennung: „[Ton erkannt: 1,0 s · −18 dB]“ (nur ohne whisper/Modell oder im Selbsttest) |
 | `BrowserWebSubtitleController.m/.h` | Verbindung: Abschnitte mit Überlappung an die Erkennung, Cues ins Overlay, Hinweise, Kennzahlen |
 | `BrowserWebSubtitleOverlay.m/.h` | native Untertitel-Ebene (Unteransicht der `BrowserWebView`), Stil nach `MACaptionAppearance` |
 | `BrowserPreferencesStore` | `webSubtitlesEnabled` (Schlüssel `WebSubtitlesEnabled`, Standard aus) |
 | `BrowserWebView` | `userContentController` (neu, öffentlich); in `commonInit` Skript und Rückkanal früh installieren, wenn `webSubtitlesEnabled` |
-| `ViewController.m` | `browserSetWebSubtitlesEnabled:` (für den Menüschalter), `startWebSubtitlesIfEnabled` (App-Start in `viewDidAppear:`, Tabwechsel in `activeWebViewChangedFrom:`), Selbsttest `websubs` |
+| `ViewController.m` | `browserSetWebSubtitlesEnabled:` (Menüschalter „Untertitel (Webseite)“ in `BrowserMenuCoordinator`), `startWebSubtitlesIfEnabled` (App-Start in `viewDidAppear:`, Tabwechsel in `activeWebViewChangedFrom:`), `prepareWebSubtitleControllerUsingStub:language:` (Erkennung wählen), Selbsttest `websubs` |
 
 **Datenfluss.**
 1. `startForWebView:` registriert (einmal je `WKUserContentController`, per assoziiertem Objekt) den Rückkanal `browserWebAudio` mit schwachem Vermittler (`class_addProtocol` wie in Abschnitt 4), fügt das Nutzerskript hinzu (document-start, **alle Frames**) und spielt Skript plus Startbefehl sofort in die aktuelle Seite (`evaluateJavaScriptAsync:`). iframes der aktuellen Seite bekommen das Skript erst nach dem nächsten Laden; ist `webSubtitlesEnabled` beim Anlegen der WebView schon an, sofort. Nach jeder Navigation meldet das Skript `ready`, die App schickt den Startbefehl erneut.
@@ -709,7 +753,16 @@ Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tea
 
 **Ausschalten.** `stop` trennt nur den Abgriff (`source.disconnect(tap)`, sonst alles trennen und wieder an `destination`). Die Quelle bleibt an den Lautsprechern, der `AudioContext` wird nie angehalten: `createMediaElementSource` geht pro Element nur einmal, danach hört man das Video nur noch über Web Audio.
 
-**Erkennung anschließen (whisper).** Eine Klasse mit `BrowserSpeechRecognizing` bauen (16 kHz mono Float32, Werte während des Aufrufs kopieren, `completion` genau einmal, Cue-Zeiten = `startTime` + Versatz), optional `preferredWindowDuration`/`preferredOverlapDuration` (z. B. 3,0/0,5), `reset`, `recognizerName`. Dann in `ViewController` (`browserSetWebSubtitlesEnabled:`, `startWebSubtitlesIfEnabled`, Selbsttest) `[[BrowserWebSubtitleController alloc] initWithRecognizer:…]` statt `new`.
+**Erkennung (whisper, `BrowserWhisperSpeechRecognizer`).** Erfüllt `BrowserSpeechRecognizing` und nutzt die Engine aus Weg A unverändert (gleiche Modelle, Parameter, Stille-/Rauschfilter, Logs `[Subtitles] Abschnitt …`); nichts davon ist doppelt.
+- Auswahl in `ViewController prepareWebSubtitleControllerUsingStub:language:` (aufgerufen von `browserSetWebSubtitlesEnabled:`, `startWebSubtitlesIfEnabled` und dem Selbsttest): Sprache = `autoSubtitlesLanguage` (dieselbe Einstellung wie im Player-Menü; „en“ → `base.en-q5_1`, „auto“ → mehrsprachiges `base-q5_1`, Reihenfolge `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`). Gleiche Sprache: Erkennung (und geladenes Modell) bleibt; andere Sprache: Controller stoppen, neue Erkennung. Fehlt whisper im Build oder ein Modell, läuft der Platzhalter weiter, mit Log `[WebSubs] whisper nicht verfügbar (…)` und Hinweis „Untertitel: kein Sprachmodell in der App, es wird nur der Tonpegel angezeigt“.
+- Abschnitt 3,0 s, Überlappung 0,5 s (`preferredWindowDuration`/`preferredOverlapDuration`); `audio_ctx` 384 (Mindestwert der Engine).
+- Eigene serielle Queue (`…websubtitles.whisper`, QoS user-initiated): `transcribeSamples:…` kopiert die Werte und kehrt sofort zurück, `completion` kommt genau einmal von dieser Queue. Das Modell wird beim Anlegen im Hintergrund geladen. Ein Abschnitt, der länger als eine Abschnittslänge auf das Laden gewartet hat, wird verworfen (Log `Abschnitt @ … verworfen, … auf das Modell gewartet`), sonst käme der erste Text viele Sekunden zu spät.
+- `reset` (Spulen, Pause, Seitenwechsel): Generation erhöhen, laufendes `whisper_full` abbrechen (`cancel`, threadsicher), Zusammenhang leeren.
+- Nachbearbeitung der Engine-Cues: (1) gleiche Segmente hintereinander und Wiederholungsschleifen in einem Segment („I'm gonna be I'm gonna be …“, Periode 1–8 Wörter, mindestens dreimal) auf ein Vorkommen kürzen; (2) Wörter am Anfang, die wegen der Überlappung schon am Ende des letzten Abschnitts standen, entfernen (Controller ersetzt nur Cues ab Abschnittsbeginn; ein einzelnes kurzes Wort wie „I“ bleibt); (3) gleicher Text innerhalb 15 s wird verworfen (wie Weg A; trifft Sätze, die in zwei Abschnitten stecken, und erfundene Wörter bei Musik).
+- Speicher: nach 90 s ohne Abschnitt (`idleUnloadDelay`) wird das Modell freigegeben (`[WebSubs][whisper] 90 s ohne Abschnitt …`), z. B. während das Video pausiert oder der native Player mit eigener Engine läuft; der nächste Abschnitt lädt es neu (0,15 s).
+- Logs: `[WebSubs] Start: Erkennung whisper base.en-q5_1 (en) …`, `[WebSubs][whisper] Modell … bereit in … s, Speicher … MB`, `[WebSubs][whisper] Überlappung: N Wort/Wörter entfernt`, `… Wiederholungsschleife: …`, `… Wiederholung innerhalb 15 s verworfen`, dazu die Engine-Zeilen `[Subtitles] Abschnitt 3.0 s @ … s: N Segmente in … s (RTF …)`.
+
+**Metal (Gerät).** `tools/build_whisper.sh` kompiliert die ggml-Kernel jetzt mit der Metal-Toolchain für tvOS vor (`-DGGML_METAL_TARGET_OS=tvos`, vorher wurde für macOS übersetzt) nach `vendor/whisper-metal/appletvos/default.metallib` (≈15 MB, committet); das Geräte-Framework enthält keinen Kernel-Quelltext mehr (8,5 → 3,3 MB). Die Build-Phase „Whisper-Metal-Kernel kopieren“ legt die Datei ins App-Paket, ggml lädt sie dort (`ggml_metal_library_init: loading '…/default.metallib'`) statt beim ersten Start alles zu übersetzen. Simulator-Teil unverändert mit eingebetteten Kernels (rechnet ohnehin auf der CPU). `ggml-tensor.metallib` wird nicht übernommen (ggml nutzt die Tensor-API erst ab A19/M5).
 
 **Fragil/Grenzen.**
 - Fremde Herkunft ohne CORS, DRM und natives HLS liefern nur Nullen (im Simulator für CORS und HLS nachgewiesen). Vorab abgefangen; greift die Prüfung nicht (z. B. Umleitung auf einen anderen Server), ist das Video stumm, bis die Seite neu geladen wird (Hinweis erscheint).
@@ -719,6 +772,8 @@ Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tea
 - Im tvOS-Simulator (27.2) gibt es weder `MediaSource` noch `ManagedMediaSource` (die dash.js-Beispielseite lädt nicht). MSE-Seiten (Mediatheken, DASH) sind also nur auf dem Gerät testbar. `blob:`-Quellen werden wie gleiche Herkunft behandelt.
 - Zeitzuordnung: In der ersten Sekunde nach dem Anhängen weichen Blockzeiten um bis zu 0,3 s ab (gepufferter Ton), danach stabil (Abstand 0,50 s).
 - Nur der aktive Tab.
+- whisper mit 3-s-Abschnitten: Sätze werden an Abschnittsgrenzen geteilt („Why don't you...“ / „just admit …“), kurze Abschnitte erkennen ungenauer als Weg A (5 s bzw. 12 s), bei Musik ohne Sprache erfindet whisper gelegentlich Wörter („directional“, „Aah!“). Längere Abschnitte = genauer, aber mehr Verzug.
+- Speicher: Läuft der native Player (Weg A, eigene Engine) während Weg B ein Modell hält, liegen kurz zwei Modelle im Speicher (je ≈ 130–160 MB); Weg B gibt seins nach 90 s ohne Abschnitt frei.
 
 **Kaputt?** Logzeilen `[WebAudio] Zustand …`, `[WebAudio] Block #N 0.50 s t=… rms=… (… dB) peak=… Weg=… ms` (DEBUG, jeder Block), `[WebSubs] Abschnitt … erkannt in N ms`, `[WebSubs] Anzeige „…“ … Verzug … s`. Im Skript: `js:window.__browserWebAudio.status()` (JSON mit Zustand, Modus, `ctx`, Abtastrate, Latenzen, Blöcke, Video). `[WebAudio] Startbefehl ohne Erfolg: missing` = Skript fehlt im Paket (Ordnerreferenz `WebSubtitles`).
 
@@ -732,10 +787,15 @@ POINTER_SELFTEST='url:<Seite mit MP4 gleicher Herkunft>;js:document.querySelecto
 … websubs;wait;websubs:force;wait;wait;websubs:status
 # whisper-ähnlicher Takt (3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit)
 … websubs:slow;wait;wait;wait;websubs:status
+# whisper mit Sprache: lokale Testseite (Video gleicher Herkunft, Server mit Range-Anfragen; python3 -m http.server
+# kann kein Range, dann spielt WebKit das MP4 nicht), Simulator erreicht 127.0.0.1 des Macs
+url:http://127.0.0.1:8765/;wait;js:(document.querySelector('video').currentTime=15,document.querySelector('video').play(),1);websubs;wait;…;websubs:status;websubs:stub;wait;…;websubs:status;websubs:off
 ```
 Messwerte im Simulator (Mac, tvOS 27.2, Stub): Weg Skript → App 0,7–1,6 ms je Block, Base64 im Skript 0,05–0,09 ms, Dekodieren in der App 0,2 ms, Verzug im Graphen 0–9 ms. Anzeige-Verzug = Abschnittslänge + Rechenzeit (Stub 1 s: Ø 0,9–1,1 s; 3 s + 1,2 s Rechenzeit: rund 4,3 s nach Abschnittsbeginn). CPU (ps): App etwa +0,7, WebContent etwa +1,1 Prozentpunkte gegenüber Wiedergabe ohne Abgriff.
 
-**Menüeintrag** (noch nicht eingebaut, gehört in `BrowserMenuCoordinator.m`, `extensionMenuItems`): Host-Protokoll um `- (void)browserSetWebSubtitlesEnabled:(BOOL)enabled;` erweitern (in `ViewController` vorhanden) und einen Eintrag `webSubtitlesMenuItem` nach dem Muster von `autoOpenNativePlayerMenuItem` anlegen.
+Messwerte mit whisper (Simulator auf Mac mit Apple Silicon, tvOS 27.2, CPU, 4 Threads, `base.en-q5_1`, Tears of Steel 720p als MP4 gleicher Herkunft über lokalen Server, Stand 2026-11-08): Modell laden 0,15 s (nach Neuinstallation einmalig ≈16 s Metal-Übersetzung, siehe 10.9), Speicher der App 32 → 192 MB nach dem Laden, 176–184 MB während der Erkennung, 61 MB nach dem Freigeben. Rechenzeit je 3-s-Abschnitt 0,27–0,42 s (RTF ≈ 0,1–0,13), nichts übersprungen. Text sichtbar Ø 2,6–3,5 s nach Beginn des Abschnitts (Spanne 0,7–3,6 s; Abschnitt 3 s + Rechenzeit + Blocktakt 0,5 s). CPU der App (kumulierte CPU-Zeit): whisper ≈ 17 % eines Kerns, Platzhalter ≈ 1,5 %. Erkannt z. B. „You're a jerk tongue.“ (gesprochen: „You're a jerk, Thom“), „Look, Celia, we have to follow our passions.“, „just admit that you're freaked out by my...“, „I'm having nightmares that I'm being chased by these guys.“, „Robots memory?“/„synced, and locked.“. Gerät: noch nicht gemessen.
+
+**Menüeintrag.** „Untertitel (Webseite)“ in `BrowserMenuCoordinator.m` (ruft `browserSetWebSubtitlesEnabled:`), Einstellung `webSubtitlesEnabled` bleibt gespeichert.
 
 ---
 
@@ -836,6 +896,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `left` / `right` | Clickpad links/rechts (Video ±10 s oder Elementsprung) | `left overVideo=…`, danach nach 1,2 s `Zeiger (x, y) scroll=…` |
 | `next` / `prev` | Elementsprung direkt (`stepTargetBy:`) | `next cursor=(x, y)` |
 | `gestures` | Ring-Erkennung mit künstlichen Bewegungen (`debugRunGestureWithDeltas:`) | `gestures cw1.5=… ccw1=… line=… quarter=…` (Kreise > 0, `line` und `quarter` = 0) |
+| `swipe:dx,dy,ms[,flick/clean/flickclean]` | Synthetisches Wischen auf dem Clickpad durch die echte Pipeline (Abschnitt 8.8) | `[PointerTest] wisch …` bzw. `flick …`, dazu `[Pointer] Geste …` |
+| `ring:radius,grad,ms` | Kreis im Uhrzeigersinn auf dem Clickpad (Ring über absolute Lage) | `[PointerTest] ring r=… …°: Schritte N` |
 | `fill:v1\|v2\|…\|i` | aktuellen Eingabedialog (UIAlertController) ausfüllen; letzter Wert *i* ist der Index der zu drückenden Aktion | `fill alert=<Titel> fields=N types=[textContentType…]`, `tap <Aktion>` |
 | `dictate:<Text>` | Play/Pause lang (Suchdialog), Text einsetzen (simuliert Diktat) | `dictate field=ok text=…` |
 | `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Notification, dann Router), siehe `docs/SIRI_STEUERUNG.md` | `siri <befehl>`, `[Siri] Befehl …`, `[Command] …` |
@@ -857,7 +919,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `zoom` | Zoom-Zustand (`zoomScale`, `min/max`, `_viewScale`, `contentSize`, `bounds`, `pageZoom`) | `zoom zoomScale=… viewScale=…` |
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
 | `js:<Code>` | JavaScript ausführen, Ergebnis loggen | `js <Ergebnis>` |
-| `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (Stub-Erkennung). Optionen: `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
+| `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (whisper, Sprache aus `autoSubtitlesLanguage`; ohne Modell Platzhalter). Optionen: `en`/`auto` (Sprache für diesen Test), `stub` (Platzhalter-Erkennung), `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
 | `wait` (jeder unbekannte Schritt) | nichts tun, 3 s warten | – |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
 | `native` | Video der Seite im nativen Player öffnen (wie Menü „Im Player öffnen“, Zeigerposition zählt) | `native hasVideo=…`, danach `[NativeVideoPlayer]`-Zeilen |
@@ -900,7 +962,7 @@ POINTER_SELFTEST="translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(de
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
 | `[Scriptlets] geladen/nicht verfügbar` bzw. `[Scriptlets] <host> N Regeln` | `BrowserScriptletInjector` | erste nein, zweite ja |
 | `[CookieBlock] …` | `BrowserCookieConsentBlocker handleMessageBody:` und Fehlzeile für das Bundle | ja |
-| `[Input] Clickpad über GameController`, `[Input] Raten` | `BrowserRemoteInputController` | erste: nein, zweite: ja |
+| `[Input] Clickpad über GameController`, `[Pointer] Geste …`, `[PointerTest] …` | `BrowserRemoteInputController` | erste: nein, die anderen: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |
 | `[NativeVideoPlayer]`, `[NativeVideoAssetLoader]`, `[YouTubeExtractor]` | Videoteile | im Code nicht geprüft |
 | `[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` | `BrowserSubtitle*` (Abschnitt 10.9) | nein |

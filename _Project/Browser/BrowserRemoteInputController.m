@@ -15,10 +15,15 @@ static UIImage *BrowserPointerCursor(void) {
 
 #pragma mark - Abstimmung
 
-/// Ab hier rastet der Zeiger an einem Ziel ein (Abstand Fingerposition zum Zielrand, Punkte).
-static const CGFloat kSnapRadius = 36.0;
-/// So weit darf der Finger über das Ziel hinaus, bevor der Zeiger sich wieder löst.
-static const CGFloat kReleaseMargin = 28.0;
+/// Einrasten mit Hysterese: Ab diesem Abstand der Fingerposition zum Zielrand rastet der Zeiger ein (Punkte) …
+static const CGFloat kSnapEnterRadius = 24.0;
+/// … und löst sich erst, wenn die Fingerposition so weit über den Zielrand hinaus ist. Dazwischen zieht das Ziel den
+/// sichtbaren Zeiger stufenlos an; an der Lösegrenze ist die Anziehung null, deshalb springt beim Lösen nichts.
+static const CGFloat kSnapReleaseRadius = 48.0;
+/// So stark zieht ein kleines Ziel den sichtbaren Zeiger zur Mitte (1 = genau Mitte), solange der Finger darin ist.
+static const CGFloat kSnapPull = 0.85;
+/// Zeitkonstante des weichen Übergangs zu einem neuen Ziel (Einrasten, Zielwechsel, Sprung per links/rechts), s.
+static const CFTimeInterval kSnapEaseTimeConstant = 0.045;
 /// Größere Ziele (Bilder, Karten, breite Felder) werden nur hervorgehoben, der Zeiger springt nicht in die Mitte.
 static const CGFloat kMaxCenterSnapWidth = 420.0;
 static const CGFloat kMaxCenterSnapHeight = 140.0;
@@ -26,6 +31,51 @@ static const CGFloat kMaxCenterSnapHeight = 140.0;
 static const CGFloat kPageScrollFraction = 0.8;
 /// Nach dieser Zeit ohne Berührung blendet sich der Zeiger aus.
 static const NSTimeInterval kCursorIdleHideDelay = 4.0;
+/// NO: Die erste Wischbewegung nach dem Ausblenden zeigt den Zeiger und bewegt ihn sofort (wie ein Trackpad).
+/// YES: altes Verhalten, die ganze erste Wischbewegung zeigt nur den Zeiger (fühlte sich wie Verzögerung an).
+static const BOOL kRevealConsumesFirstSwipe = NO;
+
+#pragma mark - Abstimmung Zeigerpipeline
+
+// Ablauf: Eingabe (GameController-Rohwerte, sonst UIKit-Berührungen) sammelt Rohbewegung; ein CADisplayLink wendet sie
+// pro Bildschirmbild an: Beschleunigung (aus der Geschwindigkeit der letzten kSpeedWindow s), Glättung (1-€-Filter),
+// Einrasten, Setzen der Zeigerebene ohne Animation. Nach dem Loslassen optional kurzes Gleiten.
+
+/// Ein Clickpad-Weg von Rand zu Rand (2 Einheiten) entspricht so vielen Punkten, vor der Beschleunigung.
+static const CGFloat kPadPointsPerUnit = 640.0;
+/// Beschleunigungskurve wie bei einem Trackpad: bis kGainSlowSpeed (Rohpunkte/s) gilt kGainMin (präzise),
+/// ab kGainFastSpeed kGainMax (trägt weit), dazwischen weicher S-Verlauf. Mal Zeigertempo (Einstellung, 0,3…3).
+static const CGFloat kGainMin = 0.8;
+static const CGFloat kGainMax = 2.6;
+static const CGFloat kGainSlowSpeed = 150.0;
+static const CGFloat kGainFastSpeed = 1700.0;
+/// Zeitfenster für die Geschwindigkeit, aus der die Beschleunigung bestimmt wird (s). Ein Fenster statt Abstand
+/// zweier Proben: Proben kommen gebündelt an, sonst schwankt die Verstärkung von Probe zu Probe (Sprünge).
+static const CFTimeInterval kSpeedWindow = 0.035;
+/// Nachabtastung: Pro Bild wird die Fingerlage von „jetzt minus kResampleFactor × Probenabstand“ gezeigt
+/// (interpoliert, nie extrapoliert). Gleicht unregelmäßig eintreffende Proben aus; begrenzt auf 4…12 ms.
+static const CGFloat kResampleFactor = 1.0;
+static const CFTimeInterval kResampleMaxLatency = 0.012;
+/// 1-€-Filter auf die Zeigerlage: Grenzfrequenz in Ruhe (Hz) plus Anteil je pt/s Geschwindigkeit. Dämpft nur
+/// Sensorrauschen bei langsamer Bewegung, schnell kaum Nachlauf. Tiefpass erster Ordnung: schießt nie über.
+static const CGFloat kFilterMinCutoff = 20.0;
+static const CGFloat kFilterBeta = 0.05;
+static const CGFloat kFilterDerivativeCutoff = 5.0;
+/// Größter plausibler Sprung zwischen zwei Rohproben (Clickpad-Einheiten); größer = Störung, wird nicht bewegt.
+static const CGFloat kPadMaxSampleJump = 0.35;
+/// Verdächtige Proben (entgegen der Bewegung oder viel größer als üblich) werden zurückgehalten, bis die nächste
+/// sie bestätigt, höchstens so lange (s). Kommt vorher das Abheben, war es das Abrollen der Fingerkuppe: verworfen.
+static const CFTimeInterval kPadHoldMaxAge = 0.025;
+/// „Viel größer“: so viel mal die zur aktuellen Geschwindigkeit passende Schrittweite (mindestens 8 Rohpunkte).
+static const CGFloat kLiftOutlierFactor = 3.0;
+/// UIKit-Berührungen bewegen den Zeiger nur, wenn so lange keine GameController-Probe kam (s).
+static const CFTimeInterval kTouchFallbackQuietTime = 0.3;
+/// Gleiten nach dem Loslassen: nur wenn der Finger in Fahrt abhebt (Bildschirm-pt/s, letzte Bewegung höchstens
+/// kGlideMaxRestBeforeLift s vor dem Abheben). Auslauf exponentiell mit kGlideTimeConstant, höchstens kGlideMaxDistance pt.
+static const CGFloat kGlideMinSpeed = 600.0;
+static const CFTimeInterval kGlideMaxRestBeforeLift = 0.04;
+static const CFTimeInterval kGlideTimeConstant = 0.09;
+static const CGFloat kGlideMaxDistance = 140.0;
 
 /// Glasartige Fläche für die Zielmarkierung: Tönung, Glanzverlauf, helle Lichtkante, dunkle Haarlinie außen.
 @interface BrowserGlassHighlightSurfaceView : UIView
@@ -337,6 +387,42 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 
 @end
 
+/// Abstand eines Punkts zum Rechteck (0 innerhalb).
+static CGFloat BrowserDistanceToRect(CGPoint point, CGRect rect) {
+    CGFloat dx = MAX(MAX(CGRectGetMinX(rect) - point.x, 0.0), point.x - CGRectGetMaxX(rect));
+    CGFloat dy = MAX(MAX(CGRectGetMinY(rect) - point.y, 0.0), point.y - CGRectGetMaxY(rect));
+    return hypot(dx, dy);
+}
+
+#if DEBUG
+/// Messhilfe für den Selbsttest: ruft pro Bildschirmbild einen Block (eigener Takt, unabhängig von der Zeigerpipeline).
+@interface BrowserDebugFrameSampler : NSObject
+@property (nonatomic, copy) void (^tick)(CFTimeInterval now);
+@property (nonatomic) CADisplayLink *link;
+- (void)start;
+- (void)stop;
+@end
+
+@implementation BrowserDebugFrameSampler
+- (void)start {
+    self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(step:)];
+    self.link.preferredFrameRateRange = CAFrameRateRangeMake(60, 120, 120);
+    [self.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+- (void)step:(CADisplayLink *)link {
+    // targetTimestamp: Zeitpunkt, zu dem das gerade entstehende Bild sichtbar wird.
+    if (self.tick != nil) {
+        self.tick(link.timestamp);
+    }
+}
+- (void)stop {
+    [self.link invalidate];
+    self.link = nil;
+    self.tick = nil;
+}
+@end
+#endif
+
 @interface BrowserRemoteInputController ()
 
 @property (nonatomic, weak) id<BrowserRemoteInputControllerHost> host;
@@ -389,15 +475,74 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 // Clickpad direkt über GameController (Rohpositionen ohne Fokus-Glättung).
 @property (nonatomic) BOOL padTouching;
 @property (nonatomic) CGPoint padLastValue;
-@property (nonatomic) CFTimeInterval padLastTimestamp;
+@property (nonatomic) BOOL padBaselineValidX;
+@property (nonatomic) BOOL padBaselineValidY;
 @property (nonatomic) CFTimeInterval padLastSampleTime;
-@property (nonatomic) NSUInteger debugPadSamples;
-@property (nonatomic) NSUInteger debugTouchSamples;
-@property (nonatomic) CFTimeInterval debugRateWindowStart;
+/// Zurückgehaltene letzte Probe (Rohpunkte), s. kPadHoldMaxAge.
+@property (nonatomic) BOOL padHasHeld;
+@property (nonatomic) CGPoint padHeldDelta;
+@property (nonatomic) CFTimeInterval padHeldTime;
+// Ring über die absolute Fingerlage (nur GameController).
+@property (nonatomic) BOOL ringHasAngle;
+@property (nonatomic) CGFloat ringLastAngle;
+@property (nonatomic) CGFloat ringAccumulated;
+@property (nonatomic) CGFloat ringStepAccumulated;
+@property (nonatomic) BOOL ringMode;
+
+// Zeigerpipeline: ein Takt pro Bildschirmbild.
+@property (nonatomic) CADisplayLink *pointerLink;
+@property (nonatomic) CFTimeInterval pointerLinkLastTimestamp;
+/// Ungeglättete Fingerposition (Ziel des Filters); freePoint ist die geglättete.
+@property (nonatomic) CGPoint rawPoint;
+@property (nonatomic) CGPoint filterVelocity;
+/// Sichtbare Lage der Klickspitze (= Ursprung von cursorView).
+@property (nonatomic) CGPoint visiblePoint;
+@property (nonatomic) BOOL easingActive;
+@property (nonatomic) BOOL gliding;
+@property (nonatomic) CGPoint glideVelocity;
+@property (nonatomic) CGFloat glideTravelled;
+@property (nonatomic) BOOL liftPending;
+@property (nonatomic) BOOL touchSourceActive;
+@property (nonatomic) CFTimeInterval touchGestureStartTime;
+@property (nonatomic) CFTimeInterval lastMovementSampleTime;
+@property (nonatomic) CFTimeInterval liftTime;
+@property (nonatomic) CGFloat pointerSpeedSetting;
+@property (nonatomic) BOOL glideEnabledSetting;
+/// Ziele nur einmal pro Bild vom Host holen.
+@property (nonatomic, nullable) NSArray<NSValue *> *frameTargets;
+/// Zuletzt gezeigte Hervorhebung; unverändert = nicht neu aufbauen (Glow-Pfade, Schatten).
+@property (nonatomic) CGRect highlightShownTarget;
+#if DEBUG
+@property (nonatomic) NSInteger debugRingSteps;
+#endif
 
 @end
 
-@implementation BrowserRemoteInputController
+/// Messwerte einer Geste (nur DEBUG geloggt, gezählt wird immer – kostet nichts).
+typedef struct {
+    CFTimeInterval start;
+    NSUInteger samples, touchSamplesIgnored, frames, latencyCount, suddenSteps, backSteps;
+    NSUInteger axisSkips, jumpSkips, outliersDropped;
+    double frameDtSum, frameDtMax, latencySum, latencyMax, workSum, workMax;
+    CGFloat maxStep, lastStep, glideDistance, maxRadius;
+    BOOL active, viaGameController;
+} BrowserPointerGestureStats;
+
+enum { kHistoryCount = 32 };
+
+@implementation BrowserRemoteInputController {
+    // Angenommene Proben: Ankunftszeit und aufsummierte Rohbewegung (Rohpunkte, vor der Beschleunigung).
+    CFTimeInterval _sampleTime[kHistoryCount];
+    CGPoint _sampleCum[kHistoryCount];
+    NSUInteger _sampleCount;
+    CGPoint _inputCum;
+    /// Bis hierhin ist die Rohbewegung schon auf den Zeiger angewandt.
+    CGPoint _outputCum;
+    CFTimeInterval _lastSampleArrival;
+    /// Geschätzter Probenabstand (s), bestimmt die Verzögerung der Nachabtastung.
+    CFTimeInterval _sampleIntervalEstimate;
+    BrowserPointerGestureStats _stats;
+}
 
 - (instancetype)initWithHost:(id<BrowserRemoteInputControllerHost>)host
                     rootView:(UIView *)rootView {
@@ -411,6 +556,12 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 
         CGRect screen = [UIScreen mainScreen].bounds;
         _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
+        _rawPoint = _freePoint;
+        _visiblePoint = _freePoint;
+        _highlightShownTarget = CGRectNull;
+        _pointerSpeedSetting = 1.0;
+        _glideEnabledSetting = YES;
+        _sampleIntervalEstimate = 1.0 / 90.0;
         [self observeGameControllers];
         _cursorView = [[BrowserCursorImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
         _cursorView.image = BrowserDefaultCursor();
@@ -511,9 +662,14 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
     return CGRectGetWidth(target) <= kMaxCenterSnapWidth && CGRectGetHeight(target) <= kMaxCenterSnapHeight;
 }
 
+- (NSArray<NSValue *> *)currentPointerTargets {
+    // Pro Bildschirmbild nur einmal vom Host holen (Umrechnen aller Seitenziele kostet bei langen Seiten).
+    return self.frameTargets ?: [self.host browserRemoteInputControllerPointerTargets];
+}
+
 /// Bestes Ziel für die Fingerposition: das kleinste, das den Punkt enthält, sonst das nächste im Einrastradius.
 - (CGRect)bestTargetForPoint:(CGPoint)point {
-    NSArray<NSValue *> *targets = [self.host browserRemoteInputControllerPointerTargets];
+    NSArray<NSValue *> *targets = [self currentPointerTargets];
     CGRect best = CGRectNull;
     CGFloat bestArea = CGFLOAT_MAX;
     CGFloat bestDistance = CGFLOAT_MAX;
@@ -535,10 +691,8 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
         if (bestContains) {
             continue;
         }
-        CGFloat dx = MAX(MAX(CGRectGetMinX(rect) - point.x, 0.0), point.x - CGRectGetMaxX(rect));
-        CGFloat dy = MAX(MAX(CGRectGetMinY(rect) - point.y, 0.0), point.y - CGRectGetMaxY(rect));
-        CGFloat distance = hypot(dx, dy);
-        if (distance <= kSnapRadius && distance < bestDistance) {
+        CGFloat distance = BrowserDistanceToRect(point, rect);
+        if (distance <= kSnapEnterRadius && distance < bestDistance) {
             best = rect;
             bestDistance = distance;
         }
@@ -546,69 +700,135 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
     return best;
 }
 
-- (void)updatePointerAnimated:(BOOL)animated {
+/// Hält das aktuelle Ziel (Hysterese) oder bestimmt ein neues. Gelöst wird erst jenseits von kSnapReleaseRadius,
+/// oder wenn der Finger in einem anderen Ziel liegt (dicht beieinander liegende Links bleiben erreichbar).
+- (CGRect)targetWithHysteresisFor:(CGPoint)point {
+    CGRect current = self.snappedTarget;
+    if (CGRectIsNull(current)) {
+        return [self bestTargetForPoint:point];
+    }
+    CGRect refreshed = [self refreshedTargetMatching:current];
+    if (CGRectIsNull(refreshed)) {
+        return [self bestTargetForPoint:point];
+    }
+    CGRect best = [self bestTargetForPoint:point];
+    if (CGRectContainsPoint(refreshed, point)) {
+        // Liegt im aktuellen Ziel ein kleineres (verschachtelte Ziele), gewinnt das kleinere.
+        return (!CGRectIsNull(best) && CGRectContainsRect(refreshed, best)) ? best : refreshed;
+    }
+    if (BrowserDistanceToRect(point, refreshed) > kSnapReleaseRadius) {
+        return best;
+    }
+    if (!CGRectIsNull(best) && CGRectContainsPoint(best, point)) {
+        return best;
+    }
+    return refreshed;
+}
+
+/// Angezogene Lage im Ziel: Richtung Mitte, mindestens 4 pt innerhalb des Rands (ein Klick trifft das Ziel).
+- (CGPoint)clickPointForTarget:(CGRect)target {
+    CGPoint finger = self.freePoint;
+    CGPoint center = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    CGPoint pulled = CGPointMake(finger.x + (center.x - finger.x) * kSnapPull, finger.y + (center.y - finger.y) * kSnapPull);
+    CGRect inner = CGRectInset(target, MIN(4.0, CGRectGetWidth(target) / 2.0 - 0.5), MIN(4.0, CGRectGetHeight(target) / 2.0 - 0.5));
+    pulled.x = MIN(MAX(pulled.x, CGRectGetMinX(inner)), CGRectGetMaxX(inner));
+    pulled.y = MIN(MAX(pulled.y, CGRectGetMinY(inner)), CGRectGetMaxY(inner));
+    return pulled;
+}
+
+/// Sichtbare Lage für ein eingerastetes kleines Ziel: angezogen (clickPointForTarget:); mit wachsendem Abstand der
+/// Fingerposition vom Zielrand lässt die Anziehung stufenlos nach und ist an der Lösegrenze null.
+/// emergence: 0 = ganz angezogen, 1 = frei.
+- (CGPoint)visiblePointForTarget:(CGRect)target emergence:(CGFloat *)emergence {
+    CGPoint finger = self.freePoint;
+    CGPoint pulled = [self clickPointForTarget:target];
+    CGFloat w = MIN(MAX(BrowserDistanceToRect(finger, target) / kSnapReleaseRadius, 0.0), 1.0);
+    w = w * w * (3.0 - 2.0 * w);
+    if (emergence != NULL) {
+        *emergence = w;
+    }
+    return CGPointMake(pulled.x + (finger.x - pulled.x) * w, pulled.y + (finger.y - pulled.y) * w);
+}
+
+/// Bewertet Einrasten, Hervorhebung und Zeigerbild und gibt die gewünschte sichtbare Lage zurück.
+/// animated: Zielwechsel weich überblenden (easingActive, läuft im Bildtakt), sonst direkt.
+- (CGPoint)evaluatePointerAnimated:(BOOL)animated {
     if ([self pointerOverlaysSuppressed]) {
-        [self placeCursorAtPoint:self.freePoint animated:NO];
         [self clearSnapAnimated:NO];
-        return;
+        self.easingActive = NO;
+        return self.freePoint;
     }
 
     CGRect current = self.snappedTarget;
-    BOOL keepCurrent = !CGRectIsNull(current) &&
-        CGRectContainsPoint(CGRectInset(current, -kReleaseMargin, -kReleaseMargin), self.freePoint);
-    CGRect target = keepCurrent ? [self refreshedTargetMatching:current] : [self bestTargetForPoint:self.freePoint];
+    CGRect target = [self targetWithHysteresisFor:self.freePoint];
     BOOL targetChanged = !CGRectEqualToRect(target, current);
     self.snappedTarget = target;
+    if (animated && targetChanged) {
+        self.easingActive = YES;
+    }
 
     if (CGRectIsNull(target)) {
-        [self placeCursorAtPoint:self.freePoint animated:NO];
         self.cursorView.image = BrowserDefaultCursor();
         [self setCursorImageVisible:YES];
         [self clearSnapAnimated:animated];
-        return;
+        return self.freePoint;
     }
 
     BOOL centerSnap = [self targetAllowsCenterSnap:target];
-    CGPoint cursorPoint = centerSnap ? CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) : self.freePoint;
-    [self placeCursorAtPoint:cursorPoint animated:animated && targetChanged];
+    CGFloat emergence = 1.0;
+    CGPoint cursorPoint = centerSnap ? [self visiblePointForTarget:target emergence:&emergence] : self.freePoint;
     // Eingerastet: Pfeil ausblenden, die Hervorhebung ist der Zeiger. Bei großen Zielen bleibt die Hand sichtbar.
+    // Zieht der Finger aus dem Ziel heraus, taucht der Zeiger schon vor dem Lösen wieder auf.
     self.cursorView.image = BrowserPointerCursor();
-    [self setCursorImageVisible:!centerSnap];
-    [self showHighlightForTarget:target animated:animated];
+    [self setCursorImageVisible:!centerSnap || emergence >= 0.5];
+    // Hervorhebung nur bei neuem Ziel neu aufbauen, nicht in jedem Bild.
+    if (!CGRectEqualToRect(self.highlightShownTarget, target) || self.highlightView.alpha <= 0.0) {
+        self.highlightShownTarget = target;
+        [self showHighlightForTarget:target animated:animated];
+    }
+    return cursorPoint;
 }
 
-/// Nach einer neuen Meldung der Seite das passende Ziel wiederfinden (gleiches Element, neue Lage).
+- (void)updatePointerAnimated:(BOOL)animated {
+    CGPoint desired = [self evaluatePointerAnimated:animated];
+    if (self.easingActive) {
+        // Der Übergang läuft im Bildtakt (pointerFrame:).
+        [self ensurePointerLink];
+        return;
+    }
+    self.visiblePoint = desired;
+    [self placeCursorAtPoint:desired animated:NO];
+}
+
+/// Nach einer neuen Meldung der Seite das passende Ziel wiederfinden (gleiches Element, neue Lage); CGRectNull, wenn weg.
 - (CGRect)refreshedTargetMatching:(CGRect)previous {
-    NSArray<NSValue *> *targets = [self.host browserRemoteInputControllerPointerTargets];
+    NSArray<NSValue *> *targets = [self currentPointerTargets];
     for (NSValue *value in targets) {
         if (CGRectEqualToRect(value.CGRectValue, previous)) {
             return previous;
         }
     }
-    // Gleich großes Ziel in der Nähe (Seite hat gescrollt) oder neu bestimmen.
+    // Gleich großes Ziel in der Nähe (Seite hat gescrollt).
     for (NSValue *value in targets) {
         CGRect rect = value.CGRectValue;
         if (fabs(CGRectGetWidth(rect) - CGRectGetWidth(previous)) < 1.0 &&
             fabs(CGRectGetHeight(rect) - CGRectGetHeight(previous)) < 1.0 &&
-            CGRectContainsPoint(CGRectInset(rect, -kReleaseMargin, -kReleaseMargin), self.freePoint)) {
+            BrowserDistanceToRect(self.freePoint, rect) <= kSnapReleaseRadius) {
             return rect;
         }
     }
-    return [self bestTargetForPoint:self.freePoint];
+    return CGRectNull;
 }
 
-- (void)placeCursorAtPoint:(CGPoint)point animated:(BOOL)animated {
+/// Setzt die Zeigerebene direkt, ohne implizite oder laufende Animation (jede Animation wäre Nachlauf).
+- (void)placeCursorAtPoint:(CGPoint)point animated:(__unused BOOL)animated {
     CGRect frame = self.cursorView.frame;
     frame.origin = point;
-    if (animated) {
-        [UIView animateWithDuration:0.09
-                              delay:0
-                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction
-                         animations:^{ self.cursorView.frame = frame; }
-                         completion:nil];
-    } else {
-        self.cursorView.frame = frame;
-    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [self.cursorView.layer removeAnimationForKey:@"position"];
+    self.cursorView.frame = frame;
+    [CATransaction commit];
 }
 
 - (void)setCursorImageVisible:(BOOL)visible {
@@ -742,6 +962,7 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 
 - (void)clearSnapAnimated:(BOOL)animated {
     self.snappedTarget = CGRectNull;
+    self.highlightShownTarget = CGRectNull;
     if (self.highlightView.alpha > 0.0) {
         [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ self.highlightView.alpha = 0.0; }];
     }
@@ -751,8 +972,9 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 - (void)pointerTargetsDidChange {
     // Seite hat sich geändert (Scrollen, Laden, DOM): Linsenbild ist veraltet und wird neu aufgenommen.
     self.lensRect = CGRectNull;
-    if (self.lastTouchLocation.x != -1 || self.pressInProgress) {
-        // Während der Finger wischt, bewertet die nächste Bewegung ohnehin neu.
+    self.highlightShownTarget = CGRectNull;
+    if (self.lastTouchLocation.x != -1 || self.pressInProgress || self.padTouching || self.pointerLink != nil) {
+        // Während der Finger wischt (oder der Zeiger noch gleitet), bewertet das nächste Bild ohnehin neu.
         return;
     }
     [self updatePointerAnimated:YES];
@@ -944,6 +1166,7 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 /// damit kein Klick mehr 0,3 Sekunden warten muss.
 - (void)performSelectAction {
     self.lastTouchLocation = CGPointMake(-1, -1);
+    [self commitPointerForClick];
     if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
         return;
     }
@@ -1046,6 +1269,7 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         if ([self isClickpadPress:press]) {
             // Beim Drücken bewegt sich der Finger minimal. Diese Bewegung soll den Zeiger nicht verschieben.
             self.pressInProgress = YES;
+            [self discardPendingMotion];
         }
     }
 }
@@ -1194,7 +1418,12 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     return NO;
 }
 
-#pragma mark - Wischen
+#pragma mark - Wischen (UIKit-Berührungen, nur Rückfallweg)
+
+/// Liefert das Clickpad gerade Rohwerte über GameController, gehört die Geste diesem Weg (keine Doppelung).
+- (BOOL)gameControllerOwnsTouch {
+    return self.padTouching || (CACurrentMediaTime() - self.padLastSampleTime) < kTouchFallbackQuietTime;
+}
 
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     (void)touches;
@@ -1210,22 +1439,12 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     }
     self.lastTouchLocation = CGPointMake(-1, -1);
     self.lastTouchTimestamp = 0;
-    [self resetRotation];
-    self.gestureStartPoint = self.freePoint;
-    self.gestureStartTarget = self.snappedTarget;
-    // Erste Berührung nach einer Pause zeigt nur den Zeiger, diese Wischbewegung verschiebt ihn nicht.
-    self.revealOnlyTouch = [self revealCursorIfIdle];
+    self.touchGestureStartTime = CACurrentMediaTime();
+    self.touchSourceActive = NO;
+    if (![self gameControllerOwnsTouch]) {
+        [self beginPointerGestureViaGameController:NO];
+    }
     return YES;
-}
-
-/// Beschleunigung: langsames Wischen bleibt präzise, schnelles Wischen trägt weit.
-- (CGFloat)gainForSpeed:(CGFloat)pointsPerSecond {
-    CGFloat speedSetting = [[NSUserDefaults standardUserDefaults] objectForKey:@"PointerSpeed"] != nil
-        ? [[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"]
-        : 1.0;
-    CGFloat normalized = MIN(MAX((pointsPerSecond - 150.0) / 1600.0, 0.0), 1.0);
-    CGFloat gain = 0.75 + normalized * normalized * 1.85;
-    return gain * MIN(MAX(speedSetting, 0.3), 3.0);
 }
 
 - (BOOL)handleTouchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -1253,62 +1472,430 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
 
     CGFloat dx = location.x - self.lastTouchLocation.x;
     CGFloat dy = location.y - self.lastTouchLocation.y;
-    NSTimeInterval dt = MAX(timestamp - self.lastTouchTimestamp, 1.0 / 240.0);
     self.lastTouchLocation = location;
     self.lastTouchTimestamp = timestamp;
-#if DEBUG
-    self.debugTouchSamples += 1;
-#endif
-    // Liefert das Clickpad gerade Rohwerte über GameController, bewegen nur diese den Zeiger.
-    if (CACurrentMediaTime() - self.padLastSampleTime < 0.25) {
+    if ([self gameControllerOwnsTouch]) {
+        _stats.touchSamplesIgnored += 1;
         return YES;
     }
-    [self applyPointerDelta:CGPointMake(dx, dy) interval:dt];
+    // Die Siri Remote meldet sich auch über GameController; kurz abwarten, ob von dort Proben kommen.
+    if (!self.touchSourceActive && GCController.controllers.count > 0 &&
+        CACurrentMediaTime() - self.touchGestureStartTime < 0.05) {
+        _stats.touchSamplesIgnored += 1;
+        return YES;
+    }
+    self.touchSourceActive = YES;
+    _stats.samples += 1;
+    [self enqueueRawPointerDelta:CGPointMake(dx, dy) sampleTime:CACurrentMediaTime() viaGameController:NO];
     return YES;
 }
 
-/// Gemeinsamer Bewegungskern für UIKit-Berührungen und GameController-Rohwerte.
-- (void)applyPointerDelta:(CGPoint)delta interval:(NSTimeInterval)dt {
-    CGFloat dx = delta.x, dy = delta.y;
-    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
+- (void)handleTouchesEnded {
+    self.lastTouchLocation = CGPointMake(-1, -1);
+    if (self.touchSourceActive) {
+        self.touchSourceActive = NO;
+        [self pointerGestureDidLift];
+    } else if (!self.padTouching) {
+        [self resetRotation];
+        self.revealOnlyTouch = NO;
+        [self scheduleIdleHide];
+    }
+}
+
+#pragma mark - Zeigerpipeline
+
+/// Gemeinsamer Anfang einer Wischgeste (GameController oder UIKit).
+- (void)beginPointerGestureViaGameController:(BOOL)viaGameController {
+    [self resetRotation];
+    [self resetRing];
+    self.gestureStartPoint = self.freePoint;
+    self.gestureStartTarget = self.snappedTarget;
+    // Neue Berührung hält ein Gleiten sofort an der sichtbaren Stelle an.
+    [self discardPendingMotion];
+    [self resetSampleHistoryAt:CACurrentMediaTime()];
+    BrowserPreferencesStore *preferences = [BrowserPreferencesStore new];
+    self.pointerSpeedSetting = preferences.pointerSpeed;
+    self.glideEnabledSetting = preferences.pointerGlideEnabled;
+    BOOL revealed = [self revealCursorIfIdle];
+    self.revealOnlyTouch = revealed && kRevealConsumesFirstSwipe;
+    memset(&_stats, 0, sizeof(_stats));
+    _stats.active = YES;
+    _stats.viaGameController = viaGameController;
+    _stats.start = CACurrentMediaTime();
+}
+
+- (void)pointerGestureDidLift {
+    [self resetRotation];
+    [self resetRing];
+    self.revealOnlyTouch = NO;
+    [self scheduleIdleHide];
+    self.liftTime = CACurrentMediaTime();
+    self.liftPending = YES;
+    [self ensurePointerLink];
+}
+
+/// Verwirft noch nicht angewandte Bewegung und Gleiten; der Zeiger bleibt, wo er sichtbar ist.
+- (void)discardPendingMotion {
+    _outputCum = _inputCum;
+    self.padHasHeld = NO;
+    self.gliding = NO;
+    self.liftPending = NO;
+    self.rawPoint = self.freePoint;
+    self.filterVelocity = CGPointZero;
+}
+
+/// Setzt die Fingerposition hart (Sprung zu einem Element, Selbsttest), ohne Nachlauf des Filters.
+- (void)setPointerPositionDirectly:(CGPoint)point {
+    self.freePoint = point;
+    [self discardPendingMotion];
+}
+
+- (void)commitPointerForClick {
+    // Gleiten und Übergänge beenden; ein Klick zählt dort, wo der Zeiger zu sehen ist bzw. im eingerasteten Ziel.
+    [self discardPendingMotion];
+    self.easingActive = NO;
+    CGPoint point = self.freePoint;
+    if (!CGRectIsNull(self.snappedTarget) && [self targetAllowsCenterSnap:self.snappedTarget]) {
+        point = [self clickPointForTarget:self.snappedTarget];
+    }
+    self.visiblePoint = point;
+    [self placeCursorAtPoint:point animated:NO];
+}
+
+#pragma mark Proben und Nachabtastung
+
+// Jede angenommene Probe wird mit Ankunftszeit und aufsummierter Rohbewegung gespeichert. Pro Bild wird die Lage zum
+// Zeitpunkt „jetzt minus etwa ein Probenabstand“ zwischen den beiden umgebenden Proben interpoliert (wie die
+// Berührungs-Nachabtastung unter Android). So kommt pro Bild gleich viel Bewegung an, auch wenn die Proben
+// unregelmäßig oder gebündelt eintreffen. Es wird nie extrapoliert: kein Vorauslaufen, also kein Zurückfedern.
+
+- (void)resetSampleHistoryAt:(CFTimeInterval)time {
+    _sampleCount = 0;
+    _inputCum = CGPointZero;
+    _outputCum = CGPointZero;
+    _lastSampleArrival = time;
+    [self pushSampleAt:time];
+}
+
+- (void)pushSampleAt:(CFTimeInterval)time {
+    NSUInteger index = _sampleCount % kHistoryCount;
+    _sampleTime[index] = time;
+    _sampleCum[index] = _inputCum;
+    _sampleCount += 1;
+}
+
+/// Aufsummierte Rohbewegung zum Zeitpunkt t (linear zwischen Proben, außerhalb geklemmt).
+- (CGPoint)inputCumAtTime:(CFTimeInterval)t {
+    if (_sampleCount == 0) {
+        return _inputCum;
+    }
+    NSUInteger available = MIN(_sampleCount, (NSUInteger)kHistoryCount);
+    NSUInteger newest = (_sampleCount - 1) % kHistoryCount;
+    if (t >= _sampleTime[newest]) {
+        return _sampleCum[newest];
+    }
+    for (NSUInteger k = 1; k < available; k++) {
+        NSUInteger older = (_sampleCount - 1 - k) % kHistoryCount;
+        NSUInteger newer = (_sampleCount - k) % kHistoryCount;
+        if (t >= _sampleTime[older]) {
+            CFTimeInterval span = _sampleTime[newer] - _sampleTime[older];
+            CGFloat f = span > 0.0 ? (CGFloat)((t - _sampleTime[older]) / span) : 1.0;
+            return CGPointMake(_sampleCum[older].x + (_sampleCum[newer].x - _sampleCum[older].x) * f,
+                               _sampleCum[older].y + (_sampleCum[newer].y - _sampleCum[older].y) * f);
+        }
+    }
+    return _sampleCum[(_sampleCount - available) % kHistoryCount];
+}
+
+/// Fingergeschwindigkeit (Rohpunkte/s) über das Fenster kSpeedWindow bis t.
+- (CGPoint)inputVelocityAtTime:(CFTimeInterval)t {
+    CGPoint now = [self inputCumAtTime:t];
+    CGPoint before = [self inputCumAtTime:t - kSpeedWindow];
+    return CGPointMake((now.x - before.x) / kSpeedWindow, (now.y - before.y) / kSpeedWindow);
+}
+
+- (void)acceptRawDelta:(CGPoint)delta atTime:(CFTimeInterval)time {
+    _lastSampleArrival = time;
+    _inputCum = CGPointMake(_inputCum.x + delta.x, _inputCum.y + delta.y);
+    [self pushSampleAt:time];
+    // Mittlerer Probenabstand über die letzten bis zu 8 Abstände (robust gegen gebündelt eintreffende Proben).
+    NSUInteger span = MIN(_sampleCount - 1, (NSUInteger)8);
+    if (span >= 2) {
+        CFTimeInterval newest = _sampleTime[(_sampleCount - 1) % kHistoryCount];
+        CFTimeInterval oldest = _sampleTime[(_sampleCount - 1 - span) % kHistoryCount];
+        CFTimeInterval mean = (newest - oldest) / span;
+        if (mean > 0.0 && mean < 0.05) {
+            _sampleIntervalEstimate = mean;
+        }
+    }
+    self.lastMovementSampleTime = time;
+    [self ensurePointerLink];
+}
+
+/// Rohbewegung aus dem UIKit-Weg (Rückfall) annehmen.
+- (void)enqueueRawPointerDelta:(CGPoint)delta sampleTime:(CFTimeInterval)sampleTime viaGameController:(BOOL)viaGameController {
     if (self.pressInProgress || self.revealOnlyTouch) {
         return;
     }
-    [self scheduleIdleHide];
-
-    if (!tabOverviewVisible && [self trackRotationWithDelta:CGPointMake(dx, dy)]) {
+    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
+    if (!viaGameController && !tabOverviewVisible && [self trackRotationWithDelta:delta]) {
         return;
     }
+    [self acceptRawDelta:delta atTime:sampleTime];
+}
 
-    CGFloat gain = [self gainForSpeed:hypot(dx, dy) / dt];
-    CGPoint next = CGPointMake(self.freePoint.x + dx * gain, self.freePoint.y + dy * gain);
+/// Verdächtige Probe (zeigt entgegen der Bewegung oder ist viel größer als die vorigen): erst mit der nächsten Probe
+/// annehmen. Kommt stattdessen das Abheben, war es das Abrollen der Fingerkuppe und wird verworfen.
+- (BOOL)padDeltaIsSuspicious:(CGPoint)delta atTime:(CFTimeInterval)time {
+    CGFloat length = hypot(delta.x, delta.y);
+    CGPoint velocity = [self inputVelocityAtTime:time];
+    CGFloat speed = hypot(velocity.x, velocity.y);
+    CGFloat typicalStep = speed * MAX(_sampleIntervalEstimate, 0.004);
+    BOOL backwards = speed > 40.0 && (delta.x * velocity.x + delta.y * velocity.y) < 0.0 && length > 1.5;
+    BOOL oversized = length > MAX(8.0, typicalStep * kLiftOutlierFactor);
+    return backwards || oversized;
+}
 
-    // An die Ränder begrenzen (gemessen an der Klickspitze). Was darüber hinausgeht, scrollt die Seite.
-    CGRect bounds = [self pointerBounds];
-    CGFloat maxX = CGRectGetMaxX(bounds) - 2.0;
-    CGFloat maxY = CGRectGetMaxY(bounds) - 2.0;
-    CGPoint overflow = CGPointZero;
-    if (next.x < CGRectGetMinX(bounds)) { overflow.x = next.x - CGRectGetMinX(bounds); next.x = CGRectGetMinX(bounds); }
-    if (next.x > maxX) { overflow.x = next.x - maxX; next.x = maxX; }
-    if (next.y < CGRectGetMinY(bounds)) { overflow.y = next.y - CGRectGetMinY(bounds); next.y = CGRectGetMinY(bounds); }
-    if (next.y > maxY) { overflow.y = next.y - maxY; next.y = maxY; }
-    self.freePoint = next;
+- (void)releaseHeldPadDelta {
+    if (!self.padHasHeld) {
+        return;
+    }
+    self.padHasHeld = NO;
+    if (self.pressInProgress || self.revealOnlyTouch) {
+        return;
+    }
+    [self acceptRawDelta:self.padHeldDelta atTime:self.padHeldTime];
+}
 
+/// Beschleunigung: langsames Wischen bleibt präzise, schnelles Wischen trägt weit.
+- (CGFloat)gainForSpeed:(CGFloat)pointsPerSecond {
+    CGFloat t = MIN(MAX((pointsPerSecond - kGainSlowSpeed) / (kGainFastSpeed - kGainSlowSpeed), 0.0), 1.0);
+    t = t * t * (3.0 - 2.0 * t);
+    return (kGainMin + (kGainMax - kGainMin) * t) * self.pointerSpeedSetting;
+}
+
+#pragma mark Bildtakt
+
+- (void)ensurePointerLink {
+    if (self.pointerLink != nil) {
+        return;
+    }
+    CADisplayLink *link = [CADisplayLink displayLinkWithTarget:self selector:@selector(pointerFrame:)];
+    link.preferredFrameRateRange = CAFrameRateRangeMake(60.0, 120.0, 120.0);
+    [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    self.pointerLink = link;
+    self.pointerLinkLastTimestamp = 0;
+}
+
+- (void)stopPointerLink {
+    [self.pointerLink invalidate];
+    self.pointerLink = nil;
+}
+
+static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
+    CGFloat tau = 1.0 / (2.0 * M_PI * cutoff);
+    return 1.0 / (1.0 + tau / dt);
+}
+
+/// 1-€-Filter: freePoint folgt rawPoint; die Grenzfrequenz steigt mit der Geschwindigkeit.
+- (void)filterTowardRawPointWithInterval:(CFTimeInterval)dt previousRaw:(CGPoint)previousRaw {
+    CGPoint raw = self.rawPoint;
+    CGPoint velocity = CGPointMake((raw.x - previousRaw.x) / dt, (raw.y - previousRaw.y) / dt);
+    CGFloat dAlpha = BrowserLowPassAlpha(kFilterDerivativeCutoff, dt);
+    CGPoint smoothed = CGPointMake(self.filterVelocity.x + (velocity.x - self.filterVelocity.x) * dAlpha,
+                                   self.filterVelocity.y + (velocity.y - self.filterVelocity.y) * dAlpha);
+    self.filterVelocity = smoothed;
+    CGFloat cutoff = kFilterMinCutoff + kFilterBeta * hypot(smoothed.x, smoothed.y);
+    CGFloat alpha = BrowserLowPassAlpha(cutoff, dt);
+    CGPoint free = self.freePoint;
+    free.x += (raw.x - free.x) * alpha;
+    free.y += (raw.y - free.y) * alpha;
+    if (hypot(raw.x - free.x, raw.y - free.y) < 0.2) {
+        free = raw;
+    }
+    self.freePoint = free;
+}
+
+- (void)beginGlideIfEligible {
+    if (!self.glideEnabledSetting || self.liftTime - self.lastMovementSampleTime > kGlideMaxRestBeforeLift) {
+        return;
+    }
+    if (!CGRectIsNull(self.snappedTarget) && [self targetAllowsCenterSnap:self.snappedTarget]) {
+        return; // eingerastet: der Magnet hält
+    }
+    // Fingergeschwindigkeit kurz vor dem Abheben, mit derselben Beschleunigung wie die Bewegung.
+    CGPoint velocity = [self inputVelocityAtTime:self.lastMovementSampleTime];
+    CGFloat rawSpeed = hypot(velocity.x, velocity.y);
+    CGFloat gain = [self gainForSpeed:rawSpeed];
+    velocity = CGPointMake(velocity.x * gain, velocity.y * gain);
+    CGFloat speed = rawSpeed * gain;
+    if (speed < kGlideMinSpeed) {
+        return;
+    }
+    CGFloat distance = speed * kGlideTimeConstant;
+    if (distance > kGlideMaxDistance) {
+        velocity = CGPointMake(velocity.x * kGlideMaxDistance / distance, velocity.y * kGlideMaxDistance / distance);
+    }
+    self.glideVelocity = velocity;
+    self.glideTravelled = 0.0;
+    self.gliding = YES;
+}
+
+/// Ein Takt pro Bildschirmbild: Bewegung nachabtasten, beschleunigen, glätten, einrasten, Zeigerebene setzen.
+- (void)pointerFrame:(CADisplayLink *)link {
+    CFTimeInterval now = CACurrentMediaTime();
+    CFTimeInterval dt = self.pointerLinkLastTimestamp > 0 ? link.timestamp - self.pointerLinkLastTimestamp
+                                                          : link.targetTimestamp - link.timestamp;
+    self.pointerLinkLastTimestamp = link.timestamp;
+    dt = MIN(MAX(dt, 1.0 / 240.0), 1.0 / 15.0);
+    if (self.padHasHeld && now - self.padHeldTime > kPadHoldMaxAge) {
+        [self releaseHeldPadDelta];
+    }
+
+    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
+    self.frameTargets = [self.host browserRemoteInputControllerPointerTargets];
+
+    // Fingerlage zum Zeitpunkt „jetzt minus etwa ein Probenabstand“; nach dem Abheben die letzte Probe.
+    BOOL fingerDown = self.padTouching || self.touchSourceActive;
+    CFTimeInterval resampleLatency = MIN(MAX(_sampleIntervalEstimate * kResampleFactor, 0.004), kResampleMaxLatency);
+    CFTimeInterval sampleTime = fingerDown ? now - resampleLatency : DBL_MAX;
+    CGPoint cum = [self inputCumAtTime:sampleTime];
+    CGPoint raw = CGPointMake(cum.x - _outputCum.x, cum.y - _outputCum.y);
+    _outputCum = cum;
+
+    CGPoint move = CGPointZero;
+    BOOL fingerDriven = NO;
+    if (!CGPointEqualToPoint(raw, CGPointZero)) {
+        // Alter der gezeigten Fingerlage, wenn das Bild auf dem Schirm erscheint.
+        double latency = link.targetTimestamp - (fingerDown ? sampleTime : _lastSampleArrival);
+        _stats.latencySum += latency;
+        _stats.latencyMax = MAX(_stats.latencyMax, latency);
+        _stats.latencyCount += 1;
+        CGPoint velocity = [self inputVelocityAtTime:MIN(sampleTime, _lastSampleArrival)];
+        CGFloat gain = [self gainForSpeed:hypot(velocity.x, velocity.y)];
+        move = CGPointMake(raw.x * gain, raw.y * gain);
+        fingerDriven = YES;
+        [self scheduleIdleHide];
+    } else if (self.gliding) {
+        move = CGPointMake(self.glideVelocity.x * dt, self.glideVelocity.y * dt);
+        CGFloat decay = exp(-dt / kGlideTimeConstant);
+        self.glideVelocity = CGPointMake(self.glideVelocity.x * decay, self.glideVelocity.y * decay);
+        self.glideTravelled += hypot(move.x, move.y);
+        _stats.glideDistance += hypot(move.x, move.y);
+        if (hypot(self.glideVelocity.x, self.glideVelocity.y) < 40.0 || self.glideTravelled >= kGlideMaxDistance) {
+            self.gliding = NO;
+        }
+    }
+
+    CGPoint previousRaw = self.rawPoint;
+    if (!CGPointEqualToPoint(move, CGPointZero)) {
+        CGPoint next = CGPointMake(self.rawPoint.x + move.x, self.rawPoint.y + move.y);
+        // An die Ränder begrenzen (gemessen an der Klickspitze). Was der Finger darüber hinaus schiebt, scrollt die Seite.
+        CGRect bounds = [self pointerBounds];
+        CGFloat maxX = CGRectGetMaxX(bounds) - 2.0;
+        CGFloat maxY = CGRectGetMaxY(bounds) - 2.0;
+        CGPoint overflow = CGPointZero;
+        if (next.x < CGRectGetMinX(bounds)) { overflow.x = next.x - CGRectGetMinX(bounds); next.x = CGRectGetMinX(bounds); }
+        if (next.x > maxX) { overflow.x = next.x - maxX; next.x = maxX; }
+        if (next.y < CGRectGetMinY(bounds)) { overflow.y = next.y - CGRectGetMinY(bounds); next.y = CGRectGetMinY(bounds); }
+        if (next.y > maxY) { overflow.y = next.y - maxY; next.y = maxY; }
+        if (!CGPointEqualToPoint(overflow, CGPointZero)) {
+            if (fingerDriven && !tabOverviewVisible && ![self addressPanelActive]) {
+                // Sanft: Überhang knapp 1:1, damit es am Seitenrand nicht davonschießt.
+                [self applyManualScrollDelta:CGPointMake(overflow.x * 0.9, overflow.y * 0.9)];
+            }
+            self.gliding = NO; // Gleiten scrollt nie, es endet am Rand.
+        }
+        self.rawPoint = next;
+    }
+    if (self.liftPending && !fingerDown) {
+        self.liftPending = NO;
+        [self beginGlideIfEligible];
+    }
+    [self filterTowardRawPointWithInterval:dt previousRaw:previousRaw];
+
+    CGPoint previousVisible = self.visiblePoint;
+    CGPoint visible;
     if (tabOverviewVisible) {
-        [self placeCursorAtPoint:next animated:NO];
-        self.cursorView.image = [self.host browserRemoteInputControllerTabOverviewContainsPoint:next]
+        visible = self.freePoint;
+        self.easingActive = NO;
+        self.cursorView.image = [self.host browserRemoteInputControllerTabOverviewContainsPoint:visible]
             ? BrowserPointerCursor()
             : BrowserDefaultCursor();
         [self setCursorImageVisible:YES];
+    } else {
+        CGPoint desired = [self evaluatePointerAnimated:YES];
+        visible = desired;
+        if (self.easingActive) {
+            CGFloat k = 1.0 - exp(-dt / kSnapEaseTimeConstant);
+            visible = CGPointMake(previousVisible.x + (desired.x - previousVisible.x) * k,
+                                  previousVisible.y + (desired.y - previousVisible.y) * k);
+            if (hypot(desired.x - visible.x, desired.y - visible.y) < 0.3) {
+                visible = desired;
+                self.easingActive = NO;
+            }
+        }
+        if (self.gliding && !CGRectIsNull(self.snappedTarget) && [self targetAllowsCenterSnap:self.snappedTarget]) {
+            self.gliding = NO; // Der Magnet fängt den gleitenden Zeiger.
+        }
+    }
+    self.visiblePoint = visible;
+    [self placeCursorAtPoint:visible animated:NO];
+    self.frameTargets = nil;
+
+    // Messwerte: Bildabstand, Schrittweite, plötzliche Sprünge, Schritte gegen die Bewegungsrichtung.
+    _stats.frames += 1;
+    _stats.frameDtSum += dt;
+    _stats.frameDtMax = MAX(_stats.frameDtMax, dt);
+    CGPoint step = CGPointMake(visible.x - previousVisible.x, visible.y - previousVisible.y);
+    CGFloat stepLength = hypot(step.x, step.y);
+    _stats.maxStep = MAX(_stats.maxStep, stepLength);
+    if (stepLength > 20.0 && stepLength > _stats.lastStep * 2.5) {
+        _stats.suddenSteps += 1;
+    }
+    CGPoint direction = self.filterVelocity;
+    CGFloat speed = hypot(direction.x, direction.y);
+    if (speed > 50.0 && (step.x * direction.x + step.y * direction.y) / speed < -1.0) {
+        _stats.backSteps += 1;
+    }
+    _stats.lastStep = stepLength;
+    double work = CACurrentMediaTime() - now;
+    _stats.workSum += work;
+    _stats.workMax = MAX(_stats.workMax, work);
+
+    BOOL settled = CGPointEqualToPoint(self.rawPoint, self.freePoint) && CGPointEqualToPoint(_outputCum, _inputCum);
+    if (!self.gliding && !self.easingActive && !self.liftPending && !self.padHasHeld && settled) {
+        // Nichts mehr zu tun: Takt anhalten (läuft beim nächsten Ereignis wieder an).
+        [self stopPointerLink];
+        if (!fingerDown) {
+            [self finishGestureStats];
+        }
+    }
+}
+
+- (void)finishGestureStats {
+    if (!_stats.active) {
         return;
     }
-
-    if (!CGPointEqualToPoint(overflow, CGPointZero) && ![self addressPanelActive]) {
-        // Sanft: Überhang 1:1, damit es am Seitenrand nicht davonschießt.
-        [self applyManualScrollDelta:CGPointMake(overflow.x * 0.9, overflow.y * 0.9)];
+    _stats.active = NO;
+#if DEBUG
+    if (_stats.frames == 0) {
+        return;
     }
-    [self updatePointerAnimated:YES];
-    return;
+    CFTimeInterval duration = CACurrentMediaTime() - _stats.start;
+    NSLog(@"[Pointer] Geste %@: %.2f s, Proben %lu (%.0f/s, Abstand %.1f ms, UIKit ignoriert %lu), Bilder %lu (Δt %.1f/%.1f ms), "
+          @"Alter Fingerlage beim Anzeigen %.1f/%.1f ms, Rechenzeit %.2f/%.2f ms, größter Schritt %.0f pt, Sprünge %lu, "
+          @"Rückschritte %lu, Achsen einzeln %lu, Sprünge verworfen %lu, Ausreißer verworfen %lu, Auslauf %.0f pt, Radius max %.2f",
+          _stats.viaGameController ? @"GameController" : @"UIKit", duration,
+          (unsigned long)_stats.samples, duration > 0 ? _stats.samples / duration : 0.0, _sampleIntervalEstimate * 1000.0,
+          (unsigned long)_stats.touchSamplesIgnored,
+          (unsigned long)_stats.frames, _stats.frameDtSum / _stats.frames * 1000.0, _stats.frameDtMax * 1000.0,
+          _stats.latencyCount > 0 ? _stats.latencySum / _stats.latencyCount * 1000.0 : 0.0, _stats.latencyMax * 1000.0,
+          _stats.workSum / _stats.frames * 1000.0, _stats.workMax * 1000.0, _stats.maxStep,
+          (unsigned long)_stats.suddenSteps, (unsigned long)_stats.backSteps,
+          (unsigned long)_stats.axisSkips, (unsigned long)_stats.jumpSkips, (unsigned long)_stats.outliersDropped,
+          _stats.glideDistance, _stats.maxRadius);
+#endif
 }
 
 #pragma mark - Clickpad über GameController
@@ -1339,56 +1926,175 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     NSLog(@"[Input] Clickpad über GameController: %@", controller.vendorName ?: @"Fernbedienung");
 }
 
-/// Ein Clickpad-Weg von Rand zu Rand (2 Einheiten) entspricht so vielen Punkten, vor der Beschleunigung.
-static const CGFloat kPadPointsPerUnit = 640.0;
-
+/// Eine Probe des Clickpads (absolute Lage −1…1, (0,0) = kein Finger). Bewegung entsteht nur aus Differenzen,
+/// Aufsetzen setzt nur den Bezugspunkt (kein Sprung). Proben, in denen genau eine Achse 0 ist, sind der Übergang beim
+/// Aufsetzen oder Abheben (die Achsen kommen einzeln): sie bewegen nichts, sonst springt der Zeiger Richtung Mitte.
 - (void)handlePadValue:(CGPoint)value {
     CFTimeInterval now = CACurrentMediaTime();
-    BOOL touching = !(value.x == 0.0f && value.y == 0.0f);
-    if (!touching) {
+    BOOL xZero = value.x == 0.0;
+    BOOL yZero = value.y == 0.0;
+    if (xZero && yZero) {
         if (self.padTouching) {
             self.padTouching = NO;
-            [self handleTouchesEnded];
+            [self padDidLift];
         }
         return;
     }
     self.padLastSampleTime = now;
-#if DEBUG
-    self.debugPadSamples += 1;
-    if (now - self.debugRateWindowStart > 2.0) {
-        if (self.debugRateWindowStart > 0) {
-            NSLog(@"[Input] Raten: GameController %.0f/s, UIKit-Berührungen %.0f/s",
-                  self.debugPadSamples / (now - self.debugRateWindowStart), self.debugTouchSamples / (now - self.debugRateWindowStart));
-        }
-        self.debugRateWindowStart = now;
-        self.debugPadSamples = 0;
-        self.debugTouchSamples = 0;
-    }
-#endif
+    BOOL blocked = [self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
+        [self.host browserRemoteInputControllerPresentedViewController] != nil;
     if (!self.padTouching) {
         self.padTouching = YES;
         self.padLastValue = value;
-        self.padLastTimestamp = now;
-        if ([self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
-            [self.host browserRemoteInputControllerPresentedViewController] != nil) {
+        self.padBaselineValidX = !xZero;
+        self.padBaselineValidY = !yZero;
+        self.padHasHeld = NO;
+        if (blocked) {
             return;
         }
-        [self resetRotation];
-        self.gestureStartPoint = self.freePoint;
-        self.gestureStartTarget = self.snappedTarget;
-        self.revealOnlyTouch = [self revealCursorIfIdle];
+        [self beginPointerGestureViaGameController:YES];
+        _stats.samples = 1;
+        [self trackRingWithPadPosition:value];
         return;
     }
-    CGPoint delta = CGPointMake((value.x - self.padLastValue.x) * kPadPointsPerUnit,
-                                -(value.y - self.padLastValue.y) * kPadPointsPerUnit);
-    NSTimeInterval dt = MAX(now - self.padLastTimestamp, 1.0 / 240.0);
+    _stats.samples += 1;
+    if (xZero || yZero) {
+        // Übergang: nichts bewegen, Bezugspunkt behalten (verpasste Bewegung kommt mit der nächsten vollen Probe).
+        _stats.axisSkips += 1;
+        return;
+    }
+    CGPoint last = self.padLastValue;
+    CGFloat dx = self.padBaselineValidX ? value.x - last.x : 0.0;
+    CGFloat dy = self.padBaselineValidY ? value.y - last.y : 0.0;
     self.padLastValue = value;
-    self.padLastTimestamp = now;
-    if ([self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
-        [self.host browserRemoteInputControllerPresentedViewController] != nil) {
+    self.padBaselineValidX = YES;
+    self.padBaselineValidY = YES;
+    if (fabs(dx) > kPadMaxSampleJump || fabs(dy) > kPadMaxSampleJump) {
+        _stats.jumpSkips += 1;
         return;
     }
-    [self applyPointerDelta:delta interval:dt];
+    if (blocked) {
+        return;
+    }
+    if ([self trackRingWithPadPosition:value]) {
+        return;
+    }
+    if (dx == 0.0 && dy == 0.0) {
+        return;
+    }
+    if (self.pressInProgress || self.revealOnlyTouch) {
+        return;
+    }
+    // Clickpad-y zeigt nach oben, Bildschirm-y nach unten.
+    CGPoint delta = CGPointMake(dx * kPadPointsPerUnit, -dy * kPadPointsPerUnit);
+    // Eine zurückgehaltene Probe ist durch diese bestätigt.
+    [self releaseHeldPadDelta];
+    if ([self padDeltaIsSuspicious:delta atTime:now]) {
+        self.padHeldDelta = delta;
+        self.padHeldTime = now;
+        self.padHasHeld = YES;
+        [self ensurePointerLink];
+        return;
+    }
+    [self acceptRawDelta:delta atTime:now];
+}
+
+- (void)padDidLift {
+    if (self.padHasHeld) {
+        // Letzte Probe vor dem Abheben war verdächtig: Abrollen der Fingerkuppe, verwerfen.
+        self.padHasHeld = NO;
+        _stats.outliersDropped += 1;
+    }
+    if (_stats.active) {
+        [self pointerGestureDidLift];
+    }
+}
+
+#pragma mark - Ring über die absolute Fingerlage (GameController)
+
+/// Der Ring der Siri Remote ist der äußere Rand des Clickpads. Ein Kreis zählt nur, wenn der Finger dort bleibt
+/// (Abstand zur Mitte mindestens kRingMinRadius) und um die Mitte wandert. Gerades Wischen kann das nicht auslösen;
+/// die frühere Erkennung über die Drehung der Wischrichtung schlug bei langen, leicht krummen Bewegungen an und setzte
+/// den Zeiger an den Gestenstart zurück.
+static const CGFloat kRingMinRadius = 0.8;
+/// Im Ringmodus bleibt es, bis der Finger weiter als bis hierhin zur Mitte rutscht.
+static const CGFloat kRingKeepRadius = 0.55;
+/// So weit (Grad) muss der Finger am Rand um die Mitte wandern, bevor der Ringmodus beginnt.
+static const CGFloat kRingEnterAngle = 110.0 * M_PI / 180.0;
+/// Danach je so viel Grad ein Schritt (wie bei der Kreisgeste).
+static const CGFloat kRingStepAngle = 60.0 * M_PI / 180.0;
+
+- (void)resetRing {
+    self.ringHasAngle = NO;
+    self.ringAccumulated = 0.0;
+    self.ringStepAccumulated = 0.0;
+    self.ringMode = NO;
+}
+
+/// YES, solange die Geste als Ring gilt (der Zeiger bewegt sich dann nicht).
+- (BOOL)trackRingWithPadPosition:(CGPoint)position {
+    CGFloat radius = hypot(position.x, position.y);
+    _stats.maxRadius = MAX(_stats.maxRadius, radius);
+    CGFloat angle = atan2(position.y, position.x);
+    if (self.ringMode) {
+        if (radius < kRingKeepRadius) {
+            self.ringHasAngle = NO;
+            return YES;
+        }
+        if (!self.ringHasAngle) {
+            self.ringHasAngle = YES;
+            self.ringLastAngle = angle;
+            return YES;
+        }
+        CGFloat turn = angle - self.ringLastAngle;
+        while (turn > M_PI) { turn -= 2.0 * M_PI; }
+        while (turn < -M_PI) { turn += 2.0 * M_PI; }
+        self.ringLastAngle = angle;
+        // Clickpad-y zeigt nach oben: im Uhrzeigersinn ist der Winkel negativ, das heißt vorwärts.
+        self.ringStepAccumulated -= turn;
+        if (fabs(self.ringStepAccumulated) >= kRingStepAngle) {
+            NSInteger direction = self.ringStepAccumulated > 0 ? 1 : -1;
+            self.ringStepAccumulated -= direction * kRingStepAngle;
+            [self ringStepBy:direction];
+        }
+        return YES;
+    }
+    if (radius < kRingMinRadius) {
+        self.ringHasAngle = NO;
+        self.ringAccumulated = 0.0;
+        return NO;
+    }
+    if (!self.ringHasAngle) {
+        self.ringHasAngle = YES;
+        self.ringLastAngle = angle;
+        return NO;
+    }
+    CGFloat turn = angle - self.ringLastAngle;
+    while (turn > M_PI) { turn -= 2.0 * M_PI; }
+    while (turn < -M_PI) { turn += 2.0 * M_PI; }
+    self.ringLastAngle = angle;
+    if (self.ringAccumulated != 0.0 && turn * self.ringAccumulated < 0.0 && fabs(turn) > 0.15) {
+        self.ringAccumulated = 0.0;
+    }
+    self.ringAccumulated += turn;
+    if (fabs(self.ringAccumulated) < kRingEnterAngle) {
+        return NO;
+    }
+    // Ring erkannt: Zeiger dahin zurück, wo die Geste begann, dann einen Schritt weiter.
+    self.ringMode = YES;
+    self.ringStepAccumulated = 0.0;
+    [self setPointerPositionDirectly:self.gestureStartPoint];
+    self.snappedTarget = self.gestureStartTarget;
+    [self updatePointerAnimated:NO];
+    [self ringStepBy:self.ringAccumulated < 0.0 ? 1 : -1];
+    return YES;
+}
+
+- (void)ringStepBy:(NSInteger)direction {
+#if DEBUG
+    self.debugRingSteps += direction;
+#endif
+    [self stepTargetBy:direction];
 }
 
 #pragma mark - Kreisgeste (Clickpad-Ring)
@@ -1438,7 +2144,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         // Kreis erkannt: Zeiger dahin zurück, wo die Geste begann, dann einen Schritt weiter.
         self.rotationMode = YES;
         self.rotationStepAccumulated = 0;
-        self.freePoint = self.gestureStartPoint;
+        [self setPointerPositionDirectly:self.gestureStartPoint];
         self.snappedTarget = self.gestureStartTarget;
         [self updatePointerAnimated:NO];
         [self stepTargetBy:self.rotationAccumulated > 0 ? 1 : -1];
@@ -1510,7 +2216,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         return;
     }
     CGRect target = best.CGRectValue;
-    self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    [self setPointerPositionDirectly:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
     self.snappedTarget = CGRectNull;
     [self updatePointerAnimated:YES];
 }
@@ -1545,7 +2251,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     }
     next = MIN(MAX(next, 0), (NSInteger)targets.count - 1);
     CGRect target = targets[next].CGRectValue;
-    self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    [self setPointerPositionDirectly:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
     self.snappedTarget = CGRectNull;
     [self updatePointerAnimated:YES];
 }
@@ -1568,7 +2274,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         NSArray<NSValue *> *targets = [self sortedStepTargets];
         if (targets.count > 0 && [targets isEqualToArray:before]) {
             // Festes Overlay (z. B. Dialog): Ziele bewegen sich nicht mit, also am letzten Element bleiben.
-            self.freePoint = reference;
+            [self setPointerPositionDirectly:reference];
             self.snappedTarget = CGRectNull;
             [self updatePointerAnimated:YES];
             return;
@@ -1588,7 +2294,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
             return;
         }
         CGRect target = chosen.CGRectValue;
-        self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+        [self setPointerPositionDirectly:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
         self.snappedTarget = CGRectNull;
         [self updatePointerAnimated:YES];
     });
@@ -1611,17 +2317,214 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
 }
 #endif
 
-- (void)movePointerToPoint:(CGPoint)point {
+#if DEBUG
+#pragma mark - Selbsttest: synthetisches Wischen
+
+/// Speist künstliche Clickpad-Rohwerte (absolute Lage −1…1) über die Zeit in denselben Weg wie die echte
+/// Fernbedienung (handlePadValue:) und misst, was auf dem Bildschirm ankommt: Lage der sichtbaren Zeigerebene
+/// (presentationLayer) pro Bildschirmbild. Nachgebildete Eigenheiten echter Hardware: unregelmäßige Abstände der
+/// Proben (7/15 ms im Wechsel, ~90 Hz), Achsen kommen beim Aufsetzen und Loslassen einzeln an, letzter Wert vor dem
+/// Loslassen als Ausreißer entgegen der Bewegungsrichtung (Fingerkuppe rollt ab).
+- (void)debugRunSwipeWithPadDelta:(CGVector)padDelta duration:(NSTimeInterval)duration flick:(BOOL)flick artifacts:(BOOL)artifacts {
     self.cursorIdleHidden = NO;
-    self.freePoint = point;
-    [self updatePointerAnimated:YES];
     [self scheduleIdleHide];
+    // Leicht neben der Mitte, damit keine Achse zufällig genau 0 ist (das kommt nur beim Aufsetzen/Abheben vor).
+    CGPoint start = CGPointMake(-padDelta.dx / 2.0 + 0.04, -padDelta.dy / 2.0 + 0.12);
+    CGFloat length = hypot(padDelta.dx, padDelta.dy);
+    // Bildschirmrichtung: Clickpad-y nach oben = Bildschirm-y nach oben.
+    CGVector unit = length > 0 ? CGVectorMake(padDelta.dx / length, -padDelta.dy / length) : CGVectorMake(1, 0);
+    NSMutableArray<NSArray<NSNumber *> *> *schedule = [NSMutableArray array]; // [t, x, y]
+    CFTimeInterval t = 0.0;
+    void (^add)(CFTimeInterval, CGFloat, CGFloat) = ^(CFTimeInterval at, CGFloat x, CGFloat y) {
+        [schedule addObject:@[@(at), @(x), @(y)]];
+    };
+    // Aufsetzen: erst x, dann y.
+    if (artifacts) {
+        add(t, start.x, 0.0f);
+        t += 0.004;
+    }
+    add(t, start.x, start.y);
+    NSUInteger index = 0;
+    while (t < duration) {
+        t += (index++ % 2 == 0) ? 0.007 : 0.015;
+        CGFloat p = MIN(t / duration, 1.0);
+        // Normal: weich an- und auslaufen (Finger kommt zur Ruhe). Flick: nur anlaufen, Loslassen in voller Fahrt.
+        CGFloat s = flick ? p * p : p * p * (3.0 - 2.0 * p);
+        add(t, start.x + padDelta.dx * s, start.y + padDelta.dy * s);
+    }
+    NSArray<NSNumber *> *last = schedule.lastObject;
+    CGFloat lx = last[1].doubleValue, ly = last[2].doubleValue;
+    if (artifacts) {
+        // Ausreißer beim Abrollen: 0,05 Einheiten zurück.
+        t += 0.009;
+        add(t, lx - padDelta.dx / MAX(length, 0.001) * 0.05, ly - padDelta.dy / MAX(length, 0.001) * 0.05);
+    }
+    CFTimeInterval liftTime = t + 0.004;
+    if (artifacts) {
+        // Loslassen: erst x auf 0, dann beide.
+        add(liftTime, 0.0f, ly);
+    }
+    add(liftTime + 0.003, 0.0f, 0.0f);
+
+    NSMutableArray<NSValue *> *frames = [NSMutableArray array];     // (t, x/y der Klickspitze)
+    NSMutableArray<NSNumber *> *frameTimes = [NSMutableArray array];
+    CFTimeInterval origin = CACurrentMediaTime() + 0.1;
+    BrowserDebugFrameSampler *sampler = [BrowserDebugFrameSampler new];
+    __weak typeof(self) weakSelf = self;
+    sampler.tick = ^(CFTimeInterval now) {
+        CALayer *layer = weakSelf.cursorView.layer.presentationLayer ?: weakSelf.cursorView.layer;
+        CGPoint tip = CGPointMake(layer.position.x - layer.bounds.size.width * layer.anchorPoint.x,
+                                  layer.position.y - layer.bounds.size.height * layer.anchorPoint.y);
+        [frames addObject:[NSValue valueWithCGPoint:tip]];
+        [frameTimes addObject:@(now - origin)];
+    };
+    [sampler start];
+    for (NSArray<NSNumber *> *sample in schedule) {
+        CFTimeInterval at = sample[0].doubleValue;
+        CGPoint value = CGPointMake(sample[1].doubleValue, sample[2].doubleValue);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.1 + at) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [weakSelf handlePadValue:value];
+        });
+    }
+    NSUInteger sampleCount = schedule.count;
+    NSArray<NSValue *> *targets = [self.host browserRemoteInputControllerPointerTargets];
+    NSMutableArray<NSString *> *targetList = [NSMutableArray array];
+    for (NSValue *value in targets) {
+        CGRect r = value.CGRectValue;
+        [targetList addObject:[NSString stringWithFormat:@"%.0f,%.0f %.0fx%.0f", r.origin.x, r.origin.y, r.size.width, r.size.height]];
+    }
+    NSLog(@"[PointerTest] Start %@, Ziele: %@", NSStringFromCGPoint(self.freePoint), [targetList componentsJoinedByString:@" | "]);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.1 + liftTime + 0.9) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [sampler stop];
+        NSLog(@"[PointerTest] %@%@", artifacts ? @"" : @"sauber ", [BrowserRemoteInputController debugSummaryForFrames:frames times:frameTimes unit:unit
+                                                                         fingerDuration:duration liftTime:liftTime
+                                                                            sampleCount:sampleCount flick:flick]);
+    });
 }
 
-- (void)handleTouchesEnded {
-    self.lastTouchLocation = CGPointMake(-1, -1);
-    [self resetRotation];
-    self.revealOnlyTouch = NO;
+/// Ring-Test: Finger wandert auf dem Radius radius (Clickpad-Einheiten) im Uhrzeigersinn um degrees Grad.
+- (void)debugRunRingWithRadius:(CGFloat)radius degrees:(CGFloat)degrees duration:(NSTimeInterval)duration {
+    self.cursorIdleHidden = NO;
+    self.debugRingSteps = 0;
+    CGPoint before = self.freePoint;
+    NSUInteger count = MAX((NSUInteger)(duration / 0.011), 2);
+    __weak typeof(self) weakSelf = self;
+    for (NSUInteger i = 0; i <= count; i++) {
+        CGFloat angle = M_PI_2 - (degrees * M_PI / 180.0) * i / count + 0.05;
+        CGPoint value = CGPointMake(radius * cos(angle), radius * sin(angle));
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.05 + duration * i / count) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [weakSelf handlePadValue:value];
+        });
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.06 + duration + 0.01) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weakSelf handlePadValue:CGPointZero];
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.06 + duration + 0.8) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSLog(@"[PointerTest] ring r=%.2f %.0f°: Schritte %ld, Zeiger von %@ nach %@", radius, degrees,
+              (long)weakSelf.debugRingSteps, NSStringFromCGPoint(before), NSStringFromCGPoint(weakSelf.freePoint));
+    });
+}
+
++ (NSString *)debugSummaryForFrames:(NSArray<NSValue *> *)frames times:(NSArray<NSNumber *> *)times unit:(CGVector)unit
+                     fingerDuration:(NSTimeInterval)duration liftTime:(CFTimeInterval)liftTime
+                        sampleCount:(NSUInteger)sampleCount flick:(BOOL)flick {
+    if (frames.count < 3) {
+        return @"zu wenige Bilder";
+    }
+    CGPoint first = frames.firstObject.CGPointValue;
+    NSUInteger n = frames.count;
+    CGFloat *s = calloc(n, sizeof(CGFloat));
+    CGFloat *lateral = calloc(n, sizeof(CGFloat));
+    for (NSUInteger i = 0; i < n; i++) {
+        CGPoint p = frames[i].CGPointValue;
+        s[i] = (p.x - first.x) * unit.dx + (p.y - first.y) * unit.dy;
+        lateral[i] = -(p.x - first.x) * unit.dy + (p.y - first.y) * unit.dx;
+    }
+    double dtSum = 0, dtMax = 0;
+    for (NSUInteger i = 1; i < n; i++) {
+        double dt = times[i].doubleValue - times[i - 1].doubleValue;
+        dtSum += dt;
+        dtMax = MAX(dtMax, dt);
+    }
+    // Stand beim Loslassen und Endstand.
+    CGFloat atLift = 0, final = s[n - 1];
+    NSUInteger liftIndex = 0;
+    for (NSUInteger i = 0; i < n; i++) {
+        if (times[i].doubleValue <= liftTime) {
+            atLift = s[i];
+            liftIndex = i;
+        }
+    }
+    CGFloat maxForward = 0;
+    for (NSUInteger i = 0; i < n; i++) {
+        maxForward = MAX(maxForward, s[i]);
+    }
+    // Gleichmäßigkeit im mittleren Abschnitt (30–70 % der Fingerzeit, gleichmäßigste Phase).
+    double sum = 0, sumSq = 0;
+    NSUInteger count = 0;
+    CGFloat maxStep = 0, maxBack = 0, maxLateralStep = 0;
+    NSUInteger backSteps = 0, zeroSteps = 0;
+    for (NSUInteger i = 1; i < n; i++) {
+        CGFloat step = s[i] - s[i - 1];
+        maxStep = MAX(maxStep, fabs(step));
+        maxLateralStep = MAX(maxLateralStep, fabs(lateral[i] - lateral[i - 1]));
+        if (step < -0.5) {
+            backSteps += 1;
+            maxBack = MAX(maxBack, -step);
+        }
+        double tt = times[i].doubleValue;
+        if (tt > duration * 0.3 && tt < duration * 0.7) {
+            sum += step;
+            sumSq += step * step;
+            count += 1;
+            if (fabs(step) < 0.25) {
+                zeroSteps += 1;
+            }
+        }
+    }
+    double mean = count > 0 ? sum / count : 0;
+    double variance = count > 0 ? MAX(0.0, sumSq / count - mean * mean) : 0;
+    double cv = mean > 0 ? sqrt(variance) / mean * 100.0 : 0;
+    // Nachlauf: Zeit, bis der Zeiger 50 % seines Wegs bis zum Loslassen hat, minus Zeit des Fingers für 50 %.
+    double fingerHalf;
+    if (flick) {
+        fingerHalf = duration * sqrt(0.5);
+    } else {
+        fingerHalf = duration * 0.5;
+    }
+    double cursorHalf = -1;
+    for (NSUInteger i = 0; i < n; i++) {
+        if (atLift > 0 && s[i] >= atLift * 0.5) {
+            cursorHalf = times[i].doubleValue;
+            break;
+        }
+    }
+    // Nach dem Loslassen: Rückwärtsbewegung gegenüber dem weitesten Stand.
+    CGFloat backAfterLift = 0;
+    CGFloat peakAfterLift = atLift;
+    for (NSUInteger i = liftIndex; i < n; i++) {
+        peakAfterLift = MAX(peakAfterLift, s[i]);
+        backAfterLift = MAX(backAfterLift, peakAfterLift - s[i]);
+    }
+    NSString *summary = [NSString stringWithFormat:
+        @"%@ %.0f ms: Proben %lu, Bilder %lu (Δt %.1f/%.1f ms), Schritt %.1f pt (CV %.0f %%, Stillstände %lu/%lu), "
+        @"größter Schritt %.1f pt, quer %.1f pt, Rücksprünge %lu (max %.1f pt), Nachlauf 50 %% %.0f ms, "
+        @"Weg bis Loslassen %.0f pt, Auslauf %.0f pt, zurück nach Loslassen %.1f pt, Ende %.0f pt (Spitze %.0f)",
+        flick ? @"flick" : @"wisch", duration * 1000.0, (unsigned long)sampleCount, (unsigned long)n,
+        dtSum / (n - 1) * 1000.0, dtMax * 1000.0, mean, cv, (unsigned long)zeroSteps, (unsigned long)count,
+        maxStep, maxLateralStep, (unsigned long)backSteps, maxBack,
+        cursorHalf >= 0 ? (cursorHalf - fingerHalf) * 1000.0 : -1.0,
+        atLift, final - atLift, backAfterLift, final, maxForward];
+    free(s);
+    free(lateral);
+    return summary;
+}
+#endif
+
+- (void)movePointerToPoint:(CGPoint)point {
+    self.cursorIdleHidden = NO;
+    [self setPointerPositionDirectly:point];
+    [self updatePointerAnimated:YES];
     [self scheduleIdleHide];
 }
 
