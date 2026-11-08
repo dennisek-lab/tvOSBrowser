@@ -351,6 +351,11 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
     return [data subdataWithRange:NSMakeRange((NSUInteger)startOffset, length)];
 }
 
+- (void)dealloc {
+    // Ohne Invalidieren bleibt die Session (samt Verbindungen) nach jedem Player im Speicher.
+    [_session invalidateAndCancel];
+}
+
 - (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest {
     __unused AVAssetResourceLoader *unusedResourceLoader = resourceLoader;
     NSURL *requestURL = loadingRequest.request.URL;
@@ -407,7 +412,9 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
             }
 
             [strongSelf fillContentInfoForLoadingRequest:loadingRequest response:httpResponse data:responseData requestURL:playbackURL];
-            NSData *dataForRequest = [strongSelf responseDataForLoadingRequest:loadingRequest data:responseData];
+            // 206: der Server hat den angefragten Bereich geliefert, die Daten beginnen schon beim Offset.
+            NSData *dataForRequest = httpResponse.statusCode == 206 ? responseData
+                                                                     : [strongSelf responseDataForLoadingRequest:loadingRequest data:responseData];
             if (dataForRequest.length > 0) {
                 [loadingRequest.dataRequest respondWithData:dataForRequest];
             }

@@ -503,7 +503,12 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     [webView evaluateJavaScriptAsync:BrowserPageVideoProbeScript(bid, point) completion:^(id result) {
         typeof(self) strongSelf = weakSelf;
         BrowserWebView *strongWebView = weakWebView;
-        if (strongSelf == nil || strongWebView == nil) {
+        if (strongSelf == nil) {
+            return;
+        }
+        if (strongWebView == nil) {
+            // Tab während der Abfrage geschlossen: Sperre lösen, sonst kehrt jede spätere Übergabe sofort zurück.
+            strongSelf.handoverInProgress = NO;
             return;
         }
         NSDictionary *probe = nil;
@@ -602,6 +607,14 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 }];
             });
         };
+        if (strongSelf.host.browserPresentedViewController != nil) {
+            // Inzwischen liegt ein anderer Dialog oben: die Präsentation schlüge still fehl, dismissHandler käme nie
+            // (activePlayer und handoverInProgress blieben hängen, das Seitenvideo angehalten).
+            NSLog(@"[NativeVideoPlayer] Übergabe abgebrochen, Dialog %@ offen", NSStringFromClass(strongSelf.host.browserPresentedViewController.class));
+            strongSelf.handoverInProgress = NO;
+            [weakWebView evaluateJavaScriptAsync:kBrowserHandoverResumeScript];
+            return;
+        }
         strongSelf.activePlayer = player;
         [strongSelf.host browserPresentViewController:player];
     }];

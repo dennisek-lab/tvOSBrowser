@@ -93,12 +93,14 @@ static NSString * const kStateSeenKey = @"seen";
 }
 
 - (BOOL)ensureLoaded {
-    if (self.runtimeTemplate == nil) {
-        dispatch_sync(self.loadQueue, ^{
-            [self loadIfNeeded];
-        });
-    }
-    return self.runtimeTemplate != nil;
+    // Immer über loadQueue: prepare lädt dort im Hintergrund, ein ungeschützter Blick auf runtimeTemplate
+    // sähe es womöglich schon gesetzt, extendedCssSource und die Regeln aber noch nicht.
+    __block BOOL loaded = NO;
+    dispatch_sync(self.loadQueue, ^{
+        [self loadIfNeeded];
+        loaded = self.runtimeTemplate != nil;
+    });
+    return loaded;
 }
 
 #pragma mark Zuordnung Host -> Regeln
@@ -264,7 +266,7 @@ static NSString *BrowserScriptletSignature(NSDictionary<NSString *, NSArray<NSIn
     if (scriptClass == Nil || ![scriptClass instancesRespondToSelector:scriptInit]) {
         return nil;
     }
-    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id script = [scriptClass alloc];
     // 0 = document-start, NO = alle Frames; Seitenwelt (Scriptlets müssen Seitenobjekte wie fetch/JSON.parse umbiegen).
     return ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, source, 0, NO);
 }

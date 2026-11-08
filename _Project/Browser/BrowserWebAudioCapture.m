@@ -152,7 +152,7 @@ static NSString *BrowserWebAudioScriptSource(void) {
         ![scriptClass instancesRespondToSelector:scriptInit]) {
         return;
     }
-    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id script = [scriptClass alloc];
     // injectionTime 0 = document-start, alle Frames (Videos in iframes, etwa eingebettete Player).
     script = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, source, 0, NO);
     if (script != nil) {

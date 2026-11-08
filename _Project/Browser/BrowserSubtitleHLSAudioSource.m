@@ -33,10 +33,10 @@ static NSDictionary<NSString *, NSString *> *BrowserHLSAttributes(NSString *list
     while (!scanner.isAtEnd) {
         NSString *key = nil;
         [scanner scanCharactersFromSet:NSCharacterSet.whitespaceCharacterSet intoString:NULL];
-        if (![scanner scanUpToString:@"=" intoString:&key]) {
+        // Attribut ohne „=“ am Ende: scanLocation += 1 läge hinter dem Text (NSRangeException).
+        if (![scanner scanUpToString:@"=" intoString:&key] || ![scanner scanString:@"=" intoString:NULL]) {
             break;
         }
-        scanner.scanLocation += 1;
         NSString *value = @"";
         if ([scanner scanString:@"\"" intoString:NULL]) {
             [scanner scanUpToString:@"\"" intoString:&value];
@@ -210,6 +210,11 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
 
 /// Lädt Daten; Abschluss auf self.queue.
 - (void)fetchURL:(NSURL *)URL range:(NSRange)range completion:(void (^)(NSData * _Nullable data, NSString * _Nullable error))completion {
+    if (!self.running) {
+        // Nach stop ist die Session invalidiert; ein neuer Task darauf wirft NSGenericException.
+        completion(nil, @"gestoppt");
+        return;
+    }
     NSURLSessionDataTask *task = [self.session dataTaskWithRequest:[self requestForURL:URL range:range]
                                                 completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 200;
@@ -624,6 +629,9 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         NSUInteger available = 188 - payload;
         if (pid == 0 && unitStart && pmtPID < 0) {
             NSUInteger pointer = p[0];
+            if (1 + pointer + 12 > available) {
+                continue;  // pointer_field zeigt hinter das Paket (sonst Unterlauf und Lesen außerhalb)
+            }
             const uint8_t *section = p + 1 + pointer;
             NSUInteger sectionAvailable = available - 1 - pointer;
             if (sectionAvailable < 12 || section[0] != 0x00) {
@@ -640,6 +648,9 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
             }
         } else if (pid == pmtPID && unitStart && audioPID < 0) {
             NSUInteger pointer = p[0];
+            if (1 + pointer + 12 > available) {
+                continue;  // pointer_field zeigt hinter das Paket (sonst Unterlauf und Lesen außerhalb)
+            }
             const uint8_t *section = p + 1 + pointer;
             NSUInteger sectionAvailable = available - 1 - pointer;
             if (sectionAvailable < 12 || section[0] != 0x02) {

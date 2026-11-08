@@ -29,7 +29,6 @@ static NSString * const kWallMessageName = @"browserAdblockWall";
 @property (nonatomic, strong) NSMapTable<id, NSDictionary *> *controllerStates;
 /// Controller (schwach) -> @{active, script} der Sperren-Erkennung
 @property (nonatomic, strong) NSMapTable<id, NSDictionary *> *wallStates;
-@property (nonatomic, strong) NSMutableArray *wallProxies;
 /// Hosts, für die in diesem App-Lauf schon eine automatische Ausnahme samt Neuladen ausgelöst wurde (Schleifenschutz).
 @property (nonatomic, strong) NSMutableSet<NSString *> *wallHandledHosts;
 - (void)handleWallMessage:(id)message;
@@ -63,7 +62,6 @@ static NSString * const kWallMessageName = @"browserAdblockWall";
         _wantedIdentifiers = @[];
         _controllerStates = [NSMapTable weakToStrongObjectsMapTable];
         _wallStates = [NSMapTable weakToStrongObjectsMapTable];
-        _wallProxies = [NSMutableArray array];
         _wallHandledHosts = [NSMutableSet set];
         _workQueue = dispatch_queue_create("browser.contentblocker.compile", DISPATCH_QUEUE_SERIAL);
     }
@@ -178,7 +176,7 @@ static NSString *BrowserAdblockWallSource(void) {
     if (scriptClass == Nil || ![scriptClass instancesRespondToSelector:scriptInit] || source.length == 0) {
         return nil;
     }
-    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id script = [scriptClass alloc];
     // document-end (1), alle Frames: Sperren liegen auch in CMP-iframes
     return ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, source, 1, NO);
 }
@@ -230,7 +228,6 @@ static NSString *BrowserAdblockWallSource(void) {
     }
     BrowserAdblockWallMessageProxy *proxy = [BrowserAdblockWallMessageProxy new];
     proxy.blocker = self;
-    [self.wallProxies addObject:proxy];
     ((void (*)(id, SEL, id, id))objc_msgSend)(controller, addHandler, proxy, kWallMessageName);
 }
 

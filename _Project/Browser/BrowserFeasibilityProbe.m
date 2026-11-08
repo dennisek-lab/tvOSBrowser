@@ -179,7 +179,7 @@
 #pragma mark Hilfen
 
 - (id)makeConfigurationWithDataStore:(id)dataStore {
-    id configuration = ((id (*)(id, SEL))objc_msgSend)((id)NSClassFromString(@"WKWebViewConfiguration"), @selector(new));
+    id configuration = [NSClassFromString(@"WKWebViewConfiguration") new];
     if (dataStore != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(configuration, NSSelectorFromString(@"setWebsiteDataStore:"), dataStore);
     }
@@ -187,7 +187,7 @@
 }
 
 - (id)makeHiddenWebViewWithConfiguration:(id)configuration {
-    id webView = ((id (*)(id, SEL))objc_msgSend)((id)NSClassFromString(@"WKWebView"), @selector(alloc));
+    id webView = [NSClassFromString(@"WKWebView") alloc];
     webView = ((id (*)(id, SEL, CGRect, id))objc_msgSend)(webView, NSSelectorFromString(@"initWithFrame:configuration:"),
                                                           CGRectMake(0, 0, 320, 240), configuration);
     UIView *view = (UIView *)webView;

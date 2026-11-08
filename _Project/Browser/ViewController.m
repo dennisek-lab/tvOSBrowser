@@ -984,6 +984,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                                                                                                : nil
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
+    // Aktionen des Dialogs halten ihn nur schwach, sonst Zyklus (jeder Such-/Adressdialog bliebe im Speicher).
+    __weak UIAlertController *weakAlert = alertController;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         // Aus dem Diktierfeld: Standardtastatur, die tvOS mit Diktat-Hinweis (Siri-Taste) anbietet.
         textField.keyboardType = dictation ? UIKeyboardTypeDefault : UIKeyboardTypeWebSearch;
@@ -998,13 +1000,13 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         weakSelf.searchAlert = nil;
-        [weakSelf handleEnteredAddressText:alertController.textFields.firstObject.text];
+        [weakSelf handleEnteredAddressText:weakAlert.textFields.firstObject.text];
     }]];
     [alertController addAction:[UIAlertAction actionWithTitle:@"Mit Google suchen"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         weakSelf.searchAlert = nil;
-        NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:alertController.textFields.firstObject.text];
+        NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:weakAlert.textFields.firstObject.text];
         if (request != nil) {
             [weakSelf endAddressEditingAnimated:YES];
             [weakSelf.webview loadRequest:request];

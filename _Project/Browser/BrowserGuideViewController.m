@@ -366,4 +366,15 @@
     [super pressesBegan:presses withEvent:event];
 }
 
+/// Das Ende des Menü-Drucks gehört zum Schließen oben; weitergereicht käme es nach der Ausblendung
+/// beim ViewController an und blätterte zurück bzw. verließe die App.
+- (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    for (UIPress *press in presses) {
+        if (press.type == UIPressTypeMenu) {
+            return;
+        }
+    }
+    [super pressesEnded:presses withEvent:event];
+}
+
 @end
