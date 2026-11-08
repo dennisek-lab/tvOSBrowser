@@ -9,6 +9,18 @@
   unverändert, enthält die kompakten Regeln `rules/compact-rules.json`). Der MPL-Quellcode steht im oben genannten Repository.
 - `_Project/Browser/Autoconsent/bridge.js` ist eine eigene, kleine Datei der App und kein Teil von autoconsent.
 
+## @mozilla/readability 0.6.0
+
+- Zweck: Reader-Modus (Erkennung lesbarer Seiten mit `isProbablyReaderable`, Extraktion des Artikels).
+- Quelle: https://github.com/mozilla/readability (npm: https://www.npmjs.com/package/@mozilla/readability)
+- Lizenz: Apache License 2.0, Text in `_Project/Browser/Reader/LICENSE.md`
+- Beigelegt: `_Project/Browser/Reader/Readability.js` und `Readability-readerable.js` (aus dem npm-Paket, unverändert).
+- `_Project/Browser/Reader/reader.js` ist eine eigene, kleine Datei der App und kein Teil von Readability.
+
+## Zeigerbilder (SF Symbols, optionaler Stil)
+
+- Der Zeigerstil „SF Symbols“ (`BrowserCursorRenderer`, Einstellung `CursorStyle` = 2) nutzt die Systemsymbole `cursorarrow` und `hand.point.up.left.fill` zur Laufzeit; Nutzung in Apps auf Apple-Plattformen laut SF-Symbols-Lizenz erlaubt. Die Standardzeiger sind eigene Vektorzeichnungen, kein Material von Apple oder Dritten.
+
 ## @adguard/scriptlets 2.5.1
 
 - Zweck: Scriptlet-Bibliothek für die erweiterten Werbeblocker-Regeln (`##+js(...)` aus den uBO-Listen), siehe `BrowserScriptletInjector`.

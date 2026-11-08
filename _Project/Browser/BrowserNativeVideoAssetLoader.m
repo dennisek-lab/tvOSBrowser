@@ -201,7 +201,11 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
     return NO;
 }
 
-- (NSString *)proxyURLStringForPlaylistEntry:(NSString *)entry baseURL:(NSURL *)baseURL {
+/// Absolute Adresse eines Playlist-Eintrags. Über den Loader (eigenes Schema) laufen nur Playlists und
+/// Schlüssel; Mediensegmente (auch `#EXT-X-MAP`, WebVTT-Segmente) bleiben `https`, weil AVFoundation
+/// Segmentdaten aus einem Resource-Loader bei HLS ablehnt (CoreMediaErrorDomain -12881). Die Segmente lädt
+/// AVFoundation selbst mit den Asset-Optionen (Header, Cookies).
+- (NSString *)URLStringForPlaylistEntry:(NSString *)entry baseURL:(NSURL *)baseURL viaLoader:(BOOL)viaLoader {
     if (entry.length == 0) {
         return entry;
     }
@@ -216,24 +220,40 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
         return entry;
     }
 
+    if (!viaLoader) {
+        return resolvedURL.absoluteString ?: entry;
+    }
     return [[self assetURLForPlaybackURL:resolvedURL] absoluteString] ?: entry;
 }
 
-- (NSString *)rewrittenPlaylistLine:(NSString *)line baseURL:(NSURL *)baseURL {
+- (NSString *)rewrittenPlaylistLine:(NSString *)line
+                            baseURL:(NSURL *)baseURL
+                     masterPlaylist:(BOOL)masterPlaylist {
     NSString *trimmedLine = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (trimmedLine.length == 0) {
         return line;
     }
 
     if (![trimmedLine hasPrefix:@"#"]) {
-        return [self proxyURLStringForPlaylistEntry:trimmedLine baseURL:baseURL];
+        // In der Hauptplaylist sind die Einträge Teil-Playlists, sonst Segmente.
+        return [self URLStringForPlaylistEntry:trimmedLine baseURL:baseURL viaLoader:masterPlaylist];
     }
 
-    NSError *error = nil;
-    NSRegularExpression *URIExpression = [NSRegularExpression regularExpressionWithPattern:@"URI=\"([^\"]+)\"" options:0 error:&error];
-    if (URIExpression == nil || error != nil) {
+    static NSRegularExpression *URIExpression = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        URIExpression = [NSRegularExpression regularExpressionWithPattern:@"URI=\"([^\"]+)\"" options:0 error:NULL];
+    });
+    if (URIExpression == nil) {
         return line;
     }
+
+    // Playlists (#EXT-X-MEDIA, #EXT-X-I-FRAME-STREAM-INF) und Schlüssel (#EXT-X-KEY, #EXT-X-SESSION-KEY)
+    // über den Loader, Init-Segmente (#EXT-X-MAP) und alles andere direkt.
+    BOOL viaLoader = [trimmedLine hasPrefix:@"#EXT-X-MEDIA:"] ||
+        [trimmedLine hasPrefix:@"#EXT-X-I-FRAME-STREAM-INF:"] ||
+        [trimmedLine hasPrefix:@"#EXT-X-KEY:"] ||
+        [trimmedLine hasPrefix:@"#EXT-X-SESSION-KEY:"];
 
     NSMutableString *rewrittenLine = [line mutableCopy];
     NSArray<NSTextCheckingResult *> *matches = [URIExpression matchesInString:line options:0 range:NSMakeRange(0, line.length)];
@@ -243,7 +263,7 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
         }
         NSRange valueRange = [match rangeAtIndex:1];
         NSString *originalValue = [line substringWithRange:valueRange];
-        NSString *replacementValue = [self proxyURLStringForPlaylistEntry:originalValue baseURL:baseURL];
+        NSString *replacementValue = [self URLStringForPlaylistEntry:originalValue baseURL:baseURL viaLoader:viaLoader];
         [rewrittenLine replaceCharactersInRange:valueRange withString:replacementValue];
     }
     return rewrittenLine;
@@ -255,9 +275,10 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
         return data;
     }
 
+    BOOL masterPlaylist = [playlistString containsString:@"#EXT-X-STREAM-INF"] || [playlistString containsString:@"#EXT-X-MEDIA:"];
     NSMutableArray<NSString *> *rewrittenLines = [NSMutableArray array];
     [playlistString enumerateLinesUsingBlock:^(NSString *line, __unused BOOL *stop) {
-        [rewrittenLines addObject:[self rewrittenPlaylistLine:line baseURL:responseURL]];
+        [rewrittenLines addObject:[self rewrittenPlaylistLine:line baseURL:responseURL masterPlaylist:masterPlaylist]];
     }];
 
     NSString *rewrittenString = [rewrittenLines componentsJoinedByString:@"\n"];
@@ -381,7 +402,8 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
 
             NSData *responseData = data ?: [NSData data];
             if ([strongSelf isPlaylistResponse:httpResponse data:responseData requestURL:playbackURL]) {
-                responseData = [strongSelf rewrittenPlaylistDataFromData:responseData responseURL:playbackURL];
+                // Nach Weiterleitungen relativ zur tatsächlichen Adresse auflösen.
+                responseData = [strongSelf rewrittenPlaylistDataFromData:responseData responseURL:httpResponse.URL ?: playbackURL];
             }
 
             [strongSelf fillContentInfoForLoadingRequest:loadingRequest response:httpResponse data:responseData requestURL:playbackURL];

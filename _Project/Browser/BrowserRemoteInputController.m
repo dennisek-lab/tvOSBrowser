@@ -1,22 +1,16 @@
 #import <GameController/GameController.h>
+#import <objc/message.h>
 #import "BrowserRemoteInputController.h"
+#import "BrowserMotion.h"
+#import "BrowserPreferencesStore.h"
+#import "BrowserCursorRenderer.h"
 
 static UIImage *BrowserDefaultCursor(void) {
-    static UIImage *image;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        image = [UIImage imageNamed:@"Cursor"];
-    });
-    return image;
+    return [BrowserCursorRenderer imageForKind:BrowserCursorKindArrow];
 }
 
 static UIImage *BrowserPointerCursor(void) {
-    static UIImage *image;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        image = [UIImage imageNamed:@"Pointer"];
-    });
-    return image;
+    return [BrowserCursorRenderer imageForKind:BrowserCursorKindHand];
 }
 
 #pragma mark - Abstimmung
@@ -83,15 +77,57 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
 @end
 
-/// Leuchten rund um die Form (wie die gewählte Karte der Tab-Übersicht): weicher Schein ohne Versatz,
-/// innen ausgespart, damit er nicht durch die Glasfläche scheint. Nur Formänderung rechnet neu, Farbe ist billig.
+/// Leuchten rund um die Form. Einfarbig: weicher Schein über den Ebenenschatten (wie die Tab-Übersicht).
+/// Regenbogen (Standard), angelehnt an das Leuchten von Apple Intelligence: ein umlaufender Farbring, der wirklich
+/// weichgezeichnet wird (Gauß-Filter des Render-Servers), dazu eine schmale, gesättigte Lichtkante direkt am Rand.
+/// Aufbau je Leuchtschicht: Hülle (Weichzeichner, steht still) → Ring (Maske, steht still) → Farbverlauf (dreht sich).
+/// So dreht sich nur die Farbe, und der Weichzeichner wirkt auf den fertig maskierten Ring – nicht auf ein Band
+/// mit Transparenz. Innen spart die Maske der Ansicht alles aus, damit das Licht nicht durch die Glasfläche fällt.
 @interface BrowserGlowView : UIView
 @property (nonatomic, strong) CAShapeLayer *maskLayer;
+@property (nonatomic) BOOL rainbow;
+@property (nonatomic, strong) NSArray<CALayer *> *glowWrappers;      // Hüllen mit Weichzeichner
+@property (nonatomic, strong) NSArray<CALayer *> *ringContainers;    // maskierte Ringe
+@property (nonatomic, strong) NSArray<CAShapeLayer *> *ringMasks;
+@property (nonatomic, strong) NSArray<CAGradientLayer *> *gradients;
+@property (nonatomic, strong) NSArray<NSNumber *> *ringWidths;
 - (void)setGlowColor:(UIColor *)color;
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius;
 @end
 
 @implementation BrowserGlowView
+
+static CGFloat const kGlowMargin = 90.0;
+
++ (NSArray *)rainbowColors {
+    // Farben angelehnt an das erste Apple-Intelligence-Leuchten: Blau, Violett, Pink, Orange – und zurück.
+    NSArray<UIColor *> *colors = @[
+        [UIColor colorWithRed:0.20 green:0.60 blue:1.00 alpha:1.0],
+        [UIColor colorWithRed:0.62 green:0.40 blue:1.00 alpha:1.0],
+        [UIColor colorWithRed:0.98 green:0.36 blue:0.78 alpha:1.0],
+        [UIColor colorWithRed:1.00 green:0.45 blue:0.35 alpha:1.0],
+        [UIColor colorWithRed:1.00 green:0.70 blue:0.30 alpha:1.0],
+        [UIColor colorWithRed:0.98 green:0.36 blue:0.78 alpha:1.0],
+        [UIColor colorWithRed:0.20 green:0.60 blue:1.00 alpha:1.0],
+    ];
+    NSMutableArray *cg = [NSMutableArray array];
+    for (UIColor *color in colors) {
+        [cg addObject:(id)color.CGColor];
+    }
+    return cg;
+}
+
+/// Gauß-Weichzeichner des Render-Servers (CAFilter, privat; läuft auf der GPU). Nil, falls nicht vorhanden.
+static id BrowserGlowBlurFilter(CGFloat radius) {
+    Class filterClass = NSClassFromString(@"CAFilter");
+    SEL make = NSSelectorFromString(@"filterWithType:");
+    if (filterClass == Nil || ![filterClass respondsToSelector:make]) {
+        return nil;
+    }
+    id filter = ((id (*)(id, SEL, id))objc_msgSend)(filterClass, make, @"gaussianBlur");
+    [filter setValue:@(radius) forKey:@"inputRadius"];
+    return filter;
+}
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
@@ -105,8 +141,114 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         _maskLayer = [CAShapeLayer layer];
         _maskLayer.fillRule = kCAFillRuleEvenOdd;
         self.layer.mask = _maskLayer;
+
+        // Schichten von außen nach innen: weiter Lichthof, kräftiger naher Schein, scharfe Lichtkante.
+        NSArray<NSArray<NSNumber *> *> *specs = @[
+            @[@22.0, @30.0, @0.85],   // Ringbreite, Weichzeichner-Radius, Deckkraft
+            @[@8.0, @9.0, @1.0],
+            @[@3.0, @0.0, @1.0],
+        ];
+        NSMutableArray *wrappers = [NSMutableArray array];
+        NSMutableArray *containers = [NSMutableArray array];
+        NSMutableArray *masks = [NSMutableArray array];
+        NSMutableArray *gradients = [NSMutableArray array];
+        NSMutableArray *widths = [NSMutableArray array];
+        for (NSArray<NSNumber *> *spec in specs) {
+            CALayer *wrapper = [CALayer layer];
+            CGFloat blur = spec[1].doubleValue;
+            id filter = blur > 0.0 ? BrowserGlowBlurFilter(blur) : nil;
+            if (filter != nil) {
+                wrapper.filters = @[filter];
+            }
+            wrapper.opacity = spec[2].floatValue;
+            CALayer *container = [CALayer layer];
+            CAGradientLayer *gradient = [CAGradientLayer layer];
+            gradient.type = kCAGradientLayerConic;
+            gradient.startPoint = CGPointMake(0.5, 0.5);
+            gradient.endPoint = CGPointMake(0.5, 0.0);
+            gradient.colors = [BrowserGlowView rainbowColors];
+            [container addSublayer:gradient];
+            CAShapeLayer *mask = [CAShapeLayer layer];
+            mask.fillColor = UIColor.clearColor.CGColor;
+            mask.strokeColor = UIColor.blackColor.CGColor;
+            mask.lineWidth = spec[0].doubleValue;
+            if (filter == nil && blur > 0.0) {
+                // Rückfall ohne Weichzeichner: weicher Rand über den Maskenschatten.
+                mask.shadowColor = UIColor.blackColor.CGColor;
+                mask.shadowOffset = CGSizeZero;
+                mask.shadowOpacity = 1.0;
+                mask.shadowRadius = blur;
+            }
+            container.mask = mask;
+            [wrapper addSublayer:container];
+            [self.layer addSublayer:wrapper];
+            [wrappers addObject:wrapper];
+            [containers addObject:container];
+            [masks addObject:mask];
+            [gradients addObject:gradient];
+            [widths addObject:spec[0]];
+        }
+        _glowWrappers = wrappers;
+        _ringContainers = containers;
+        _ringMasks = masks;
+        _gradients = gradients;
+        _ringWidths = widths;
+        self.rainbow = YES;
     }
     return self;
+}
+
+- (void)setRainbow:(BOOL)rainbow {
+    _rainbow = rainbow;
+    for (CALayer *wrapper in self.glowWrappers) {
+        wrapper.hidden = !rainbow;
+    }
+    // Einfarbig: wie bisher über den Schatten der Ebene. Regenbogen: Schatten aus, die Ringe leuchten selbst.
+    self.layer.shadowOpacity = rainbow ? 0.0 : 0.95;
+    if (rainbow) {
+        [self startRotation];
+    } else {
+        for (CAGradientLayer *gradient in self.gradients) {
+            [gradient removeAnimationForKey:@"spin"];
+        }
+        [self.glowWrappers.firstObject removeAnimationForKey:@"breathe"];
+    }
+}
+
+- (void)startRotation {
+    for (CAGradientLayer *gradient in self.gradients) {
+        if ([gradient animationForKey:@"spin"] != nil) {
+            continue;
+        }
+        CABasicAnimation *spin = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+        spin.fromValue = @0.0;
+        spin.toValue = @(M_PI * 2.0);
+        spin.duration = 3.6;
+        spin.repeatCount = HUGE_VALF;
+        spin.removedOnCompletion = NO;
+        [gradient addAnimation:spin forKey:@"spin"];
+    }
+    // Der weite Lichthof atmet leicht, wie beim Original.
+    CALayer *halo = self.glowWrappers.firstObject;
+    if (halo != nil && [halo animationForKey:@"breathe"] == nil) {
+        CABasicAnimation *breathe = [CABasicAnimation animationWithKeyPath:@"opacity"];
+        breathe.fromValue = @0.6;
+        breathe.toValue = @0.95;
+        breathe.duration = 1.8;
+        breathe.autoreverses = YES;
+        breathe.repeatCount = HUGE_VALF;
+        breathe.removedOnCompletion = NO;
+        breathe.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [halo addAnimation:breathe forKey:@"breathe"];
+    }
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    // Nach Hintergrund/Vordergrund entfernt Core Animation Endlosanimationen; beim Zurückkommen neu starten.
+    if (self.window != nil && self.rainbow) {
+        [self startRotation];
+    }
 }
 
 - (void)setGlowColor:(UIColor *)color {
@@ -114,13 +256,34 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     CGRect shape = CGRectMake(0, 0, size.width, size.height);
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius];
     self.layer.shadowPath = path.CGPath;
     // Maske: großes Rechteck minus Form (gerade-ungerade Füllung) = nur außen.
-    UIBezierPath *outside = [UIBezierPath bezierPathWithRect:CGRectInset(shape, -60, -60)];
-    [outside appendPath:[UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius]];
+    UIBezierPath *outside = [UIBezierPath bezierPathWithRect:CGRectInset(shape, -kGlowMargin, -kGlowMargin)];
+    [outside appendPath:path];
     self.maskLayer.path = outside.CGPath;
+
+    // Alle Schichten decken Form plus Rand ab; der Verlauf ist ein Quadrat über die Diagonale,
+    // damit beim Drehen keine Ecke frei bleibt. Ringe liegen mittig auf der Formkante (innen schneidet die Maske ab).
+    CGRect box = CGRectInset(shape, -kGlowMargin, -kGlowMargin);
+    CGRect local = CGRectMake(0, 0, box.size.width, box.size.height);
+    CGFloat diagonal = ceil(hypot(box.size.width, box.size.height));
+    CGRect inBox = CGRectOffset(shape, kGlowMargin, kGlowMargin);
+    for (NSUInteger i = 0; i < self.glowWrappers.count; i++) {
+        self.glowWrappers[i].frame = box;
+        self.ringContainers[i].frame = local;
+        self.ringMasks[i].frame = local;
+        CGFloat inset = self.ringWidths[i].doubleValue / 2.0 - 1.0;
+        CGRect ring = CGRectInset(inBox, -MAX(0.0, inset), -MAX(0.0, inset));
+        CGFloat ringRadius = MIN(radius + MAX(0.0, inset), CGRectGetHeight(ring) / 2.0);
+        self.ringMasks[i].path = [UIBezierPath bezierPathWithRoundedRect:ring cornerRadius:ringRadius].CGPath;
+        self.gradients[i].bounds = CGRectMake(0, 0, diagonal, diagonal);
+        self.gradients[i].position = CGPointMake(CGRectGetMidX(local), CGRectGetMidY(local));
+    }
+    [CATransaction commit];
 }
 
 @end
@@ -200,7 +363,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         CGRect screen = [UIScreen mainScreen].bounds;
         _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
         [self observeGameControllers];
-        _cursorView = [[UIImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
+        _cursorView = [[BrowserCursorImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
         _cursorView.image = BrowserDefaultCursor();
         _cursorView.userInteractionEnabled = NO;
 
@@ -209,6 +372,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         // Auswahl im Glas-Look: helle, halbdurchsichtige Fläche mit Glanz oben, Lichtkante und weichem Schatten.
         // Bewusst ohne echte Glaslinse – die bricht den Text darunter und kostet mehr Leistung.
         _highlightView.backgroundColor = UIColor.clearColor;
+        _highlightView.layer.cornerCurve = kCACornerCurveContinuous;
         // Statt Schatten ein Leuchten außen herum (Farbe je Ziel, sonst Systemblau), s. BrowserGlowView.
         BrowserGlowView *glow = [[BrowserGlowView alloc] initWithFrame:CGRectZero];
         [_highlightView addSubview:glow];
@@ -254,6 +418,11 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     if (!wasCursorModeEnabled && cursorModeEnabled) {
         [self.host browserRemoteInputControllerPersistSession];
     }
+}
+
+- (BOOL)addressPanelActive {
+    return [self.host respondsToSelector:@selector(browserRemoteInputControllerAddressPanelActive)] &&
+        [self.host browserRemoteInputControllerAddressPanelActive];
 }
 
 - (BOOL)pointerOverlaysSuppressed {
@@ -407,7 +576,16 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     }
     [self.rootView insertSubview:highlight belowSubview:self.cursorView];
     CGRect frame = CGRectInset(target, -6.0, -6.0);
-    CGFloat radius = MIN(16.0, CGRectGetHeight(frame) / 2.0);
+    // Ecken nach Liquid Glass: Knöpfe, Links und Textzeilen als Kapsel, größere Flächen (Karten, Bilder) mit
+    // großer, kontinuierlicher Rundung statt kantiger 16 pt.
+    CGFloat height = CGRectGetHeight(frame);
+    CGFloat radius = height <= 120.0 ? height / 2.0 : MIN(34.0, height / 2.0);
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerCornerRadiusForTarget:)]) {
+        CGFloat targetRadius = [self.host browserRemoteInputControllerCornerRadiusForTarget:target];
+        if (targetRadius >= 0.0) {
+            radius = MIN(targetRadius + 6.0, CGRectGetHeight(frame) / 2.0);
+        }
+    }
     UIView *surface = self.highlightSurfaceView;
     BrowserGlowView *glow = self.highlightGlowView;
     UIColor *glowColor = nil;
@@ -415,6 +593,10 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         glowColor = [self.host browserRemoteInputControllerGlowColorForTarget:target];
     }
     [glow setGlowColor:glowColor ?: [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0]];
+    BOOL rainbow = [BrowserPreferencesStore new].rainbowGlowEnabled;
+    if (glow.rainbow != rainbow) {
+        glow.rainbow = rainbow;
+    }
     glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
     [glow setShapeSize:frame.size cornerRadius:radius];
     [self updateLensForFrame:frame radius:radius];
@@ -425,11 +607,11 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
     };
     if (animated && highlight.alpha > 0.0) {
-        [UIView animateWithDuration:0.12
-                              delay:0
-                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut
-                         animations:apply
-                         completion:nil];
+        // Liquid Glass: kurze Feder mit leichtem Nachschwingen; schlicht: 0,12 s easeOut (BrowserMotion).
+        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0
+                           options:UIViewAnimationOptionBeginFromCurrentState
+                        animations:apply
+                        completion:nil];
     } else {
         [UIView performWithoutAnimation:^{
             highlight.frame = frame;
@@ -445,7 +627,9 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 - (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius {
     UIView *container = self.lensContainer;
     UIView *source = nil;
-    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)]) {
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)] &&
+        (![self.host respondsToSelector:@selector(browserRemoteInputControllerLensAllowedForTarget:)] ||
+         [self.host browserRemoteInputControllerLensAllowedForTarget:frame])) {
         source = [self.host browserRemoteInputControllerLensSourceView];
     }
     CGRect inSource = source != nil ? [source convertRect:frame fromView:self.rootView] : CGRectNull;
@@ -515,6 +699,8 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)pointerTargetsDidChange {
+    // Seite hat sich geändert (Scrollen, Laden, DOM): Linsenbild ist veraltet und wird neu aufgenommen.
+    self.lensRect = CGRectNull;
     if (self.lastTouchLocation.x != -1 || self.pressInProgress) {
         // Während der Finger wischt, bewertet die nächste Bewegung ohnehin neu.
         return;
@@ -530,7 +716,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)hideCursorForIdle {
-    if ([self pointerOverlaysSuppressed]) {
+    if ([self pointerOverlaysSuppressed] || [self addressPanelActive]) {
         return;
     }
     self.cursorIdleHidden = YES;
@@ -887,6 +1073,26 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         return NO;
     }
 
+    if (presentedViewController == nil && [self addressPanelActive]) {
+        // Aufklapp-Bereich der Adressleiste: Pfeile bewegen den Fokus zwischen Feld und Kacheln.
+        switch (press.type) {
+            case UIPressTypeUpArrow:
+                [self stepTargetInDirection:CGVectorMake(0.0, -1.0)];
+                return YES;
+            case UIPressTypeDownArrow:
+                [self stepTargetInDirection:CGVectorMake(0.0, 1.0)];
+                return YES;
+            case UIPressTypeLeftArrow:
+                [self stepTargetInDirection:CGVectorMake(-1.0, 0.0)];
+                return YES;
+            case UIPressTypeRightArrow:
+                [self stepTargetInDirection:CGVectorMake(1.0, 0.0)];
+                return YES;
+            default:
+                break;
+        }
+    }
+
     if (presentedViewController == nil && self.cursorModeEnabled) {
         switch (press.type) {
             case UIPressTypeUpArrow:
@@ -1047,7 +1253,7 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         return;
     }
 
-    if (!CGPointEqualToPoint(overflow, CGPointZero)) {
+    if (!CGPointEqualToPoint(overflow, CGPointZero) && ![self addressPanelActive]) {
         // Sanft: Überhang 1:1, damit es am Seitenrand nicht davonschießt.
         [self applyManualScrollDelta:CGPointMake(overflow.x * 0.9, overflow.y * 0.9)];
     }
@@ -1215,7 +1421,48 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
 }
 
 - (void)stepTargetBy:(NSInteger)direction {
-    [self stepTargetBy:direction allowScroll:YES];
+    [self stepTargetBy:direction allowScroll:![self addressPanelActive]];
+}
+
+/// Räumlicher Sprung (wie die Fokus-Engine): Kandidaten in Blickrichtung, gewichtet nach Abstand und seitlichem Versatz.
+- (void)stepTargetInDirection:(CGVector)direction {
+    [self revealCursorIfIdle];
+    NSArray<NSValue *> *targets = [self.host respondsToSelector:@selector(browserRemoteInputControllerStepTargets)]
+        ? [self.host browserRemoteInputControllerStepTargets]
+        : [self.host browserRemoteInputControllerPointerTargets];
+    CGPoint reference = CGRectIsNull(self.snappedTarget) ? self.freePoint
+        : CGPointMake(CGRectGetMidX(self.snappedTarget), CGRectGetMidY(self.snappedTarget));
+    CGFloat length = hypot(direction.dx, direction.dy);
+    if (length <= 0.0) {
+        return;
+    }
+    CGVector unit = CGVectorMake(direction.dx / length, direction.dy / length);
+    NSValue *best = nil;
+    CGFloat bestScore = CGFLOAT_MAX;
+    for (NSValue *value in targets) {
+        CGRect rect = value.CGRectValue;
+        CGFloat vx = CGRectGetMidX(rect) - reference.x, vy = CGRectGetMidY(rect) - reference.y;
+        CGFloat along = vx * unit.dx + vy * unit.dy;
+        CGFloat across = fabs(vx * unit.dy - vy * unit.dx);
+        // Breite Ziele (z. B. das Diktierfeld) zählen seitlich ab ihrer Kante, nicht ab der Mitte.
+        CGFloat halfExtent = fabs(unit.dx) > 0.5 ? CGRectGetHeight(rect) / 2.0 : CGRectGetWidth(rect) / 2.0;
+        across = MAX(0.0, across - halfExtent);
+        if (along < 2.0) {
+            continue;
+        }
+        CGFloat score = along + across * 2.0;
+        if (score < bestScore) {
+            bestScore = score;
+            best = value;
+        }
+    }
+    if (best == nil) {
+        return;
+    }
+    CGRect target = best.CGRectValue;
+    self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    self.snappedTarget = CGRectNull;
+    [self updatePointerAnimated:YES];
 }
 
 - (void)stepTargetBy:(NSInteger)direction allowScroll:(BOOL)allowScroll {

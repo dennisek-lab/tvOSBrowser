@@ -1,4 +1,5 @@
 #import "BrowserMenuCoordinator.h"
+#import "BrowserMotion.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
@@ -254,10 +255,8 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     }
     self.didAnimateIn = YES;
     self.panelTrailingConstraint.constant = -16.0;
-    [UIView animateWithDuration:0.28
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{
+    // Liquid Glass: Glas materialisiert beim Hereinfedern; schlicht: einblenden und gleiten (BrowserMotion).
+    [BrowserMotion glassAppear:self.panelView effect:self.panelView.effect kind:BrowserMotionKindAppear alongside:^{
         self.dimView.alpha = 1.0;
         [self.view layoutIfNeeded];
     } completion:nil];
@@ -280,10 +279,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
         return;
     }
 
-    [UIView animateWithDuration:0.22
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
+    [BrowserMotion animateKind:BrowserMotionKindDisappear delay:0.0 options:0 animations:^{
         self.dimView.alpha = 0.0;
         [self.view layoutIfNeeded];
     } completion:nil];
@@ -295,10 +291,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     }
     self.dismissalInProgress = YES;
     self.panelTrailingConstraint.constant = self.panelWidth + 32.0;
-    [UIView animateWithDuration:0.22
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
+    [BrowserMotion glassDisappear:self.panelView kind:BrowserMotionKindDisappear alongside:^{
         self.dimView.alpha = 0.0;
         [self.view layoutIfNeeded];
     } completion:^(__unused BOOL finished) {
@@ -522,7 +515,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)browserCancelAction {
-    return [self browserActionWithTitle:nil style:UIAlertActionStyleCancel handler:nil];
+    return [self browserActionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil];
 }
 
 - (BOOL)stringHasVisibleContent:(NSString *)string {
@@ -564,8 +557,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentDeleteFavoriteMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Delete a Favorite"
-                                                                       message:@"Select a Favorite to Delete"];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit löschen"
+                                                                       message:@"Welchen Favoriten möchtest du löschen?"];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -593,19 +586,19 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSString *pageTitle = [[self.host browserWebView] title];
     NSURLRequest *request = [[self.host browserWebView] request];
     NSString *currentURL = request.URL.absoluteString ?: @"";
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Name New Favorite"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit benennen"
                                                                        message:currentURL];
     __weak typeof(self) weakSelf = self;
     
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeDefault;
-        textField.placeholder = @"Name New Favorite";
+        textField.placeholder = @"Name des Favoriten";
         textField.text = pageTitle;
         textField.textColor = MenuTextColor();
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
     
-    [alertController addAction:[self browserActionWithTitle:@"Save"
+    [alertController addAction:[self browserActionWithTitle:@"Sichern"
                                                       style:UIAlertActionStyleDestructive
                                                     handler:^(__unused UIAlertAction *action) {
         UITextField *titleTextField = alertController.textFields.firstObject;
@@ -628,7 +621,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentFavoritesMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorites" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favoriten" message:@""];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -647,14 +640,14 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
     
     if (favorites.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Delete a Favorite"
+        [alertController addAction:[self browserActionWithTitle:@"Favorit löschen"
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [weakSelf presentDeleteFavoriteMenu];
         }]];
     }
     
-    [alertController addAction:[self browserActionWithTitle:@"Add Current Page to Favorites"
+    [alertController addAction:[self browserActionWithTitle:@"Diese Seite zu Favoriten hinzufügen"
                                                       style:UIAlertActionStyleDefault
                                                     handler:^(__unused UIAlertAction *action) {
         [weakSelf presentAddFavoritePrompt];
@@ -665,11 +658,11 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentHistoryMenu {
     NSArray *historyEntries = [[NSUserDefaults standardUserDefaults] arrayForKey:@"HISTORY"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"History" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Verlauf" message:@""];
     __weak typeof(self) weakSelf = self;
     
     if (historyEntries.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Clear History"
+        [alertController addAction:[self browserActionWithTitle:@"Verlauf löschen"
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"HISTORY"];
@@ -829,7 +822,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSDictionary *diagnostics = [self mediaDiagnosticsDictionary];
     if (diagnostics == nil) {
         UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
-                                                                           message:@"The page did not return diagnostics data."];
+                                                                           message:@"Die Seite hat keine Diagnosedaten geliefert."];
         [alertController addAction:[self browserCancelAction]];
         [self.host browserPresentViewController:alertController];
         return;
@@ -888,7 +881,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
     NSLog(@"%@ %@", kBrowserMediaDiagnosticsLogPrefix, message);
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Media Diagnostics"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -897,17 +890,17 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (void)presentWebKitRuntimeMediaPreferences {
     NSString *report = [[self.host browserWebView] runtimeMediaPreferenceReport];
     if (![self stringHasVisibleContent:report]) {
-        report = @"No runtime WebKit media preference information was returned.";
+        report = @"Es wurden keine WebKit-Medieneinstellungen geliefert.";
     }
 
     NSLog(@"%@ %@", kBrowserWebKitMediaPrefsLogPrefix, report);
 
     NSString *message = report;
     if (message.length > 1800) {
-        message = [[message substringToIndex:1800] stringByAppendingString:@"\n\nFull report logged to console."];
+        message = [[message substringToIndex:1800] stringByAppendingString:@"\n\nDer vollständige Bericht steht in der Konsole."];
     }
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"WebKit Media Prefs"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"WebKit-Medieneinstellungen"
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -920,7 +913,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         if (self.host.browserTopMenuShowing) {
             UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Obere Leiste ausblenden?"
                                                                                message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."];
-            [alertController addAction:[self browserActionWithTitle:@"Cancel"
+            [alertController addAction:[self browserActionWithTitle:@"Abbrechen"
                                                               style:UIAlertActionStyleCancel
                                                             handler:nil]];
             [alertController addAction:[self browserActionWithTitle:@"Ausblenden"
@@ -963,7 +956,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)wkWebViewProofOfConceptAction {
-    return [self browserActionWithTitle:@"Open WKWebView PoC"
+    return [self browserActionWithTitle:@"WKWebView-Test öffnen"
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         Class proofOfConceptControllerClass = NSClassFromString(@"BrowserWKWebViewProofOfConceptViewController");
@@ -972,8 +965,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             viewController = [proofOfConceptControllerClass new];
             viewController.modalPresentationStyle = UIModalPresentationFullScreen;
         } else {
-            viewController = [UIAlertController alertControllerWithTitle:@"WKWebView PoC Missing"
-                                                                 message:@"The proof-of-concept controller was not compiled into this build."
+            viewController = [UIAlertController alertControllerWithTitle:@"WKWebView-Test fehlt"
+                                                                 message:@"Der Test-Controller ist in diesem Build nicht enthalten."
                                                           preferredStyle:UIAlertControllerStyleAlert];
             [(UIAlertController *)viewController addAction:[self browserCancelAction]];
         }
@@ -1050,13 +1043,25 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Erkennt Adblock-Sperren („Bitte Werbeblocker deaktivieren“) und pausiert den Werbeblocker dann für diese Seite.
+- (BrowserAdvancedMenuItem *)adBlockAutoPauseMenuItem {
+    BOOL enabled = self.preferencesStore.adBlockAutoPauseOnWall;
+    return [self advancedMenuItemWithTitle:@"Werbeblocker bei Sperre automatisch pausieren"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.adBlockAutoPauseOnWall = !enabled;
+        [[BrowserContentBlocker sharedBlocker] preferencesDidChange];
+    }];
+}
+
 /// Schaltet den Werbeblocker für den Host der aktuellen Seite aus bzw. wieder ein.
 - (BrowserAdvancedMenuItem *)adBlockSiteMenuItem {
     NSURL *url = [[self.host browserWebView] request].URL;
     NSString *host = [BrowserContentBlocker exceptionKeyForURL:url];
     BOOL excepted = [[BrowserContentBlocker sharedBlocker] isExceptionForURL:url];
+    BOOL automatic = excepted && [[BrowserContentBlocker sharedBlocker] isAutoExceptionForURL:url];
     return [self advancedMenuItemWithTitle:@"Werbeblocker hier"
-                                    detail:host == nil ? @"–" : (excepted ? @"Aus" : @"An")
+                                    detail:host == nil ? @"–" : (automatic ? @"Pausiert (Sperre)" : (excepted ? @"Aus" : @"An"))
                                    handler:^{
         if (host == nil) {
             return;
@@ -1078,6 +1083,25 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 /// Bezahlschranken („Mit Werbung lesen oder Abo“) lassen sich nicht ablehnen: auf Wunsch zustimmen, damit nie ein Banner stehen bleibt.
+- (BrowserAdvancedMenuItem *)rainbowGlowMenuItem {
+    BOOL enabled = self.preferencesStore.rainbowGlowEnabled;
+    return [self advancedMenuItemWithTitle:@"Regenbogen-Leuchten"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.rainbowGlowEnabled = !enabled;
+    }];
+}
+
+/// Liquid-Glass-Animationen (Federn, materialisierendes Glas) oder schlichte Überblendungen, s. BrowserMotion.
+- (BrowserAdvancedMenuItem *)liquidGlassAnimationsMenuItem {
+    BOOL enabled = self.preferencesStore.liquidGlassAnimationsEnabled;
+    return [self advancedMenuItemWithTitle:@"Liquid-Glass-Animationen"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.liquidGlassAnimationsEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)cookiePayWallMenuItem {
     BOOL enabled = self.preferencesStore.cookieBannerAcceptPayWalls;
     return [self advancedMenuItemWithTitle:@"Bezahlschranken zustimmen"
@@ -1135,7 +1159,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)playVideoUnderCursorAction {
-    return [self browserActionWithTitle:@"Play Active Video"
+    return [self browserActionWithTitle:@"Aktives Video abspielen"
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1153,6 +1177,36 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)autoSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.autoSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Automatische Untertitel"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesEnabled = !enabled;
+    }];
+}
+
+- (BrowserAdvancedMenuItem *)webSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.webSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Untertitel (Webseite)"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        [self.host browserSetWebSubtitlesEnabled:!enabled];
+    }];
+}
+
+/// Zeigerstil durchschalten: macOS dunkel → macOS hell → SF Symbols.
+- (BrowserAdvancedMenuItem *)cursorStyleMenuItem {
+    NSUInteger style = self.preferencesStore.cursorStyle % 3;
+    NSArray<NSString *> *names = @[@"Dunkel", @"Hell", @"Symbol"];
+    return [self advancedMenuItemWithTitle:@"Zeiger"
+                                    detail:names[style]
+                                   handler:^{
+        self.preferencesStore.cursorStyle = (style + 1) % 3;
+        [self.host browserBringCursorToFront];
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)autoOpenNativePlayerMenuItem {
     BOOL enabled = self.preferencesStore.autoOpenVideosInNativePlayer;
     return [self advancedMenuItemWithTitle:@"Native Player automatisch"
@@ -1166,9 +1220,12 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (NSArray<BrowserAdvancedMenuItem *> *)extensionMenuItems {
     return @[
         [self adBlockMenuItem],
+        [self adBlockAutoPauseMenuItem],
         [self cookieBannerMenuItem],
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],
+        [self autoSubtitlesMenuItem],
+        [self webSubtitlesMenuItem],
         [self cloudflareDNSMenuItem],
     ];
 }
@@ -1192,7 +1249,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         self.host.browserTextFontSize = 100;
         [self.host browserUpdateTextFontSize];
     }];
-    BrowserAdvancedMenuItem *mediaDiagnosticsItem = [self advancedMenuItemWithTitle:@"Media Diagnostics"
+    BrowserAdvancedMenuItem *mediaDiagnosticsItem = [self advancedMenuItemWithTitle:@"Medien-Diagnose"
                                                                                style:UIAlertActionStyleDefault
                                                                              handler:^{
         [self presentMediaDiagnostics];
@@ -1241,6 +1298,9 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Ansicht & Wiedergabe"
                                                items:@[
             [self topNavigationVisibilityMenuItem],
+            [self rainbowGlowMenuItem],
+            [self liquidGlassAnimationsMenuItem],
+            [self cursorStyleMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
             [self userAgentModeMenuItem],

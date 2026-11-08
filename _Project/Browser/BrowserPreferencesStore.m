@@ -10,12 +10,20 @@ static NSString * const kAutoOpenNativePlayerDefaultsKey = @"AutoOpenVideosInNat
 static NSString * const kPageZoomDefaultsKey = @"PageZoom";
 static double const kDefaultPageZoom = 1.5;
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
+static NSString * const kCursorStyleDefaultsKey = @"CursorStyle";
 static NSString * const kHomepageDefaultsKey = @"homepage";
 static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
 static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
+static NSString * const kAdBlockAutoPauseDefaultsKey = @"AdBlockAutoPauseOnWall";
+static NSString * const kAdBlockAutoExceptionHostsDefaultsKey = @"AdBlockAutoExceptionHosts";
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
+static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
+static NSString * const kLiquidGlassAnimationsEnabledDefaultsKey = @"LiquidGlassAnimationsEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
+static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
+static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
+static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -128,6 +136,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
+- (NSUInteger)cursorStyle {
+    NSInteger value = [[self defaults] integerForKey:kCursorStyleDefaultsKey];
+    return value >= 0 && value <= 2 ? (NSUInteger)value : 0;
+}
+
+- (void)setCursorStyle:(NSUInteger)cursorStyle {
+    [[self defaults] setInteger:(NSInteger)MIN(cursorStyle, 2) forKey:kCursorStyleDefaultsKey];
+    [[self defaults] synchronize];
+}
+
 - (BOOL)dontShowHintsOnLaunch {
     return [[self defaults] boolForKey:kDontShowHintsOnLaunchDefaultsKey];
 }
@@ -167,6 +185,26 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
+- (BOOL)adBlockAutoPauseOnWall {
+    NSNumber *value = [[self defaults] objectForKey:kAdBlockAutoPauseDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setAdBlockAutoPauseOnWall:(BOOL)adBlockAutoPauseOnWall {
+    [[self defaults] setBool:adBlockAutoPauseOnWall forKey:kAdBlockAutoPauseDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSArray<NSString *> *)adBlockAutoExceptionHosts {
+    NSArray *value = [[self defaults] arrayForKey:kAdBlockAutoExceptionHostsDefaultsKey];
+    return [value isKindOfClass:NSArray.class] ? value : @[];
+}
+
+- (void)setAdBlockAutoExceptionHosts:(NSArray<NSString *> *)adBlockAutoExceptionHosts {
+    [[self defaults] setObject:adBlockAutoExceptionHosts ?: @[] forKey:kAdBlockAutoExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
 - (BOOL)cookieBannerBlockEnabled {
     NSNumber *value = [[self defaults] objectForKey:kCookieBannerBlockEnabledDefaultsKey];
     return value ? value.boolValue : YES;
@@ -187,6 +225,26 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
+- (BOOL)rainbowGlowEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kRainbowGlowEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
+    [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)liquidGlassAnimationsEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kLiquidGlassAnimationsEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setLiquidGlassAnimationsEnabled:(BOOL)liquidGlassAnimationsEnabled {
+    [[self defaults] setBool:liquidGlassAnimationsEnabled forKey:kLiquidGlassAnimationsEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
 - (NSArray<NSString *> *)cookieBannerExceptionHosts {
     NSArray *value = [[self defaults] arrayForKey:kCookieBannerExceptionHostsDefaultsKey];
     return [value isKindOfClass:NSArray.class] ? value : @[];
@@ -194,6 +252,34 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerExceptionHosts:(NSArray<NSString *> *)cookieBannerExceptionHosts {
     [[self defaults] setObject:cookieBannerExceptionHosts ?: @[] forKey:kCookieBannerExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)autoSubtitlesEnabled {
+    return [[self defaults] boolForKey:kAutoSubtitlesEnabledDefaultsKey];
+}
+
+- (void)setAutoSubtitlesEnabled:(BOOL)autoSubtitlesEnabled {
+    [[self defaults] setBool:autoSubtitlesEnabled forKey:kAutoSubtitlesEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSString *)autoSubtitlesLanguage {
+    NSString *value = [[self defaults] stringForKey:kAutoSubtitlesLanguageDefaultsKey];
+    return value.length > 0 ? value : @"en";
+}
+
+- (void)setAutoSubtitlesLanguage:(NSString *)autoSubtitlesLanguage {
+    [[self defaults] setObject:autoSubtitlesLanguage.length > 0 ? autoSubtitlesLanguage : @"en" forKey:kAutoSubtitlesLanguageDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)webSubtitlesEnabled {
+    return [[self defaults] boolForKey:kWebSubtitlesEnabledDefaultsKey];
+}
+
+- (void)setWebSubtitlesEnabled:(BOOL)webSubtitlesEnabled {
+    [[self defaults] setBool:webSubtitlesEnabled forKey:kWebSubtitlesEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

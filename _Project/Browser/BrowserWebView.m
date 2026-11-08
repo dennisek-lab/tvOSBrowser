@@ -4,6 +4,8 @@
 #import "BrowserContentBlocker.h"
 #import "BrowserCookieConsentBlocker.h"
 #import "BrowserScriptletInjector.h"
+#import "BrowserPreferencesStore.h"
+#import "BrowserWebAudioCapture.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -621,6 +623,10 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     [[BrowserCookieConsentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     [[BrowserScriptletInjector sharedInjector] prepare];
+    // Untertitel für Videos in der Seite: Skript ruht, bis die App den Abgriff startet; früh installiert, damit auch iframes es haben.
+    if ([BrowserPreferencesStore new].webSubtitlesEnabled) {
+        [BrowserWebAudioCapture installIntoUserContentController:self.contentController];
+    }
     self.clickTargetTracker = [BrowserClickTargetTracker new];
     [self.clickTargetTracker installIntoConfiguration:configuration];
     __weak typeof(self) weakSelf = self;
@@ -812,6 +818,10 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 
 - (void)refreshClickTargets {
     [self evaluateJavaScriptAsync:[BrowserClickTargetTracker refreshScript]];
+}
+
+- (id)userContentController {
+    return self.contentController;
 }
 
 - (void)evaluateJavaScriptAsync:(NSString *)script {

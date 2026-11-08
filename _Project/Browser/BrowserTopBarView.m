@@ -1,4 +1,5 @@
 #import "BrowserTopBarView.h"
+#import "BrowserMotion.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -51,6 +52,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic) UIImageView *tabsImageView;
 @property (nonatomic) UIImageView *fullscreenImageView;
 @property (nonatomic) UIImageView *menuImageView;
+@property (nonatomic) UIImageView *readerImageView;
+@property (nonatomic) UIView *readerHighlightView;
+@property (nonatomic) BrowserTopBarFocusButton *readerFocusButton;
+@property (nonatomic, readwrite) BOOL readerAvailable;
+@property (nonatomic, readwrite) BOOL readerActive;
 @property (nonatomic) UILabel *URLLabel;
 @property (nonatomic) UIActivityIndicatorView *loadingSpinner;
 @property (nonatomic) UIView *focusGlowView;
@@ -79,6 +85,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, copy, nullable) NSString *displayTitle;
 @property (nonatomic, copy, nullable) NSString *displayDomain;
 @property (nonatomic) BOOL displaySecure;
+// Adresse bearbeiten (Diktierfeld), siehe Abschnitt am Ende der Datei.
+@property (nonatomic, readwrite, getter=isAddressEditing) BOOL addressEditing;
+@property (nonatomic) UIView *dictationFieldView;
+@property (nonatomic) UIImageView *dictationIconView;
+@property (nonatomic) UILabel *dictationLabel;
 
 @end
 
@@ -165,6 +176,18 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _tabsImageView = [self newIconViewWithSymbol:@"square.on.square" fallbackImageNamed:@"multi-tab"];
     _fullscreenImageView = [self newIconViewWithSymbol:@"arrow.up.left.and.arrow.down.right" fallbackImageNamed:@"resize-arrows"];
     _menuImageView = [self newIconViewWithSymbol:@"ellipsis.circle" fallbackImageNamed:@"menu-2"];
+    _readerImageView = [self newIconViewWithSymbol:@"doc.plaintext" fallbackImageNamed:@"menu-2"];
+    if ([UIImage systemImageNamed:@"doc.plaintext"] == nil) {
+        _readerImageView.image = [[UIImage systemImageNamed:@"text.page"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] ?: _readerImageView.image;
+    }
+    _readerImageView.alpha = 0.0;
+    // Hervorhebung hinter dem Symbol, solange der Reader läuft.
+    _readerHighlightView = [[UIView alloc] initWithFrame:CGRectZero];
+    _readerHighlightView.userInteractionEnabled = NO;
+    _readerHighlightView.backgroundColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.9];
+    _readerHighlightView.layer.cornerCurve = kCACornerCurveContinuous;
+    _readerHighlightView.alpha = 0.0;
+    [self.chromeEffectView.contentView addSubview:_readerHighlightView];
 
     _URLLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _URLLabel.text = @"tvOS Browser";
@@ -173,6 +196,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _URLLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     _URLLabel.adjustsFontSizeToFitWidth = NO;
     _URLLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    // Beim Umschalten kompakt ↔ voll ändert sich die Breite: Inhalt mittig stehen lassen statt strecken/abschneiden.
+    _URLLabel.contentMode = UIViewContentModeCenter;
     [self.chromeEffectView.contentView addSubview:_URLLabel];
 
     _loadingSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
@@ -188,7 +213,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         _homeImageView,
         _tabsImageView,
         _fullscreenImageView,
-        _menuImageView
+        _menuImageView,
+        _readerImageView
     ];
     for (UIImageView *imageView in iconViews) {
         [self.chromeEffectView.contentView addSubview:imageView];
@@ -199,9 +225,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _forwardFocusButton = [self newFocusButtonForAction:BrowserTopBarActionForward accessibilityLabel:@"Forward"];
     _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFavorite accessibilityLabel:@"Favorit"];
     _tabsFocusButton = [self newFocusButtonForAction:BrowserTopBarActionTabs accessibilityLabel:@"Tabs"];
-    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Enter URL or Search"];
-    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Top Navigation Visibility"];
+    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Adresse oder Suche"];
+    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Obere Leiste ein- oder ausblenden"];
     _menuFocusButton = [self newFocusButtonForAction:BrowserTopBarActionMenu accessibilityLabel:@"Menu"];
+    _readerFocusButton = [self newFocusButtonForAction:BrowserTopBarActionReader accessibilityLabel:@"Reader"];
     _focusButtons = @[
         _backFocusButton,
         _refreshFocusButton,
@@ -210,12 +237,14 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         _tabsFocusButton,
         _URLFocusButton,
         _fullscreenFocusButton,
-        _menuFocusButton
+        _menuFocusButton,
+        _readerFocusButton
     ];
     for (BrowserTopBarFocusButton *button in _focusButtons) {
         [self.chromeEffectView.contentView addSubview:button];
     }
 
+    [self setUpAddressEditingViews];
     [self applyVisualStyle];
     [self setFocusModeActive:NO];
 }
@@ -252,16 +281,45 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 #endif
     UIColor *foreground = light ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
     for (UIImageView *imageView in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
-                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
+                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView, self.readerImageView]) {
         imageView.tintColor = foreground;
     }
     self.pageForegroundColor = foreground;
+    [self applyReaderStyle];
     [self applyFavoriteStyle];
     self.loadingSpinner.color = foreground;
     self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
     self.lightPage = light;
     [self applyContrastStyle];
     [self renderTitle];
+    [self applyAddressEditingStyle];
+}
+
+/// Reader-Knopf: nur sichtbar, wenn die Seite lesbar ist; im Reader weiß auf blauer Hervorhebung.
+- (void)setReaderAvailable:(BOOL)available active:(BOOL)active {
+    available = available || active;
+    if (self.readerAvailable == available && self.readerActive == active) {
+        return;
+    }
+    BOOL becomesActive = active && !self.readerActive;
+    self.readerAvailable = available;
+    self.readerActive = active;
+    // Knopf und blaue Hervorhebung blenden über BrowserMotion; Liquid Glass: Hervorhebung federt beim Einschalten auf.
+    if (becomesActive && BrowserMotion.liquidGlassEnabled) {
+        self.readerHighlightView.transform = CGAffineTransformMakeScale(0.82, 0.82);
+    }
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        [self applyReaderStyle];
+        self.readerHighlightView.transform = CGAffineTransformIdentity;
+    } completion:nil];
+    [self setNeedsLayout];
+}
+
+- (void)applyReaderStyle {
+    self.readerImageView.tintColor = self.readerActive ? UIColor.whiteColor : (self.pageForegroundColor ?: UIColor.whiteColor);
+    BOOL visible = self.readerAvailable && !self.compact && !self.addressEditing;
+    self.readerImageView.alpha = visible ? 0.95 : 0.0;
+    self.readerHighlightView.alpha = (visible && self.readerActive) ? 1.0 : 0.0;
 }
 
 - (BrowserTopBarFocusButton *)newFocusButtonForAction:(BrowserTopBarAction)action
@@ -348,7 +406,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
             return;
         }
         self.loadingProgress = value;
-        [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut animations:^{
+        [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
             self.progressView.alpha = 1.0;
             self.progressView.frame = [self progressFrameForValue:value];
         } completion:nil];
@@ -359,10 +417,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     }
     self.progressVisible = NO;
     self.loadingProgress = 1.0;
-    [UIView animateWithDuration:0.2 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+    [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.progressView.frame = [self progressFrameForValue:1.0];
     } completion:^(__unused BOOL finished) {
-        [UIView animateWithDuration:0.25 animations:^{
+        [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:0 animations:^{
             self.progressView.alpha = 0.0;
         } completion:^(__unused BOOL done) {
             if (!self.progressVisible) {
@@ -443,33 +501,35 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     if (compact && self.focusModeActive) {
         return;
     }
+    if (compact && self.addressEditing) {
+        return;
+    }
     _compact = compact;
     if (!animated) {
         [self setNeedsLayout];
         [self layoutIfNeeded];
         return;
     }
-    // Der Schattenumriss wird von UIView-Animationen nicht mitgenommen und sprang sofort auf die Endform
-    // (sichtbares Aufblinken). Deshalb läuft er hier als eigene Animation mit gleicher Dauer und Kurve.
-    NSTimeInterval duration = 0.3;
-    CGPathRef fromPath = self.chromeContainerView.layer.shadowPath;
-    id fromValue = fromPath != NULL ? (__bridge id)fromPath : nil;
-    [UIView animateWithDuration:duration delay:0.0
-                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut
-                     animations:^{
+    [self animateChromeLayoutAlongside:nil];
+}
+
+/// Layoutwechsel der Leiste (kompakt ↔ voll, Bearbeiten) über BrowserMotion. Der Schattenumriss wird von
+/// UIView-Animationen nicht mitgenommen und sprang sonst sofort auf die Endform (sichtbares Aufblinken); er läuft
+/// deshalb als eigene Animation mit derselben Feder bzw. Kurve mit.
+- (void)animateChromeLayoutAlongside:(void (^)(void))extra {
+    CALayer *layer = self.chromeContainerView.layer;
+    CGPathRef fromPath = CGPathRetain(layer.shadowPath);
+    [BrowserMotion animateKind:BrowserMotionKindStandard delay:0.0
+                       options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                    animations:^{
+        if (extra != nil) {
+            extra();
+        }
         [self setNeedsLayout];
         [self layoutIfNeeded];
     } completion:nil];
-    CALayer *layer = self.chromeContainerView.layer;
-    [layer removeAnimationForKey:@"shadowPath"];
-    if (fromValue != nil && layer.shadowPath != NULL) {
-        CABasicAnimation *shadowAnimation = [CABasicAnimation animationWithKeyPath:@"shadowPath"];
-        shadowAnimation.fromValue = fromValue;
-        shadowAnimation.toValue = (__bridge id)layer.shadowPath;
-        shadowAnimation.duration = duration;
-        shadowAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-        [layer addAnimation:shadowAnimation forKey:@"shadowPath"];
-    }
+    [BrowserMotion animateShadowPathOfLayer:layer fromPath:fromPath kind:BrowserMotionKindStandard];
+    CGPathRelease(fromPath);
 }
 
 - (void)layoutSubviews {
@@ -518,8 +578,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
     // Der Knopf zum Ausblenden der Leiste entfällt: Beim Scrollen wird sie ohnehin zur Kapsel.
     self.fullscreenImageView.hidden = YES;
+    // Reader-Knopf direkt links neben dem Menü; sein Platz bleibt immer reserviert, damit Ladekreisel und
+    // Seitenname nicht springen, wenn die Lesbarkeit erst nach dem Laden feststeht.
+    self.readerImageView.frame = self.fullscreenImageView.frame;
+    self.readerHighlightView.frame = CGRectInset(self.readerImageView.frame, -6.0, -2.0);
+    self.readerHighlightView.layer.cornerRadius = 16.0;
     CGFloat spinnerSide = 34.0;
-    rightX = CGRectGetMinX(self.menuImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
+    rightX = CGRectGetMinX(self.readerImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
     self.loadingSpinner.frame = CGRectMake(rightX,
                                            floor((CGRectGetHeight(chromeFrame) - spinnerSide) / 2.0),
                                            spinnerSide,
@@ -534,6 +599,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
                                      self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
         imageView.alpha = iconAlpha;
     }
+    [self applyReaderStyle];
     if (self.compact) {
         // Nur der Seitenname, verkleinert und mittig; der Ladekreisel rechts in der Kapsel.
         CGFloat compactSpinner = 28.0;
@@ -556,8 +622,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         CGFloat textX = groupX + kTopBarIconSize + starGap;
         labelFrame = CGRectMake(textX, 0.0, textWidth, CGRectGetHeight(chromeFrame));
         labelCenter = CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
-        CGFloat targetX = CGRectGetMaxX(self.homeImageView.frame) + 4.0;
-        self.URLTargetFrame = CGRectMake(targetX, 0.0, MAX(120.0, labelTrailingX - targetX), CGRectGetHeight(chromeFrame));
+        // Ganzer Adressbereich zwischen Tab-Knopf und Kreisel ist wählbar (wie Safaris Adressfeld), nicht nur
+        // rechts vom Stern. Der Stern bleibt trotzdem treffbar: Beim Einrasten gewinnt das kleinste Ziel.
+        self.URLTargetFrame = CGRectMake(labelOriginX, 0.0, MAX(120.0, labelTrailingX - labelOriginX), CGRectGetHeight(chromeFrame));
     } else {
         self.homeImageView.center = labelCenter;
     }
@@ -565,6 +632,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.URLLabel.center = labelCenter;
     self.URLLabel.transform = self.compact ? CGAffineTransformMakeScale(kTopBarCompactLabelScale, kTopBarCompactLabelScale)
                                            : CGAffineTransformIdentity;
+
+    [self layoutAddressEditingViewsInChromeFrame:chromeFrame];
 
     self.backFocusButton.frame = [self focusFrameForIconView:self.backImageView];
     self.refreshFocusButton.frame = [self focusFrameForIconView:self.refreshImageView];
@@ -574,6 +643,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.URLFocusButton.frame = [self uniformFocusFrameForRect:self.URLTargetFrame horizontalInset:0.0];
     self.fullscreenFocusButton.frame = [self focusFrameForIconView:self.fullscreenImageView];
     self.menuFocusButton.frame = [self focusFrameForMenuIconView:self.menuImageView];
+    self.readerFocusButton.frame = [self focusFrameForIconView:self.readerImageView];
+    [self updateReaderFocusButtonAvailability];
 
     if (!self.focusModeActive) {
         [self resetFocusVisualState];
@@ -591,6 +662,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     if (block == nil || self.hidden) {
         return;
     }
+    if (self.addressEditing) {
+        // Bearbeiten-Zustand: nur das Diktierfeld.
+        block(self.addressFieldFrame, BrowserTopBarActionURL);
+        return;
+    }
     if (self.compact) {
         // Die ganze Kapsel ist ein Ziel; ein Klick klappt die Leiste wieder auf.
         block(self.chromeContainerView.frame, BrowserTopBarActionURL);
@@ -605,6 +681,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         @[self.URLLabel, @(BrowserTopBarActionURL)],
         @[self.fullscreenImageView, @(BrowserTopBarActionFullscreen)],
         @[self.menuImageView, @(BrowserTopBarActionMenu)],
+        @[self.readerImageView, @(BrowserTopBarActionReader)],
     ];
     for (NSArray *item in items) {
         UIView *view = item[0];
@@ -708,7 +785,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self setCompact:NO animated:YES];
     }
     for (BrowserTopBarFocusButton *button in self.focusButtons) {
-        BOOL available = focusModeActive && button != self.fullscreenFocusButton;
+        BOOL available = focusModeActive && button != self.fullscreenFocusButton &&
+            (button != self.readerFocusButton || self.readerAvailable);
         button.hidden = !available;
         button.enabled = available;
     }
@@ -719,6 +797,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     } else {
         [self setNeedsLayout];
     }
+}
+
+/// Der Reader-Knopf nimmt am Fokus nur teil, wenn er sichtbar ist.
+- (void)updateReaderFocusButtonAvailability {
+    BOOL available = self.focusModeActive && self.readerAvailable && !self.compact;
+    self.readerFocusButton.hidden = !available;
+    self.readerFocusButton.enabled = available;
 }
 
 - (UIView *)preferredFocusItem {
@@ -772,6 +857,96 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     } completion:^{
         if (!self.focusModeActive || nextFocusedButton == nil) {
             [self resetFocusVisualState];
+        }
+    }];
+}
+
+#pragma mark - Adresse bearbeiten (Diktierfeld)
+
+- (void)setUpAddressEditingViews {
+    self.dictationFieldView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.dictationFieldView.userInteractionEnabled = NO;
+    self.dictationFieldView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.dictationFieldView.alpha = 0.0;
+    [self.chromeEffectView.contentView addSubview:self.dictationFieldView];
+
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *mic = [[UIImage systemImageNamed:@"mic.fill" withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.dictationIconView = [[UIImageView alloc] initWithImage:mic];
+    self.dictationIconView.contentMode = UIViewContentModeCenter;
+    [self.dictationFieldView addSubview:self.dictationIconView];
+
+    self.dictationLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.dictationLabel.text = @"Sprechen, um zu diktieren";
+    self.dictationLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.dictationFieldView addSubview:self.dictationLabel];
+    [self applyAddressEditingStyle];
+}
+
+- (void)applyAddressEditingStyle {
+    UIColor *foreground = self.lightPage ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
+    // Dezent: Platzhalter und Mikrofon halb transparent, das Feld selbst nur leicht abgesetzt.
+    self.dictationIconView.tintColor = [foreground colorWithAlphaComponent:0.7];
+    self.dictationLabel.textColor = [foreground colorWithAlphaComponent:0.55];
+    self.dictationFieldView.backgroundColor = self.lightPage ? [UIColor colorWithWhite:0.0 alpha:0.06] : [UIColor colorWithWhite:1.0 alpha:0.09];
+}
+
+- (CGRect)addressFieldFrame {
+    if (!self.addressEditing) {
+        return CGRectNull;
+    }
+    return [self convertRect:self.dictationFieldView.frame fromView:self.chromeEffectView.contentView];
+}
+
+- (void)layoutAddressEditingViewsInChromeFrame:(CGRect)chromeFrame {
+    CGFloat inset = 10.0;
+    CGRect field = CGRectInset(CGRectMake(0.0, 0.0, CGRectGetWidth(chromeFrame), CGRectGetHeight(chromeFrame)), inset, inset);
+    self.dictationFieldView.frame = field;
+    self.dictationFieldView.layer.cornerRadius = CGRectGetHeight(field) / 2.0;
+    CGSize iconSize = CGSizeMake(44.0, CGRectGetHeight(field));
+    CGFloat gap = 14.0;
+    CGFloat textWidth = ceil([self.dictationLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGRectGetHeight(field))].width);
+    textWidth = MIN(textWidth, CGRectGetWidth(field) - iconSize.width - gap - 40.0);
+    CGFloat groupX = floor((CGRectGetWidth(field) - iconSize.width - gap - textWidth) / 2.0);
+    self.dictationIconView.frame = CGRectMake(groupX, 0.0, iconSize.width, iconSize.height);
+    self.dictationLabel.frame = CGRectMake(groupX + iconSize.width + gap, 0.0, textWidth, CGRectGetHeight(field));
+
+    if (!self.addressEditing) {
+        self.dictationFieldView.alpha = 0.0;
+        return;
+    }
+    // Bearbeiten: alles andere aus, nur das Diktierfeld bleibt.
+    self.dictationFieldView.alpha = 1.0;
+    for (UIView *view in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
+                           self.tabsImageView, self.fullscreenImageView, self.menuImageView, self.URLLabel, self.loadingSpinner,
+                           self.readerImageView, self.readerHighlightView]) {
+        view.alpha = 0.0;
+    }
+}
+
+- (void)setAddressEditing:(BOOL)addressEditing animated:(BOOL)animated {
+    if (_addressEditing == addressEditing) {
+        return;
+    }
+    if (addressEditing && self.compact) {
+        _compact = NO;
+    }
+    _addressEditing = addressEditing;
+    if (!addressEditing) {
+        // Seitenname und Knöpfe zurück (layoutSubviews setzt die Symbole, Name und Kreisel brauchen es hier).
+        self.URLLabel.alpha = 1.0;
+        self.loadingSpinner.alpha = 1.0;
+    }
+    if (!animated) {
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+        return;
+    }
+    // Gleiche Bewegung wie kompakt ↔ voll, inklusive Schattenumriss (beim Bearbeiten klappt die Kapsel auf).
+    [self animateChromeLayoutAlongside:^{
+        if (!addressEditing) {
+            self.URLLabel.alpha = 1.0;
+            self.loadingSpinner.alpha = 1.0;
         }
     }];
 }

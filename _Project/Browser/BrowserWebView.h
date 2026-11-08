@@ -70,6 +70,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script completion:(void (^ _Nullable)(id _Nullable result))completion;
 /// Grundzoom, wenn scalesPageToFit aus ist (1.0 = 100 %).
 @property (nonatomic) double pageZoom;
+/// WKUserContentController dieser WebView (per Laufzeit), z. B. für zusätzliche Nutzerskripte und Rückkanäle.
+@property (nonatomic, readonly, nullable) id userContentController;
 
 - (instancetype)initWithUserAgent:(NSString * _Nullable)userAgent
       allowsInlineMediaPlayback:(BOOL)allowsInlineMediaPlayback NS_DESIGNATED_INITIALIZER;

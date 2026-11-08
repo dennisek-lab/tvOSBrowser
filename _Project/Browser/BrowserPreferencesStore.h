@@ -22,11 +22,28 @@ NS_ASSUME_NONNULL_BEGIN
 /// Werbeblocker (Standard: an) und Seiten, für die er abgeschaltet ist (Hosts ohne „www.“).
 @property (nonatomic) BOOL adBlockEnabled;
 @property (nonatomic, copy) NSArray<NSString *> *adBlockExceptionHosts;
+/// Werbeblocker bei erkannter Adblock-Sperre automatisch für die Seite pausieren (Standard: an) und die so gesetzten Hosts
+/// (Teilmenge von adBlockExceptionHosts, zur Unterscheidung von Ausnahmen des Nutzers).
+@property (nonatomic) BOOL adBlockAutoPauseOnWall;
+@property (nonatomic, copy) NSArray<NSString *> *adBlockAutoExceptionHosts;
 /// Automatisches Ablehnen von Cookie-Bannern (Standard: an) und Seiten, für die es abgeschaltet ist (Hosts ohne „www.“).
 @property (nonatomic) BOOL cookieBannerBlockEnabled;
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;
 /// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
+/// Automatische Untertitel (whisper.cpp) im nativen Player. Standard: aus.
+@property (nonatomic) BOOL autoSubtitlesEnabled;
+/// Sprache der automatischen Untertitel: „en“ (Standard, Modell base.en) oder „auto“ (mehrsprachiges Modell, erkennt die Sprache selbst).
+@property (nonatomic, copy) NSString *autoSubtitlesLanguage;
+/// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
+@property (nonatomic) BOOL rainbowGlowEnabled;
+/// Liquid-Glass-Animationen (Federn, Glas materialisiert, Standard: an); aus: schlichte Überblendungen, s. BrowserMotion.
+@property (nonatomic) BOOL liquidGlassAnimationsEnabled;
+
+/// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
+@property (nonatomic) NSUInteger cursorStyle;
+/// Untertitel für Videos in der Webseite (Tonabgriff per Web Audio, Weg B). Standard: aus.
+@property (nonatomic) BOOL webSubtitlesEnabled;
 
 - (void)ensureUserAgentConsistency;
 

@@ -23,6 +23,8 @@
 - (void)browserRecreateActiveWebViewPreservingCurrentURL;
 - (void)browserBringCursorToFront;
 - (void)browserPlayVideoUnderCursorIfAvailable;
+/// Untertitel für Videos in der Webseite (Weg B) ein-/ausschalten; speichert die Einstellung und startet/stoppt sofort.
+- (void)browserSetWebSubtitlesEnabled:(BOOL)enabled;
 
 @end
 

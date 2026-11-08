@@ -36,10 +36,18 @@ NS_ASSUME_NONNULL_BEGIN
 @optional
 /// Ansicht, deren Inhalt die Hervorhebung als Linse vergrößert (WebView); nil = keine Linse.
 - (nullable UIView *)browserRemoteInputControllerLensSourceView;
+/// Optional: NO, wenn für dieses Ziel keine Linse gezeigt werden soll (z. B. Knöpfe der oberen Leiste,
+/// deren Inhalt nicht in der Quellansicht liegt).
+- (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target;
 /// Leuchtfarbe für das Ziel (Koordinaten von rootView); nil = Standardblau.
 - (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
+/// Adressleiste im Bearbeiten-Zustand mit Aufklapp-Bereich: Pfeiltasten springen räumlich zwischen den Zielen,
+/// kein Seitenscrollen, der Zeiger wird nicht ausgeblendet.
+- (BOOL)browserRemoteInputControllerAddressPanelActive;
+/// Eckenradius der Hervorhebung für ein Ziel (Koordinaten von rootView); negativ = Standard.
+- (CGFloat)browserRemoteInputControllerCornerRadiusForTarget:(CGRect)target;
 @required
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
@@ -71,6 +79,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)movePointerToPoint:(CGPoint)point;
 /// Zum nächsten (1) bzw. vorherigen (-1) Element in Leserichtung springen (wie die Kreisgeste).
 - (void)stepTargetBy:(NSInteger)direction;
+/// Räumlich zum nächsten Ziel in Richtung direction springen (z. B. (0, 1) = nach unten), ohne zu scrollen.
+- (void)stepTargetInDirection:(CGVector)direction;
 #if DEBUG
 /// Testet die Kreiserkennung mit künstlichen Bewegungen. Rückgabe: Anzahl der Proben im Kreismodus (0 = kein Kreis).
 - (NSInteger)debugRunGestureWithDeltas:(NSArray<NSValue *> *)deltas;

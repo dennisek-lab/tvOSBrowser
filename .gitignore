@@ -19,6 +19,7 @@ xcuserdata/
 ## Build output
 _Project/build/
 build/
+build.log
 _Project/DerivedData/
 DerivedData/
 .clang-module-cache/
@@ -62,3 +63,13 @@ build-ac/
 
 ## Filterlisten-Cache (tools/build_adblock_rules.py, tools/build_scriptlets.py)
 tools/.adblock-cache/
+## whisper.cpp (tools/build_whisper.sh, tools/fetch_whisper_model.sh)
+## vendor/whisper.xcframework wird committet (≈17 MB), Quelle und Zwischenstände nicht.
+vendor/whisper.cpp/
+vendor/whisper-build/
+vendor/tools-venv/
+vendor/*.log
+_Project/Browser/WhisperModels/*.bin
+_Project/Browser/WhisperModels/*.part
+## Eigene Simulator-Builds der Agenten (-derivedDataPath ../build-sim-…)
+build-sim-*/
