@@ -9,8 +9,8 @@
 //    WWDC25 „Build a UIKit app with the new design“), Formen wachsen aus ihrem Ursprung heraus.
 //  - Schlicht: kurze easeInOut-/easeOut-Kurven (0,12–0,25 s), nur Alpha/Frame, kein Bounce, kein Materialisieren.
 //
-//  Schlicht gilt, wenn die Einstellung „Liquid-Glass-Animationen“ aus ist oder die Systemeinstellung
-//  „Bewegung reduzieren“ an ist (UIAccessibilityIsReduceMotionEnabled).
+//  Schlicht gilt, wenn die Einstellung „Liquid-Glass-Animationen“ aus ist, die Systemeinstellung
+//  „Bewegung reduzieren“ an ist (UIAccessibilityIsReduceMotionEnabled) oder das alte Design gewählt ist.
 //
 
 #import <UIKit/UIKit.h>
@@ -32,10 +32,14 @@ typedef NS_ENUM(NSInteger, BrowserMotionKind) {
 
 @interface BrowserMotion : NSObject
 
-/// YES: Liquid-Glass-Stil (Einstellung an und „Bewegung reduzieren“ aus).
+/// YES: Liquid-Glass-Stil (Einstellung an, „Bewegung reduzieren“ aus, altes Design aus).
 @property (class, nonatomic, readonly) BOOL liquidGlassEnabled;
-/// YES, wenn UIGlassEffect zur Laufzeit vorhanden ist (tvOS 26 und neuer).
+/// YES, wenn UIGlassEffect zur Laufzeit vorhanden ist (tvOS 26 und neuer) und das alte Design aus ist.
+/// NO: Aufrufer nehmen ihren Rückfall (UIBlurEffect dunkel).
 @property (class, nonatomic, readonly) BOOL glassMaterialAvailable;
+/// Altes Design (Einstellung „Design: Alt“, NSUserDefaults-Schlüssel „ClassicDesign“): Oberfläche wie die
+/// ursprüngliche Fassung, ohne Glas und ohne Liquid-Glass-Animationen.
+@property (class, nonatomic, readonly) BOOL classicDesignEnabled;
 
 /// Wirksame Dauer (Feder: Einschwingzeit) der Art im aktuellen Stil.
 + (NSTimeInterval)durationForKind:(BrowserMotionKind)kind;

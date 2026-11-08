@@ -224,6 +224,9 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
 }
 
 - (UIVisualEffect *)glassEffect {
+    if (!BrowserMotion.glassMaterialAvailable) {
+        return [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]; // altes Design
+    }
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
         UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];

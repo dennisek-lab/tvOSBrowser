@@ -58,7 +58,9 @@
     UIVisualEffect *cardEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
-        cardEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+        if (BrowserMotion.glassMaterialAvailable) { // im alten Design dunkler Blur
+            cardEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+        }
     }
 #endif
     UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:cardEffect];
@@ -311,7 +313,9 @@
     UIButtonConfiguration *config = nil;
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
-        config = [UIButtonConfiguration glassButtonConfiguration];
+        if (BrowserMotion.glassMaterialAvailable) { // im alten Design graue Knöpfe
+            config = [UIButtonConfiguration glassButtonConfiguration];
+        }
     }
 #endif
     if (config == nil) {
