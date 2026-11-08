@@ -54,13 +54,16 @@ static const BOOL kRevealConsumesFirstSwipe = NO;
 // Einrasten, Setzen der Zeigerebene ohne Animation. Nach dem Loslassen optional kurzes Gleiten.
 
 /// Ein Clickpad-Weg von Rand zu Rand (2 Einheiten) entspricht so vielen Punkten, vor der Beschleunigung.
-static const CGFloat kPadPointsPerUnit = 640.0;
+// Ruhiger abgestimmt (Nutzer 9. November 2026: „ein minimaler Swipe geht über den ganzen Bildschirm“): vorher
+// 640 pt je Einheit, Verstärkung bis 2,6 ab 1700 pt/s, Auslauf bis 140 pt. Schnelles Wischen trägt jetzt etwa
+// halb so weit, langsames, präzises Führen etwa drei Viertel.
+static const CGFloat kPadPointsPerUnit = 480.0;
 /// Beschleunigungskurve wie bei einem Trackpad: bis kGainSlowSpeed (Rohpunkte/s) gilt kGainMin (präzise),
 /// ab kGainFastSpeed kGainMax (trägt weit), dazwischen weicher S-Verlauf. Mal Zeigertempo (Einstellung, 0,3…3).
 static const CGFloat kGainMin = 0.8;
-static const CGFloat kGainMax = 2.6;
+static const CGFloat kGainMax = 1.9;
 static const CGFloat kGainSlowSpeed = 150.0;
-static const CGFloat kGainFastSpeed = 1700.0;
+static const CGFloat kGainFastSpeed = 2200.0;
 /// Zeitfenster für die Geschwindigkeit, aus der die Beschleunigung bestimmt wird (s). Ein Fenster statt Abstand
 /// zweier Proben: Proben kommen gebündelt an, sonst schwankt die Verstärkung von Probe zu Probe (Sprünge).
 static const CFTimeInterval kSpeedWindow = 0.035;
@@ -87,7 +90,7 @@ static const CFTimeInterval kTouchFallbackQuietTime = 0.3;
 static const CGFloat kGlideMinSpeed = 600.0;
 static const CFTimeInterval kGlideMaxRestBeforeLift = 0.04;
 static const CFTimeInterval kGlideTimeConstant = 0.09;
-static const CGFloat kGlideMaxDistance = 140.0;
+static const CGFloat kGlideMaxDistance = 100.0;
 
 /// Glasartige Fläche für die Zielmarkierung: Tönung, Glanzverlauf, helle Lichtkante, dunkle Haarlinie außen.
 @interface BrowserGlassHighlightSurfaceView : UIView
@@ -632,8 +635,14 @@ static const CGFloat kMagneticTightPadding = 2.5;
 /// Halbkreise würden sonst Favicon und Titelanfang anschneiden. Nutzerwunsch 8. November 2026.
 static const CGFloat kMagneticCapsuleMaxHeight = 80.0;
 static const CGFloat kMagneticDefaultCornerRadius = 22.0;
-/// Eckige Flächen (Radius 0, z. B. Bilder, eckige Knöpfe): Abstand plus so viel Rundung, dass die spitze Ecke des
-/// Elements nicht in den Glow ragt; die Hervorhebung bleibt erkennbar eckig.
+/// Höhere Ziele ohne eigene Rundung: Rundung wächst mit der Höhe (Anteil), höchstens kMagneticMaxCornerRadius. Mit fest
+/// 22 pt wirkten 120–140 pt hohe Knöpfe (Seitenzoom 175 %) noch kantig (Nutzer 9. November 2026).
+static const CGFloat kMagneticCornerHeightFraction = 0.32;
+static const CGFloat kMagneticMaxCornerRadius = 40.0;
+/// Eckige Flächen (Radius 0, z. B. eckige Knöpfe und Bilder): konzentrisch anliegend, Ecken = Rand + so viel, dass die
+/// Ecke des Knopfs sicher innerhalb bleibt (höchstens Rand × 3,4, sonst ragt sie in Lichtkante und Glow).
+/// Ein Versuch mit Kapsel bzw. 40 pt um eckige Knöpfe (9. November 2026) ließ die Knopfecken in den Rand ragen;
+/// der Nutzer will, dass sich die Hervorhebung an Knöpfen mit Fläche ausrichtet, und nur sonst rund ist.
 static const CGFloat kMagneticSquareExtraRadius = 4.0;
 
 /// Vorgabe-Rundung für Ziele ohne Formangabe (Knöpfe der oberen Leiste; frühere Regel): Knöpfe, Links und Textzeilen als Kapsel, größere
@@ -691,6 +700,10 @@ static CGFloat BrowserMagneticDefaultRadius(CGFloat height) {
 /// Links/rechts: Beginn des laufenden Drucks je Richtung (0 = keiner), nur für Haltedauer und Log.
 @property (nonatomic) CFTimeInterval leftPressBeganTime;
 @property (nonatomic) CFTimeInterval rightPressBeganTime;
+/// Letzter Klick des Clickpads (GameController buttonA): echte Klicks links/rechts haben ihn, die Siri-Taste nicht.
+@property (nonatomic) CFTimeInterval lastClickpadButtonTime;
+/// Letzter Druck der Siri-Taste (für den Doppelklick).
+@property (nonatomic) CFTimeInterval lastSiriPressTime;
 /// UIPress.timestamp des zuletzt verarbeiteten Beginns/Endes je Richtung. Kommt dasselbe Ereignis ein zweites Mal
 /// an (gleicher Zeitstempel), wirkt es nicht noch einmal – derselbe Mechanismus wie beim Auswahl-Druck.
 @property (nonatomic) NSTimeInterval leftPressBeganEventTime;
@@ -1255,11 +1268,12 @@ enum { kHistoryCount = 32 };
     if (appRadius >= 0.0) {
         radius = MIN(appRadius + padding, height / 2.0);
     } else if (ownRadius) {
-        radius = MIN(elementRadius + padding, halfSide);
+        radius = MIN(elementRadius + padding, halfSide); // konzentrisch: Pille bleibt Pille, 4 px bleibt knapp
     } else if (shapeKnown && surface && !textTarget) {
         radius = MIN(padding + kMagneticSquareExtraRadius, halfSide);
     } else if (shapeKnown) {
-        radius = height <= kMagneticCapsuleMaxHeight ? halfSide : MIN(kMagneticDefaultCornerRadius, halfSide);
+        radius = height <= kMagneticCapsuleMaxHeight ? halfSide
+            : MIN(MIN(MAX(kMagneticDefaultCornerRadius, height * kMagneticCornerHeightFraction), kMagneticMaxCornerRadius), halfSide);
     }
 #if DEBUG
     static CGRect loggedTarget;
@@ -2055,10 +2069,16 @@ static const NSTimeInterval kArrowRepeatInterval = 0.25;
                 self.stepSource = @"Taste links";
                 [self.host browserRemoteInputControllerNavigateBack];
                 return YES;
-            case UIPressTypeRightArrow:
+            case UIPressTypeRightArrow: {
+                BOOL siri = [self rightPressIsSiriPressWithBeganTime:self.rightPressBeganTime];
                 if (![self arrowPressEndedShouldStep:press]) {
                     return YES;
                 }
+                if (siri) {
+                    [self handleSiriPress];
+                    return YES;
+                }
+            }
                 [self revealCursorIfIdle];
                 [self handleRightPress];
                 return YES;
@@ -2679,6 +2699,47 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
         };
     }];
 #endif
+    // Nach dem DEBUG-Block, damit dieser Handler für buttonA gilt: merkt sich echte Klicks (Siri-Erkennung).
+    pad.buttonA.pressedChangedHandler = ^(__unused GCControllerButtonInput *input, __unused float value, BOOL pressed) {
+        if (pressed) {
+            weakSelf.lastClickpadButtonTime = CACurrentMediaTime();
+        }
+#if DEBUG
+        NSLog(@"[Input] GameController-Taste Button A %@", pressed ? @"gedrückt" : @"losgelassen");
+#endif
+    };
+}
+
+#pragma mark Siri-Taste
+
+/// Die Siri-Taste ist für Apps offiziell nicht abfragbar (UIPressType kennt sie nicht). Am Gerät (Siri Remote 2. Gen.,
+/// tvOS 27.2, Sonde PROBE_INPUT, 9. November 2026) kommt ein kurzer Druck aber als UIPressTypeRightArrow an: rund 5 ms
+/// lang und ohne Klick des Clickpads (GameController buttonA). Ein echter Klick rechts dauert 100–150 ms und meldet
+/// buttonA. Grenze: Eine TV-Fernbedienung über HDMI-CEC könnte ähnlich kurze Drücke ohne buttonA schicken.
+static const NSTimeInterval kSiriPressMaxDuration = 0.04;
+static const NSTimeInterval kSiriPressClickGap = 0.3;
+static const NSTimeInterval kSiriDoublePressWindow = 0.6;
+
+- (BOOL)rightPressIsSiriPressWithBeganTime:(CFTimeInterval)began {
+    if (began <= 0) {
+        return NO;
+    }
+    CFTimeInterval now = CACurrentMediaTime();
+    return now - began < kSiriPressMaxDuration && now - self.lastClickpadButtonTime > kSiriPressClickGap;
+}
+
+- (void)handleSiriPress {
+    CFTimeInterval now = CACurrentMediaTime();
+    BOOL second = now - self.lastSiriPressTime < kSiriDoublePressWindow;
+    NSLog(@"[Keys] Siri-Taste%@", second ? @" zweimal: Aktion" : @" (einmal, ohne Wirkung)");
+    if (second) {
+        self.lastSiriPressTime = 0;
+        if ([self.host respondsToSelector:@selector(browserRemoteInputControllerHandleSiriDoublePress)]) {
+            [self.host browserRemoteInputControllerHandleSiriDoublePress];
+        }
+        return;
+    }
+    self.lastSiriPressTime = now;
 }
 
 /// Eine Probe des Clickpads (absolute Lage −1…1, (0,0) = kein Finger). Bewegung entsteht nur aus Differenzen,
