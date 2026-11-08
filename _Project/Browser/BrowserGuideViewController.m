@@ -56,6 +56,7 @@
         @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Clickpad links oder rechts drücken, auch zu Play-Knöpfen. Im laufenden Video: 10 Sekunden spulen."],
         @[@"playpause", @"Play/Pause", @"Startet und stoppt Videos. Gedrückt halten: suchen und sprechen."],
         @[@"ellipsis.circle", @"Mehr", @"Werbeblocker, Cookie-Ablehner und Einstellungen findest du oben rechts unter •••."],
+        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“, „neuer Tab“ oder „suche Wetter“ sagen."],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self rowWithSymbol:item[0] title:item[1] text:item[2]]];

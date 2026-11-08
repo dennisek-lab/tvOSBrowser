@@ -159,10 +159,10 @@ iPhone (HTTP, Token)  ────┘
 ## 6. Aufwand und Schritte (Vorschlag für PLAN.md)
 
 - [ ] Gerätetest Siri mit dem Spike (Abschnitt 3.4), Ergebnis hier und im Plan eintragen (0,5 h)
-- [ ] `BrowserCommand` (Tabelle), `BrowserCommandRouter` und Host-Protokoll im `ViewController`, Selbsttest `cmd:` (0,5 Tag)
-- [ ] Spike-Beobachter auf den Router umstellen, `reader` anbinden, sobald der Reader-Knopf auf main ist (1 h)
-- [ ] `BrowserCommandParser` mit Phrasen und Präfixen („suche“, „öffne“), Selbsttest `parse:` (0,5 Tag)
-- [ ] Diktat im Adressfeld und in der Startansicht: zuerst Parser, dann Suche; Rückmeldung einblenden, Platzhaltertext mit Beispielen; Bedienungsdialog ergänzen (0,5 Tag)
+- [x] `BrowserCommand` (Tabelle), `BrowserCommandRouter` und Host-Protokoll im `ViewController`, Selbsttest `cmd:` (0,5 Tag)
+- [x] Spike-Beobachter auf den Router umstellen, `reader` anbinden, sobald der Reader-Knopf auf main ist (1 h)
+- [x] `BrowserCommandParser` mit Phrasen und Präfixen („suche“, „öffne“), Selbsttest `parse:` (0,5 Tag)
+- [x] Diktat im Adressfeld: zuerst Parser, dann Suche; Rückmeldung einblenden, Platzhaltertext mit Beispielen; Bedienungsdialog ergänzen (0,5 Tag). Die alte Startansicht ist nicht mehr eingebunden und bleibt ohne Parser
 - [ ] Am Gerät prüfen: Diktat „Reader“, „zurück“, „neuer Tab“, „suche Reader“, „öffne heise.de“ (1 h)
 - [ ] Medien: `externalMetadata` im nativen Player setzen, Siri „Was hat er gesagt?“, „Untertitel an“ und „30 Sekunden zurück“ am Gerät prüfen; `enableLanguageOptionCommand` für Webvideos prüfen (0,5 Tag)
 - [ ] Falls Siri am Gerät funktioniert: Phrasen und Intents aus der Tabelle vervollständigen, `INAlternativeAppNames` setzen (0,5 Tag). Falls nicht: Spike-Swift-Datei behalten (kostet nichts) und nach jedem großen tvOS-Update den Gerätetest wiederholen
@@ -172,7 +172,41 @@ Gesamt ohne iPhone-Steuerung: etwa 2,5 Tage, mit iPhone-Steuerung etwa 5 Tage.
 
 ---
 
-## 7. Grenzen
+## 7. Umsetzung: Sprachbefehle über das Diktat (Stand 8. November 2026)
+
+Gebaut nach Abschnitt 5. Dateien: `BrowserCommand.m/.h` (Tabelle), `BrowserCommandParser.m/.h`, `BrowserCommandRouter.m/.h` (Router, Host-Protokoll `BrowserCommandHost`, Glas-Rückmeldung), Host und Einstieg `handleEnteredAddressText:` in `ViewController.m`. Siri (`handleSiriCommandNotification:`) geht jetzt ebenfalls über den Router; die Swift-Seite ist unverändert.
+
+**Bedienung:** Adresse öffnen (zweimal oben oder Klick auf die Adresse), Feld anklicken bzw. Play/Pause, Siri-Taste halten und sprechen. Nach 1,5 s (Diktat) oder mit „Suchen“ wertet die App den Text aus. Erkannte Befehle zeigen unten eine Glas-Kapsel, z. B. „Reader eingeschaltet“. Der Platzhalter über der Tastatur lautet „Suchbegriff, Adresse oder z. B. „Reader““ (auf tvOS zeigt die Vollbild-Tastatur den Platzhalter groß an, den Dialogtext nicht). Im Bedienungsdialog steht eine Zeile „Sprachbefehle“.
+
+| Name | Argument | Beispiele (Diktat) | Aktion |
+|:--|:--|:--|:--|
+| `reader` | an/aus/umschalten | „Reader“, „Lesemodus“, „Reader starten“, „Starte den Reader“, „Öffne den Reader“, „Reader aus“, „reader off“ | Reader-Knopf (`toggleReaderMode`); nicht lesbare Seite: Hinweis statt Aktion |
+| `address` | optional Text | „Adresse“, „Favoriten“ | Adress-Bearbeiten mit Aufklapp-Bereich; mit Text (Siri) Adresse oder Suche |
+| `search` | Text | „suche Wetter“, „Suche nach Reader“, „google heise.de“, „search for …“ | Google-Suche, auch wenn der Text wie ein Befehl oder eine Adresse aussieht |
+| `open` | Text | „öffne heise.de“, „Öffne heise punkt de“, „gehe zu computerbase.de“, „open apple.com“ | Adresse laden (nur wenn X wie eine Adresse klingt, sonst normale Suche mit dem ganzen Satz) |
+| `back` / `forward` | – | „zurück“, „geh zurück“, „go back“ / „vor“, „weiter“, „vorwärts“ | Verlauf |
+| `reload` | – | „neu laden“, „aktualisieren“, „reload“ | Neu laden |
+| `home` | – | „Startseite“, „home“ | Startseite |
+| `newtab` / `closetab` | – | „neuer Tab“, „new tab“ / „Tab schließen“, „close tab“ | Tab öffnen bzw. aktuellen Tab schließen |
+| `tabs` | – | „Tabs“, „Tab-Übersicht“, „alle Tabs“ | Tab-Übersicht |
+| `favorite` | an/aus/umschalten | „Favorit“, „merken“, „zu Favoriten hinzufügen“, „Favorit entfernen“ | Stern der Leiste |
+| `adblock-site` | an/aus/umschalten | „Werbeblocker aus“, „Werbeblocker hier an“, „Werbung zulassen“ | Ausnahme wie Menüpunkt „Werbeblocker hier“, danach neu laden |
+| `top` / `down` / `up` | – | „nach oben“, „Seitenanfang“ / „runter“, „nach unten“ / „hoch“, „nach oben scrollen“ | Scrollen (Seitenanfang bzw. 80 % der Höhe) |
+| `menu` | – | „Menü“, „Einstellungen“ | •••-Menü |
+| `help` | – | „Hilfe“, „Bedienung“, „was kann ich sagen“ | Bedienungsdialog |
+| `player` | – | „im Player abspielen“, „Video groß“ | Video der Seite im nativen Player (`openPageVideoInNativePlayer`) |
+| `playpause` | an/aus/umschalten | „Pause“, „anhalten“ / „abspielen“, „weiter abspielen“ | Webvideo (unter dem Zeiger, sonst erstes sichtbares) |
+| `seek` | Sekunden ± | „30 Sekunden zurück“, „spul zehn Sekunden vor“, „eine Minute zurück“, „zurückspulen“ (10 s) | Webvideo spulen |
+
+**Nicht umgesetzt:** Untertitel an/aus (keine passende Aktion vorhanden; Untertitel kommen mit Phase 3), Schriftgröße, Cookie-Ablehner pro Seite.
+
+**Konservativ:** Nur ganze Phrasen zählen. Geprüft (`parse:`) und bleiben Suche: „Reader Test Vergleich“, „Reader Test“, „zurück zur Zukunft“, „Tabs vs Spaces“, „neuer Tab Chrome“, „Hilfe bei Steuern“, „Lesemodus Safari“, „vor 10 Jahren“, „Tab“, „Pause Musik“, „Geh zu Wikipedia“, „open source software“, „Wetter Berlin“. Adressen („heise.de“, „https://example.org“) gehen nie an den Parser. Wer nach einem Befehlswort suchen will, sagt „suche Reader“.
+
+**Test im Simulator** (eigenes Gerät „Cmd-Test“, Apple TV 4K 3. Gen., tvOS 27.2): 62 `parse:`-Fälle wie erwartet, jeder Befehl einmal per `cmd:` ausgelöst (Logzeile `[Command] … ok`), Diktatweg per `enter:` („Starte den Reader“ auf nicht lesbarer Seite → Hinweis, „Neu laden“ → reload, „suche Reader Test“ → Suche). Webvideo-Wiedergabe im Simulator ist unzuverlässig (auch direktes `play()` per JS startet nicht); Befehle kommen an, der native Player startet. Screenshots: `docs/command-screens/`.
+
+**Grenzen:** Das Diktat muss in den tvOS-Einstellungen an sein und folgt der Siri-Sprache (Phrasen sind Deutsch und Englisch). Ein Schritt mehr als echtes Siri: erst das Adressfeld öffnen. „google X“ sucht immer nach X („Google Maps“ wird also „Maps“). Nicht auf dem Gerät mit echter Spracheingabe geprüft (Diktat liefert dort evtl. andere Schreibweisen, z. B. Großschreibung oder Satzzeichen; die Normalisierung fängt die üblichen ab).
+
+## 8. Grenzen
 
 - Apps haben **keinen Zugriff auf das Mikrofon der Siri Remote**. Sprache kommt nur als fertiger Text über das Diktat in ein Textfeld.
 - Siri auf dem Apple TV kennt für Drittanbieter-Apps nur: App öffnen, Inhalte suchen und abspielen (SiriKit Media, Video-Partnerprogramm) und Wiedergabesteuerung über den System-Player bzw. Now Playing. Eigene Phrasen sind dort nicht dokumentiert.
