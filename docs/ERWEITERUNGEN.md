@@ -1294,7 +1294,7 @@ Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `Br
 
 **Untersucht, ohne Handlungsbedarf:**
 - Synchrones JavaScript (`stringByEvaluatingJavaScriptFromString:`, 3–7 Aufrufe je Seite, Wartezeit bis 890 ms): der Pump lässt den Run-Loop weiterlaufen; ein asynchroner Umbau änderte die Hauptthread-Blockaden nicht messbar (vorher 407–520 ms, nachher 369–523 ms über fünf Seiten) und wurde verworfen.
-- Schriftgrößen-Durchlauf (`updateTextFontSize`, auch bei 100 %): heise 6 ms, spiegel 20 ms, Wikipedia 1 ms je Lauf (5–6 Läufe je Laden). Überspringen bei 100 % würde das Festschreiben (`font-size !important`) und damit Verhalten ändern; offen gelassen.
+- Schriftgrößen-Durchlauf (`updateTextFontSize`): lief früher bei jedem Laden auch bei 100 % über alle Elemente (`getComputedStyle`, dann `font-size !important` festgeschrieben). Am Apple TV wartete der Main-Thread darauf bis 710 ms (spiegel.de), und die Seite konnte ihre Schriftgrößen danach nicht mehr selbst ändern. Seit 8. November 2026 fasst er bei 100 % nur Elemente mit `data-browser-original-font-size` an (früher vergrößert, werden zurückgesetzt); Gerät danach meist 21–24 ms, Ausreißer 108–351 ms, wenn der Seitenprozess noch lädt (Wartezeit, nicht Rechenzeit).
 - Klickziele (`collect()`): heise 3 ms (407 Ziele), spiegel 6 ms (787), YouTube 0,6 ms; im Leerlauf 0–3 Aufrufe in 33 s.
 - Leerlauf-CPU: App 0,0–0,1 %, Seitenprozess 0,8–2,7 % (Seiteninhalt); `backboardd` 3,4 % auf about:blank kommt aus dem UIKit-Glas (`UISDFElementView`, System).
 - Zeiger: 0,1–0,3 ms je Bild ohne JavaScript (Abschnitt 8.8).

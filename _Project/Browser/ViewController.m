@@ -881,7 +881,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                                "document.body.style.setProperty('text-size-adjust', value, 'important');"
                            "}"
                            "if (!document.body || !window.getComputedStyle) { return value; }"
-                           "var elements = document.querySelectorAll('body, body *');"
+                           // Bei 100 % nur früher vergrößerte Elemente zurücksetzen. Sonst würde jede Seite bei jedem
+                           // Laden für alle Elemente getComputedStyle lesen und die Größen festschreiben (am Apple TV
+                           // bis 700 ms Wartezeit auf großen Seiten, und die Seite könnte ihre Schrift nicht mehr ändern).
+                           "var elements = document.querySelectorAll(multiplier === 1 ? '[data-browser-original-font-size]' : 'body, body *');"
                            "for (var i = 0; i < elements.length; i++) {"
                                "var element = elements[i];"
                                "if (!element || !element.tagName) { continue; }"
