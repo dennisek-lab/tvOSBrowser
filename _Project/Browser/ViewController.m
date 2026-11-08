@@ -36,6 +36,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic) BrowserTabOverviewController *tabOverviewController;
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
 @property (nonatomic) BrowserNowPlayingController *nowPlayingController;
+@property (nonatomic) CFTimeInterval lastFullscreenExitAttempt;
 @property (nonatomic) BrowserViewModel *viewModel;
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
@@ -189,6 +190,15 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                             }
                         }];
                     }
+                    return;
+                }
+                if ([step isEqualToString:@"menu"]) {
+                    BOOL handled = [self browserRemoteInputControllerHandleMenuPress];
+                    NSLog(@"[SelfTest] menu handled=%d", handled);
+                    return;
+                }
+                if ([step isEqualToString:@"state"]) {
+                    NSLog(@"[SelfTest] state presented=%@ windowRoot=%@ fs=%d keyWindowPresented=%@", NSStringFromClass(self.presentedViewController.class), NSStringFromClass(self.view.window.rootViewController.class), self.webview.pageFullscreen, NSStringFromClass(self.view.window.rootViewController.presentedViewController.class));
                     return;
                 }
                 if ([step hasPrefix:@"js:"]) {
@@ -651,7 +661,25 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)browserCreateNewTabLoadingHomePage:(BOOL)loadHomePage {
+    BrowserWebView *previous = self.webview;
     [self.tabCoordinator createNewTabLoadingHomePage:loadHomePage];
+    [self activeWebViewChangedFrom:previous];
+}
+
+/// Nach Tabwechsel: Video im alten Tab anhalten, Zeigerziele, Bildschirmschoner und Now Playing auf den neuen Tab umstellen.
+- (void)activeWebViewChangedFrom:(BrowserWebView *)previous {
+    BrowserWebView *current = self.webview;
+    if (previous == current) {
+        return;
+    }
+    if (previous != nil && previous.videoPlaying) {
+        [previous sendVideoCommand:@"pause"];
+    }
+    [self observeClickTargetsOfWebView:current];
+    [current refreshClickTargets];
+    [self.remoteInputController pointerTargetsDidChange];
+    UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
+    [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
 }
 
 - (void)browserHideTopNav {
@@ -738,15 +766,21 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)browserTabOverviewControllerCreateNewTabLoadingHomePage:(BOOL)loadHomePage {
+    BrowserWebView *previous = self.webview;
     [self.tabCoordinator createNewTabLoadingHomePage:loadHomePage];
+    [self activeWebViewChangedFrom:previous];
 }
 
 - (void)browserTabOverviewControllerSwitchToTabAtIndex:(NSInteger)tabIndex {
+    BrowserWebView *previous = self.webview;
     [self.tabCoordinator switchToTabAtIndex:tabIndex];
+    [self activeWebViewChangedFrom:previous];
 }
 
 - (void)browserTabOverviewControllerCloseTabAtIndex:(NSInteger)tabIndex {
+    BrowserWebView *previous = self.webview;
     [self.tabCoordinator closeTabAtIndex:tabIndex];
+    [self activeWebViewChangedFrom:previous];
 }
 
 #pragma mark - BrowserPageActionCoordinatorHost
@@ -756,7 +790,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (BOOL)browserPageActionCoordinatorCreateNewTabWithRequest:(NSURLRequest *)request {
-    return [self.tabCoordinator createNewTabWithRequest:request];
+    BrowserWebView *previous = self.webview;
+    BOOL created = [self.tabCoordinator createNewTabWithRequest:request];
+    [self activeWebViewChangedFrom:previous];
+    return created;
 }
 
 #pragma mark - BrowserRemoteInputControllerHost
@@ -810,6 +847,12 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (BOOL)browserRemoteInputControllerHandleMenuPress {
+    // Vollbild der Seite zuerst verlassen. Klappt das nicht, geht der nächste Druck normal weiter.
+    if (self.webview.pageFullscreen && CACurrentMediaTime() - self.lastFullscreenExitAttempt > 2.0) {
+        self.lastFullscreenExitAttempt = CACurrentMediaTime();
+        [self.webview exitPageFullscreen];
+        return YES;
+    }
     if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return YES;
@@ -929,7 +972,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 - (BOOL)webView:(id)webView shouldCreateNewTabWithRequest:(NSURLRequest *)request navigationType:(NSInteger)navigationType {
     (void)webView;
     (void)navigationType;
-    return [self.tabCoordinator createNewTabWithRequest:request];
+    return [self browserPageActionCoordinatorCreateNewTabWithRequest:request];
 }
 
 - (BOOL)webView:(id)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(NSInteger)navigationType {

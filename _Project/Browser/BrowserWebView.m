@@ -559,7 +559,11 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
             strongSelf.clickTargetsDidChange();
         }
     };
-    [[BrowserDNSProxy sharedProxy] applyToWebsiteDataStore:[BrowserWebView defaultWebsiteDataStore]];
+    id dataStore = [BrowserWebView defaultWebsiteDataStore];
+    if (dataStore != nil && [configuration respondsToSelector:NSSelectorFromString(@"setWebsiteDataStore:")]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(configuration, NSSelectorFromString(@"setWebsiteDataStore:"), dataStore);
+    }
+    [[BrowserDNSProxy sharedProxy] applyToWebsiteDataStore:dataStore];
 
     id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
     SEL initializer = NSSelectorFromString(@"initWithFrame:configuration:");
@@ -609,6 +613,14 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 
 - (void)sendVideoCommand:(NSString *)command {
     [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:CGPointMake(-1, -1) command:command]];
+}
+
+- (BOOL)pageFullscreen {
+    return self.clickTargetTracker.pageFullscreen;
+}
+
+- (void)exitPageFullscreen {
+    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker exitFullscreenScript]];
 }
 
 - (NSDictionary *)mediaInfo {
@@ -1089,8 +1101,62 @@ windowFeatures:(id)windowFeatures {
     return nil;
 }
 
+/// tvOS sperrt Library/WebKit, dort kann WebKit weder LocalStorage noch IndexedDB, Service Worker oder
+/// Cache-Speicher anlegen. Damit Logins und Seiteneinstellungen erhalten bleiben, bekommt der Datenspeicher
+/// eigene Verzeichnisse in Library/Caches (der einzige größere beschreibbare Ort einer tvOS-App).
+static id BrowserCreatePersistentWebsiteDataStore(void) {
+    Class configurationClass = NSClassFromString(@"_WKWebsiteDataStoreConfiguration");
+    Class dataStoreClass = NSClassFromString(kBrowserWebsiteDataStoreClassName);
+    SEL initWithConfiguration = NSSelectorFromString(@"_initWithConfiguration:");
+    if (configurationClass == Nil || dataStoreClass == Nil || ![dataStoreClass instancesRespondToSelector:initWithConfiguration]) {
+        NSLog(@"[DataStore] eigene Konfiguration nicht verfügbar");
+        return nil;
+    }
+    NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *root = [caches URLByAppendingPathComponent:@"WebsiteData" isDirectory:YES];
+    id configuration = [[configurationClass alloc] init];
+    NSDictionary<NSString *, NSString *> *directories = @{
+        @"setGeneralStorageDirectory:": @"General",
+        @"_setWebStorageDirectory:": @"LocalStorage",
+        @"_setIndexedDBDatabaseDirectory:": @"IndexedDB",
+        @"_setWebSQLDatabaseDirectory:": @"WebSQL",
+        @"_setCacheStorageDirectory:": @"CacheStorage",
+        @"_setServiceWorkerRegistrationDirectory:": @"ServiceWorkers",
+        @"_setResourceLoadStatisticsDirectory:": @"ResourceLoadStatistics",
+        @"setNetworkCacheDirectory:": @"NetworkCache",
+        @"setDeviceIdHashSaltsStorageDirectory:": @"DeviceIdHashSalts",
+        @"setMediaKeysStorageDirectory:": @"MediaKeys",
+        @"setAlternativeServicesStorageDirectory:": @"AlternativeServices",
+        @"setHSTSStorageDirectory:": @"HSTS",
+        @"setSearchFieldHistoryDirectory:": @"SearchHistory",
+        @"_setApplicationCacheDirectory:": @"ApplicationCache",
+    };
+    NSUInteger applied = 0;
+    for (NSString *selectorName in directories) {
+        SEL selector = NSSelectorFromString(selectorName);
+        if (![configuration respondsToSelector:selector]) {
+            continue;
+        }
+        NSURL *url = [root URLByAppendingPathComponent:directories[selectorName] isDirectory:YES];
+        [NSFileManager.defaultManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:nil error:nil];
+        ((void (*)(id, SEL, id))objc_msgSend)(configuration, selector, url);
+        applied += 1;
+    }
+    id dataStore = ((id (*)(id, SEL, id))objc_msgSend)([dataStoreClass alloc], initWithConfiguration, configuration);
+    NSLog(@"[DataStore] eigener Speicher in Caches, %lu Verzeichnisse gesetzt, store=%@", (unsigned long)applied, dataStore != nil ? @"ok" : @"nil");
+    return dataStore;
+}
+
 + (id)defaultWebsiteDataStore {
     BrowserEnsureWebKitRuntimeLoaded();
+    static id persistentStore = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        persistentStore = BrowserCreatePersistentWebsiteDataStore();
+    });
+    if (persistentStore != nil) {
+        return persistentStore;
+    }
     Class dataStoreClass = NSClassFromString(kBrowserWebsiteDataStoreClassName);
     SEL selector = NSSelectorFromString(@"defaultDataStore");
     if (dataStoreClass == Nil || ![dataStoreClass respondsToSelector:selector]) {

@@ -35,6 +35,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)sendVideoCommand:(NSString * _Nonnull)command atPoint:(CGPoint)point;
 /// Videobefehl an das aktive Video der Seite (für Systembefehle): zusätzlich "play", "pause", "seekto:S", "action:nexttrack".
 - (void)sendVideoCommand:(NSString * _Nonnull)command;
+/// Ist auf der Seite gerade etwas im Vollbild (Element-Vollbild oder Video-Vollbild von WebKit)?
+@property (nonatomic, readonly) BOOL pageFullscreen;
+/// Verlässt das Vollbild der Seite.
+- (void)exitPageFullscreen;
 /// Angaben zum aktiven Video für „Now Playing“ (siehe BrowserClickTargetTracker.mediaInfo).
 @property (nonatomic, readonly, copy, nullable) NSDictionary *mediaInfo;
 /// Bittet die Seite, ihre klickbaren Elemente sofort neu zu melden (asynchron).

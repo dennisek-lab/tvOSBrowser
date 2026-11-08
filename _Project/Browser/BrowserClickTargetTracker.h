@@ -37,6 +37,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Liegt dort kein Video, trifft der Befehl das laufende Video der Seite.
 + (NSString *)videoCommandScriptWithCSSPoint:(CGPoint)point command:(NSString *)command;
 
+/// Ist auf der Seite gerade ein Element oder Video im Vollbild?
+@property (nonatomic, readonly) BOOL pageFullscreen;
+
+/// JavaScript, das das Vollbild der Seite verlässt.
++ (NSString *)exitFullscreenScript;
+
 /// Leert die Ziele (z. B. beim Start einer neuen Navigation).
 - (void)reset;
 

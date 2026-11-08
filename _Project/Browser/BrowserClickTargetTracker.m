@@ -67,10 +67,12 @@ static NSString *BrowserClickTargetScript(void) {
                "art:art,dur:isFinite(av.duration)?av.duration:0,t:av.currentTime,paused:av.paused||av.ended,rate:av.playbackRate,"
                "next:!!h.nexttrack,prev:!!h.previoustrack};"
         "}"
-        "var key=innerWidth+':'+scrollX+':'+scrollY+':'+playing+':'+vids.join(';')+':'+out.join(';')+':'+JSON.stringify(m);"
+        // Nur echtes Element-Vollbild. Video-Vollbild kann tvOS-WebKit nicht, webkitDisplayingFullscreen bleibt nach dem Fehlversuch aber hängen.
+        "var fs=!!(document.fullscreenElement||document.webkitFullscreenElement);"
+        "var key=fs+':'+innerWidth+':'+scrollX+':'+scrollY+':'+playing+':'+vids.join(';')+':'+out.join(';')+':'+JSON.stringify(m);"
         "if (key===last) { return; }"
         "last=key;"
-        "try { webkit.messageHandlers.browserTargets.postMessage({w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m}); } catch(e) {}"
+        "try { webkit.messageHandlers.browserTargets.postMessage({w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m,fs:fs}); } catch(e) {}"
     "}"
     "function schedule(delay){"
         "if (pending) { return; }"
@@ -83,6 +85,7 @@ static NSString *BrowserClickTargetScript(void) {
     "document.addEventListener('play',function(e){ if (e.target && e.target.tagName==='VIDEO') { window.__browserActiveVideo=e.target; } },true);"
     "['play','playing','pause','ended','emptied','seeked','ratechange','durationchange','loadedmetadata'].forEach(function(n){ document.addEventListener(n,function(){ schedule(60); },true); });"
     "addEventListener('load',function(){ schedule(50); });"
+    "['fullscreenchange','webkitfullscreenchange','webkitbeginfullscreen','webkitendfullscreen'].forEach(function(n){ document.addEventListener(n,function(){ schedule(30); },true); });"
     "try { new MutationObserver(function(){ schedule(350); }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden','aria-hidden','disabled']}); } catch(e) {}"
     "schedule(0);"
     "})();";
@@ -98,6 +101,7 @@ static NSString *BrowserClickTargetScript(void) {
 @property (nonatomic, copy) NSArray<NSArray<NSNumber *> *> *rawVideos;
 @property (nonatomic, readwrite) BOOL videoPlaying;
 @property (nonatomic, readwrite, copy, nullable) NSDictionary *mediaInfo;
+@property (nonatomic, readwrite) BOOL pageFullscreen;
 @property (nonatomic) CGFloat cssViewportWidth;
 @property (nonatomic) CGPoint contentOffsetAtReport;
 - (void)handleMessageBody:(id)body;
@@ -140,6 +144,16 @@ static NSString *BrowserClickTargetScript(void) {
         "if (cmd.indexOf('seekto:')===0) { var s=parseFloat(cmd.slice(7)); if (isFinite(s)) { best.currentTime=Math.max(0,s); } return 'seek'; }"
         "return 'unknown';"
         "})(%f,%f,'%@');", point.x, point.y, safeCommand];
+}
+
++ (NSString *)exitFullscreenScript {
+    return @"(function(){"
+        "try { if (document.fullscreenElement && document.exitFullscreen) { document.exitFullscreen(); return 'exit'; } } catch(e) {}"
+        "try { if (document.webkitFullscreenElement && document.webkitExitFullscreen) { document.webkitExitFullscreen(); return 'webkitExit'; } } catch(e) {}"
+        "var vs=document.querySelectorAll('video');"
+        "for (var i=0;i<vs.length;i++){ if (vs[i].webkitDisplayingFullscreen) { vs[i].webkitExitFullscreen(); return 'video'; } }"
+        "return 'none';"
+        "})();";
 }
 
 + (NSString *)refreshScript {
@@ -206,6 +220,7 @@ static NSString *BrowserClickTargetScript(void) {
     self.rawVideos = validVideos;
     self.videoPlaying = [dictionary[@"p"] boolValue];
     self.mediaInfo = [dictionary[@"m"] isKindOfClass:NSDictionary.class] ? dictionary[@"m"] : nil;
+    self.pageFullscreen = [dictionary[@"fs"] boolValue];
     self.cssViewportWidth = [dictionary[@"w"] doubleValue];
     self.contentOffsetAtReport = self.scrollView != nil ? self.scrollView.contentOffset : CGPointZero;
     if (self.targetsDidChange != nil) {
@@ -218,6 +233,7 @@ static NSString *BrowserClickTargetScript(void) {
     self.rawVideos = @[];
     self.videoPlaying = NO;
     self.mediaInfo = nil;
+    self.pageFullscreen = NO;
     if (self.targetsDidChange != nil) {
         self.targetsDidChange();
     }
