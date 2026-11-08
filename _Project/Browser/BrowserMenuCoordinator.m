@@ -355,7 +355,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 @implementation BrowserAdvancedMenuViewController
 
 - (UIVisualEffect *)panelEffect {
-    Class glassEffectClass = NSClassFromString(@"UIGlassEffect");
+    Class glassEffectClass = BrowserMotion.glassMaterialAvailable ? NSClassFromString(@"UIGlassEffect") : Nil;
     if (glassEffectClass != Nil) {
         id effect = [[glassEffectClass alloc] init];
         if ([effect isKindOfClass:[UIVisualEffect class]]) {
@@ -383,7 +383,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
     self.panelWidth = MIN(MAX(CGRectGetWidth(UIScreen.mainScreen.bounds) * 0.38, 480.0), 700.0);
-    self.usingNativeGlassEffect = (NSClassFromString(@"UIGlassEffect") != Nil);
+    self.usingNativeGlassEffect = BrowserMotion.glassMaterialAvailable;
 
     UIView *dimView = [UIView new];
     dimView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1365,6 +1365,19 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Design: Liquid Glass (Standard) oder das alte Design der ursprünglichen Fassung (graue Leiste, Originalsymbole,
+/// volle Adresse, kein Glas). Wirkt sofort: BrowserTopBarView folgt der Einstellung über NSUserDefaultsDidChangeNotification,
+/// alle übrigen Flächen fragen BrowserMotion beim nächsten Öffnen.
+- (BrowserAdvancedMenuItem *)designMenuItem {
+    BOOL classic = self.preferencesStore.classicDesignEnabled;
+    return [self advancedMenuItemWithTitle:@"Design"
+                                    detail:classic ? @"Alt" : @"Liquid Glass"
+                                   handler:^{
+        self.preferencesStore.classicDesignEnabled = !classic;
+        [self.host browserBringCursorToFront];
+    }];
+}
+
 /// Liquid-Glass-Animationen (Federn, materialisierendes Glas) oder schlichte Überblendungen, s. BrowserMotion.
 - (BrowserAdvancedMenuItem *)liquidGlassAnimationsMenuItem {
     BOOL enabled = self.preferencesStore.liquidGlassAnimationsEnabled;
@@ -1601,6 +1614,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                                items:@[
             [self topNavigationVisibilityMenuItem],
             [self rainbowGlowMenuItem],
+            [self designMenuItem],
             [self liquidGlassAnimationsMenuItem],
             [self cursorStyleMenuItem],
             [self pointerSpeedMenuItem],

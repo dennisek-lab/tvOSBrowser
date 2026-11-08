@@ -16,7 +16,47 @@ static const CGFloat kBorder = 1.5;
 }
 
 + (UIImage *)imageForKind:(BrowserCursorKind)kind {
-    return [self imageForKind:kind style:(BrowserCursorStyle)[[BrowserPreferencesStore alloc] init].cursorStyle];
+    BrowserPreferencesStore *preferences = [[BrowserPreferencesStore alloc] init];
+    BrowserCursorStyle style = (BrowserCursorStyle)preferences.cursorStyle;
+    if (style == BrowserCursorStyleMacDark && preferences.classicDesignEnabled) {
+        // Altes Design mit Standardstil: die Bitmaps des Originals (Assets „Cursor“ und „Pointer“).
+        UIImage *classic = [self classicImageForKind:kind];
+        if (classic != nil) {
+            return classic;
+        }
+    }
+    return [self imageForKind:kind style:style];
+}
+
+/// Zeiger der ursprünglichen Fassung: 64-pt-Bitmaps (Pfeil „Cursor“, Hand „Pointer“), in ein Bild mit demselben Rand wie
+/// die Vektorzeiger gesetzt, damit die Klickspitze bei `+hotspot` liegt. Für die Texteinfügemarke gab es kein Bild (nil).
++ (nullable UIImage *)classicImageForKind:(BrowserCursorKind)kind {
+    if (kind == BrowserCursorKindIBeam) {
+        return nil;
+    }
+    static NSMutableDictionary<NSNumber *, UIImage *> *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary new]; });
+    @synchronized (cache) {
+        UIImage *image = cache[@(kind)];
+        if (image != nil) {
+            return image;
+        }
+        UIImage *bitmap = [UIImage imageNamed:kind == BrowserCursorKindArrow ? @"Cursor" : @"Pointer"];
+        if (bitmap == nil) {
+            return nil;
+        }
+        // Klickspitze im Originalbild: Pfeilspitze oben links, bei der Hand die Fingerspitze.
+        CGPoint tip = kind == BrowserCursorKindArrow ? CGPointMake(1.0, 1.0) : CGPointMake(10.0, 2.0);
+        CGSize size = CGSizeMake(kMarginX + bitmap.size.width + kMargin, kMargin + bitmap.size.height + kMargin);
+        UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+        format.opaque = NO;
+        image = [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format] imageWithActions:^(__unused UIGraphicsImageRendererContext *ctx) {
+            [bitmap drawAtPoint:CGPointMake(kMarginX - tip.x, kMargin - tip.y)];
+        }];
+        cache[@(kind)] = image;
+        return image;
+    }
 }
 
 + (UIImage *)imageForKind:(BrowserCursorKind)kind style:(BrowserCursorStyle)style {

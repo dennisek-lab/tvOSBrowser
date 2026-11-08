@@ -18,6 +18,9 @@ static const CGFloat kCardPadding = 64.0;
 static const NSTimeInterval kHintDuration = 10.0;
 
 static UIVisualEffect *BrowserIntelligenceGlassEffect(void) {
+    if (!BrowserMotion.glassMaterialAvailable) {
+        return [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]; // altes Design
+    }
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
         return [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
