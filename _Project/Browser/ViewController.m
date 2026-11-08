@@ -1344,6 +1344,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     CGRect bar = [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:panel];
     [panel presentBelowBarFrame:bar animated:YES];
     [self.remoteInputController refreshInteractionState];
+    // Ziele sind jetzt nur Leiste und Kacheln: Hervorhebung eines Seitenelements darunter sofort neu bewerten
+    // (sonst schien der Glow des alten Ziels durch die Karte).
+    [self.remoteInputController pointerTargetsDidChange];
 #if DEBUG
     NSLog(@"[Address] Bearbeiten an, Kacheln=%lu", (unsigned long)panel.tileCount);
 #endif
