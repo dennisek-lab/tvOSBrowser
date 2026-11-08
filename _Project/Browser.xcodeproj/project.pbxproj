@@ -79,6 +79,7 @@
 		02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */ = {isa = PBXBuildFile; fileRef = 0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */; };
 		5D02DF38DAD770AB31ACD012 /* BrowserSpeechRecognizing.m in Sources */ = {isa = PBXBuildFile; fileRef = DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */; };
 		BB50585D1D6E039781FA6BF1 /* BrowserSpeechRecognizerStub.m in Sources */ = {isa = PBXBuildFile; fileRef = CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */; };
+		7E1A5C3B9D2F4A6E8B0C1D23 /* BrowserWhisperSpeechRecognizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E1A5C3B9D2F4A6E8B0C1D22 /* BrowserWhisperSpeechRecognizer.m */; };
 		C8039D61DA1C911D9933D6AE /* BrowserWebAudioCapture.m in Sources */ = {isa = PBXBuildFile; fileRef = 1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */; };
 		1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */ = {isa = PBXBuildFile; fileRef = BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */; };
 		A74DEB982B0F00C3BF821208 /* BrowserWebSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */; };
@@ -207,6 +208,8 @@
 		DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSpeechRecognizing.m; sourceTree = "<group>"; };
 		8100E8A5D5DF57BE25564110 /* BrowserSpeechRecognizerStub.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSpeechRecognizerStub.h; sourceTree = "<group>"; };
 		CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSpeechRecognizerStub.m; sourceTree = "<group>"; };
+		7E1A5C3B9D2F4A6E8B0C1D21 /* BrowserWhisperSpeechRecognizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWhisperSpeechRecognizer.h; sourceTree = "<group>"; };
+		7E1A5C3B9D2F4A6E8B0C1D22 /* BrowserWhisperSpeechRecognizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWhisperSpeechRecognizer.m; sourceTree = "<group>"; };
 		FE0742B1F06938F011A03A1D /* BrowserWebAudioCapture.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebAudioCapture.h; sourceTree = "<group>"; };
 		1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWebAudioCapture.m; sourceTree = "<group>"; };
 		050AED96612E61B5EA109C6C /* BrowserWebSubtitleOverlay.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebSubtitleOverlay.h; sourceTree = "<group>"; };
@@ -398,6 +401,8 @@
 				DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */,
 				8100E8A5D5DF57BE25564110 /* BrowserSpeechRecognizerStub.h */,
 				CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */,
+				7E1A5C3B9D2F4A6E8B0C1D21 /* BrowserWhisperSpeechRecognizer.h */,
+				7E1A5C3B9D2F4A6E8B0C1D22 /* BrowserWhisperSpeechRecognizer.m */,
 				FE0742B1F06938F011A03A1D /* BrowserWebAudioCapture.h */,
 				1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */,
 				050AED96612E61B5EA109C6C /* BrowserWebSubtitleOverlay.h */,
@@ -597,7 +602,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Vorkompilierte ggml-Metal-Kernel (tools/build_whisper.sh) ins App-Paket, ggml sucht default.metallib dort.\nSRC=\"${SCRIPT_INPUT_FILE_0}\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"${SCRIPT_OUTPUT_FILE_0}\"\nelse\n  echo \"Hinweis: $SRC fehlt, ggml übersetzt die eingebetteten Metal-Kernel zur Laufzeit\"\nfi\n";
+			shellScript = "# Vorkompilierte ggml-Metal-Kernel (tools/build_whisper.sh) ins App-Paket, ggml sucht default.metallib dort.\n# Nur Gerät; im Simulator sind die Kernel eingebettet (dort rechnet whisper auf der CPU).\nSRC=\"${SCRIPT_INPUT_FILE_0}\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"${SCRIPT_OUTPUT_FILE_0}\"\nelse\n  rm -f \"${SCRIPT_OUTPUT_FILE_0}\"\n  echo \"Hinweis: $SRC fehlt (Simulator: normal, Kernel eingebettet; Gerät: tools/build_whisper.sh ausführen)\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -643,6 +648,7 @@
 				1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */,
 				C8039D61DA1C911D9933D6AE /* BrowserWebAudioCapture.m in Sources */,
 				BB50585D1D6E039781FA6BF1 /* BrowserSpeechRecognizerStub.m in Sources */,
+				7E1A5C3B9D2F4A6E8B0C1D23 /* BrowserWhisperSpeechRecognizer.m in Sources */,
 				5D02DF38DAD770AB31ACD012 /* BrowserSpeechRecognizing.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
