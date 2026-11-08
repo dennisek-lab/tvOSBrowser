@@ -322,6 +322,7 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
 - (void)refreshActiveTabUI {
     BrowserTabViewModel *tab = self.activeTab;
     if (tab == nil) {
+        [self.topMenuView setDisplayURLString:nil];
         [self.topMenuView setDisplayTitle:@"" domain:nil secure:NO];
         return;
     }
@@ -331,6 +332,8 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
     NSString *committedURL = self.activeWebView.committedURL.absoluteString;
     NSString *currentURL = committedURL.length > 0 && ![committedURL isEqualToString:@"about:blank"] ? committedURL
         : (tab.URLString.length > 0 ? tab.URLString : request.URL.absoluteString);
+    // Das alte Design zeigt wie das Original die volle Adresse.
+    [self.topMenuView setDisplayURLString:currentURL];
     // Wie Safari kurz statt der ganzen Adresse: Seitentitel und dahinter dezent die Domain.
     NSString *host = [NSURL URLWithString:currentURL].host ?: @"";
     if ([host hasPrefix:@"www."]) {

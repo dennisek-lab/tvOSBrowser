@@ -23,6 +23,8 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 static CGFloat const kTopBarCompactHeight = 58.0;
 static CGFloat const kTopBarCompactWidth = 560.0;
 static CGFloat const kTopBarCompactLabelScale = 0.8;
+/// Altes Design: Abstand oben wie im Original (Leiste 8 pt unter dem Bildschirmrand).
+static CGFloat const kTopBarClassicVerticalInset = 8.0;
 
 @interface BrowserTopBarFocusButton : UIButton
 
@@ -91,6 +93,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic) UIView *dictationFieldView;
 @property (nonatomic) UIImageView *dictationIconView;
 @property (nonatomic) UILabel *dictationLabel;
+// Altes Design, siehe Abschnitt „Altes Design“.
+@property (nonatomic, readwrite, getter=isClassicDesign) BOOL classicDesign;
+@property (nonatomic, nullable) UIColor *pageColor;
+@property (nonatomic, copy, nullable) NSString *displayURLString;
 
 @end
 
@@ -246,8 +252,20 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     }
 
     [self setUpAddressEditingViews];
+    _classicDesign = BrowserMotion.classicDesignEnabled;
+    [self applyIconImages];
+    [self applyClassicFocusActions];
     [self applyVisualStyle];
     [self setFocusModeActive:NO];
+    // Umschalten in der Seitenleiste, in der Ersteinrichtung oder per Selbsttest (pref:ClassicDesign=…) wirkt sofort.
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(userDefaultsDidChange:)
+                                               name:NSUserDefaultsDidChangeNotification
+                                             object:nil];
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 /// SF Symbols wie in Safari, die alten Bilder nur als Rückfall.
@@ -266,16 +284,19 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 }
 
 - (void)setPageBackgroundColor:(UIColor *)color {
+    self.pageColor = color;
     CGFloat red = 0, green = 0, blue = 0, alpha = 0;
     if (color == nil || ![color getRed:&red green:&green blue:&blue alpha:&alpha]) {
         red = green = blue = 0;
     }
     // Relative Helligkeit: helle Seite -> dunkle Symbole und Schrift, dunkle Seite -> helle.
     CGFloat luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-    BOOL light = luminance > 0.6;
+    // Altes Design: graue Kapsel mit weißen Symbolen auf jeder Seite, wie im Original.
+    BOOL light = !self.classicDesign && luminance > 0.6;
     CGFloat hue = 0, saturation = 0, brightness = 0, hueAlpha = 0;
     // Kräftig gefärbte Seiten (z. B. rote Leiste): Grün wäre dort schlecht lesbar.
-    self.colorfulPage = color != nil && [color getHue:&hue saturation:&saturation brightness:&brightness alpha:&hueAlpha] &&
+    self.colorfulPage = !self.classicDesign && color != nil &&
+        [color getHue:&hue saturation:&saturation brightness:&brightness alpha:&hueAlpha] &&
         saturation > 0.4 && brightness > 0.25;
 #if DEBUG
     NSLog(@"[TopBar] Seitenfarbe %@ s=%.2f b=%.2f bunt=%d", color, saturation, brightness, self.colorfulPage);
@@ -343,6 +364,16 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.chromeContainerView.layer.shadowRadius = 24.0;
     self.chromeEffectView.layer.cornerCurve = kCACornerCurveContinuous;
     self.chromeEffectView.layer.borderWidth = 1.0;
+    if (self.classicDesign) {
+        // Altes Design: kein Glas. Dunkler Blur (der vorhandene Rückfall) mit grauer Tönung ergibt die halbtransparente
+        // graue Kapsel des Originals; ohne Kante und Schatten.
+        self.effect = nil;
+        self.chromeEffectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        self.chromeEffectView.alpha = 1.0;
+        self.chromeEffectView.layer.borderWidth = 0.0;
+        [self applyContrastStyle];
+        return;
+    }
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
         self.effect = nil;
@@ -361,6 +392,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 }
 
 - (void)applyContrastStyle {
+    if (self.classicDesign) {
+        self.chromeContainerView.layer.shadowOpacity = 0.0;
+        self.glassDimmingView.backgroundColor = [UIColor colorWithWhite:0.54 alpha:0.62]; // auf weißer Seite Grau 155 wie screen01.png
+        return;
+    }
     BOOL light = self.lightPage;
     self.chromeContainerView.layer.shadowOpacity = light ? 0.24 : 0.35;
     self.chromeEffectView.layer.borderColor = (light ? [UIColor colorWithWhite:0.0 alpha:0.14]
@@ -377,6 +413,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 }
 
 - (void)applyFavoriteStyle {
+    if (self.classicDesign) {
+        // Altes Design: an dieser Stelle sitzt wieder „Startseite“ (Haus), Favoriten über die Seitenleiste.
+        self.homeImageView.tintColor = UIColor.whiteColor;
+        return;
+    }
     UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
     UIImage *star = [UIImage systemImageNamed:self.favorite ? @"star.fill" : @"star" withConfiguration:configuration];
     if (star != nil) {
@@ -393,6 +434,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 }
 
 - (void)setLoadingProgress:(double)progress loading:(BOOL)loading {
+    if (self.classicDesign) {
+        // Altes Design: nur der Ladekreisel wie im Original, keine Fortschrittslinie.
+        self.progressVisible = NO;
+        self.loadingProgress = 0.0;
+        self.progressView.alpha = 0.0;
+        return;
+    }
     if (loading) {
         // Kleiner Startwert, damit sofort sichtbar ist, dass etwas passiert.
         double value = MAX(progress, 0.08);
@@ -438,7 +486,27 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     [self renderTitle];
 }
 
+- (void)setDisplayURLString:(NSString *)URLString {
+    if ((self.displayURLString == nil && URLString == nil) || [self.displayURLString isEqualToString:URLString]) {
+        return;
+    }
+    _displayURLString = [URLString copy];
+    if (self.classicDesign) {
+        [self renderTitle];
+    }
+}
+
 - (void)renderTitle {
+    if (self.classicDesign) {
+        // Altes Design: die volle Adresse, schlicht in gedämpftem Weiß (wie das Original), sonst der Titel („Neuer Tab“).
+        NSString *text = self.displayURLString.length > 0 ? self.displayURLString : (self.displayTitle ?: @"");
+        self.URLLabel.attributedText = [[NSAttributedString alloc] initWithString:text attributes:@{
+            NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.72],
+            NSFontAttributeName: self.URLLabel.font,
+        }];
+        [self setNeedsLayout];
+        return;
+    }
     UIColor *foreground = self.lightPage ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
     UIColor *green = self.lightPage ? [UIColor colorWithRed:0.05 green:0.52 blue:0.20 alpha:1.0]
                                     : [UIColor colorWithRed:0.36 green:0.82 blue:0.48 alpha:1.0];
@@ -486,8 +554,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         if (interaction.scrollView != scrollView) {
             interaction.scrollView = scrollView;
             scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.softStyle;
-            scrollView.topEdgeEffect.hidden = NO;
         }
+        // Altes Design: kein weicher Kanteneffekt unter der Leiste (gab es im Original nicht).
+        scrollView.topEdgeEffect.hidden = self.classicDesign;
     }
 }
 
@@ -504,6 +573,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     }
     if (compact && self.addressEditing) {
         return;
+    }
+    if (compact && self.classicDesign) {
+        return; // Altes Design: Die Leiste bleibt wie im Original immer voll.
     }
     _compact = compact;
     if (!animated) {
@@ -546,7 +618,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         height = kTopBarCompactHeight;
     }
     CGFloat originX = floor((CGRectGetWidth(self.bounds) - width) / 2.0);
-    CGRect chromeFrame = CGRectMake(originX, self.compact ? kTopBarCompactVerticalInset : kTopBarVerticalInset, width, height);
+    CGFloat originY = self.classicDesign ? kTopBarClassicVerticalInset : (self.compact ? kTopBarCompactVerticalInset : kTopBarVerticalInset);
+    CGRect chromeFrame = CGRectMake(originX, originY, width, height);
 
     self.chromeContainerView.frame = chromeFrame;
     self.chromeContainerView.layer.cornerRadius = chromeFrame.size.height / 2.0;
@@ -560,12 +633,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
     CGFloat iconY = floor((CGRectGetHeight(chromeFrame) - kTopBarIconSize) / 2.0);
     CGFloat leftX = kTopBarLeadingPadding;
-    NSArray<UIImageView *> *leftIcons = @[
-        self.backImageView,
-        self.refreshImageView,
-        self.forwardImageView,
-        self.tabsImageView
-    ];
+    // Altes Design: Zurück, Neu laden, Vor, Startseite, Tabs wie im Original; sonst sitzt der Stern beim Seitennamen.
+    NSArray<UIImageView *> *leftIcons = self.classicDesign
+        ? @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView, self.tabsImageView]
+        : @[self.backImageView, self.refreshImageView, self.forwardImageView, self.tabsImageView];
     for (UIImageView *imageView in leftIcons) {
         imageView.frame = CGRectMake(leftX, iconY, kTopBarIconSize, kTopBarIconSize);
         leftX += kTopBarIconSize + kTopBarIconSpacing;
@@ -578,15 +649,21 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.fullscreenImageView.frame = CGRectMake(rightX, iconY, kTopBarIconSize, kTopBarIconSize);
 
     // Der Knopf zum Ausblenden der Leiste entfällt: Beim Scrollen wird sie ohnehin zur Kapsel.
-    self.fullscreenImageView.hidden = YES;
+    // Im alten Design ist er wie im Original da (die Leiste wird dort nie zur Kapsel).
+    self.fullscreenImageView.hidden = !self.classicDesign;
     // Reader-Knopf direkt links neben dem Menü; sein Platz bleibt immer reserviert, damit Ladekreisel und
     // Seitenname nicht springen, wenn die Lesbarkeit erst nach dem Laden feststeht.
-    self.readerImageView.frame = self.fullscreenImageView.frame;
+    // Altes Design: links neben dem Vollbild-Knopf und nur, wenn die Seite lesbar ist (sonst sieht die Leiste aus
+    // wie im Original).
+    self.readerImageView.frame = self.classicDesign
+        ? CGRectOffset(self.fullscreenImageView.frame, -(kTopBarIconSize + kTopBarIconSpacing), 0.0)
+        : self.fullscreenImageView.frame;
     self.readerHighlightView.frame = CGRectInset(self.readerImageView.frame, -6.0, -2.0);
     // Kapsel wie die Leiste, in der der Knopf liegt.
     self.readerHighlightView.layer.cornerRadius = BrowserShapeCapsuleRadius(CGRectGetHeight(self.readerHighlightView.frame));
     CGFloat spinnerSide = 34.0;
-    rightX = CGRectGetMinX(self.readerImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
+    UIView *spinnerNeighbor = (self.classicDesign && !self.readerAvailable) ? self.fullscreenImageView : self.readerImageView;
+    rightX = CGRectGetMinX(spinnerNeighbor.frame) - kTopBarSpinnerSpacing - spinnerSide;
     self.loadingSpinner.frame = CGRectMake(rightX,
                                            floor((CGRectGetHeight(chromeFrame) - spinnerSide) / 2.0),
                                            spinnerSide,
@@ -613,7 +690,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     }
     CGPoint labelCenter = CGPointMake(CGRectGetWidth(chromeFrame) / 2.0, CGRectGetHeight(chromeFrame) / 2.0);
     self.URLTargetFrame = labelFrame;
-    if (!self.compact) {
+    if (self.classicDesign) {
+        // Altes Design: die Adresse mittig im ganzen Bereich zwischen Tabs-Knopf und Ladekreisel.
+        labelCenter = CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
+    } else if (!self.compact) {
         // Stern direkt links neben dem Seitennamen, beide zusammen mittig im Adressbereich.
         CGFloat starGap = 14.0;
         CGFloat maxText = MAX(80.0, CGRectGetWidth(labelFrame) - kTopBarIconSize - starGap);
@@ -678,7 +758,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         @[self.backImageView, @(BrowserTopBarActionBack)],
         @[self.refreshImageView, @(BrowserTopBarActionRefresh)],
         @[self.forwardImageView, @(BrowserTopBarActionForward)],
-        @[self.homeImageView, @(BrowserTopBarActionFavorite)],
+        @[self.homeImageView, @(self.classicDesign ? BrowserTopBarActionHome : BrowserTopBarActionFavorite)],
         @[self.tabsImageView, @(BrowserTopBarActionTabs)],
         @[self.URLLabel, @(BrowserTopBarActionURL)],
         @[self.fullscreenImageView, @(BrowserTopBarActionFullscreen)],
@@ -786,18 +866,23 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     if (focusModeActive) {
         [self setCompact:NO animated:YES];
     }
-    for (BrowserTopBarFocusButton *button in self.focusButtons) {
-        BOOL available = focusModeActive && button != self.fullscreenFocusButton &&
-            (button != self.readerFocusButton || self.readerAvailable);
-        button.hidden = !available;
-        button.enabled = available;
-    }
+    [self updateFocusButtonAvailability];
 
     if (!focusModeActive) {
         self.lastFocusedButton = nil;
         [self resetFocusVisualState];
     } else {
         [self setNeedsLayout];
+    }
+}
+
+/// Welche Knöpfe im Fokusmodus wählbar sind: der Vollbild-Knopf nur im alten Design, Reader nur, wenn lesbar.
+- (void)updateFocusButtonAvailability {
+    for (BrowserTopBarFocusButton *button in self.focusButtons) {
+        BOOL available = self.focusModeActive && (button != self.fullscreenFocusButton || self.classicDesign) &&
+            (button != self.readerFocusButton || self.readerAvailable);
+        button.hidden = !available;
+        button.enabled = available;
     }
 }
 
@@ -951,6 +1036,85 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
             self.loadingSpinner.alpha = 1.0;
         }
     }];
+}
+
+#pragma mark - Altes Design
+
+- (void)userDefaultsDidChange:(__unused NSNotification *)notification {
+    // Die Meldung kann von einem anderen Thread kommen; nur bei echtem Wechsel neu aufbauen.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (BrowserMotion.classicDesignEnabled != self.classicDesign) {
+            [self applyDesign];
+        }
+    });
+}
+
+- (void)applyDesign {
+    self.classicDesign = BrowserMotion.classicDesignEnabled;
+#if DEBUG
+    NSLog(@"[TopBar] Design %@", self.classicDesign ? @"alt" : @"Liquid Glass");
+#endif
+    if (self.classicDesign) {
+        _compact = NO;
+        [self.progressView.layer removeAllAnimations];
+        self.progressVisible = NO;
+        self.loadingProgress = 0.0;
+        self.progressView.alpha = 0.0;
+    }
+    [self applyIconImages];
+    [self applyClassicFocusActions];
+    [self applyVisualStyle];
+    // Vordergrund, Titel und Stern hängen am Design und an der Seitenfarbe: mit der gemerkten Farbe neu berechnen.
+    [self setPageBackgroundColor:self.pageColor];
+    if (@available(tvOS 26.0, *)) {
+        UIScrollEdgeElementContainerInteraction *interaction = self.scrollEdgeInteraction;
+        interaction.scrollView.topEdgeEffect.hidden = self.classicDesign;
+    }
+    [self updateFocusButtonAvailability];
+    [self setNeedsLayout];
+    [self layoutIfNeeded];
+}
+
+/// Symbole je Design: alt = die weißen Bilder des Originals (Icons/MenuIcons), sonst SF Symbols wie in Safari.
+- (void)applyIconImages {
+    BOOL classic = self.classicDesign;
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
+    void (^apply)(UIImageView *, NSString *, NSString *) = ^(UIImageView *imageView, NSString *symbolName, NSString *imageName) {
+        UIImage *image = classic ? [UIImage imageNamed:imageName] : [UIImage systemImageNamed:symbolName withConfiguration:configuration];
+        if (image == nil) {
+            image = classic ? [UIImage systemImageNamed:symbolName withConfiguration:configuration] : [UIImage imageNamed:imageName];
+        }
+        imageView.image = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        // Die Originalbilder sind 240 px groß und werden in die 52-pt-Fläche eingepasst.
+        imageView.contentMode = classic ? UIViewContentModeScaleAspectFit : UIViewContentModeCenter;
+    };
+    apply(self.backImageView, @"chevron.backward", @"go-back-left-arrow");
+    apply(self.refreshImageView, @"arrow.clockwise", @"refresh-button");
+    apply(self.forwardImageView, @"chevron.forward", @"right-arrow-forward");
+    apply(self.tabsImageView, @"square.on.square", @"multi-tab");
+    apply(self.fullscreenImageView, @"arrow.up.left.and.arrow.down.right", @"resize-arrows");
+    apply(self.menuImageView, @"ellipsis.circle", @"menu-2");
+    if (classic) {
+        apply(self.homeImageView, @"house", @"house-outline");
+    } else {
+        self.homeImageView.contentMode = UIViewContentModeCenter;
+    }
+    // Reader gab es im Original nicht: im alten Design ein kräftigeres Symbol, passend zu den dicken Originalbildern.
+    UIImageSymbolConfiguration *readerConfiguration = classic
+        ? [UIImageSymbolConfiguration configurationWithPointSize:36.0 weight:UIImageSymbolWeightBold]
+        : configuration;
+    UIImage *reader = [UIImage systemImageNamed:@"doc.plaintext" withConfiguration:readerConfiguration]
+        ?: [UIImage systemImageNamed:@"text.page" withConfiguration:readerConfiguration];
+    if (reader != nil) {
+        self.readerImageView.image = [reader imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
+    [self applyFavoriteStyle];
+}
+
+/// Der Knopf neben „Vor“ ist im alten Design „Startseite“, sonst der Favoriten-Stern.
+- (void)applyClassicFocusActions {
+    self.homeFocusButton.topBarAction = self.classicDesign ? BrowserTopBarActionHome : BrowserTopBarActionFavorite;
+    self.homeFocusButton.accessibilityLabel = self.classicDesign ? @"Startseite" : @"Favorit";
 }
 
 @end
