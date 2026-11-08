@@ -15,7 +15,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 3. [WKWebView per Laufzeit](#3-wkwebview-per-laufzeit-browserwebview) (mit 3.1 [Beendeter Seitenprozess](#31-beendeter-seitenprozess-speichergrenze-am-apple-tv))
 4. [Nutzerskripte und die userScripts-Falle](#4-nutzerskripte-und-die-userscripts-falle)
 5. [Cookie-Ablehner (autoconsent) und Bezahlschranken](#5-cookie-ablehner-autoconsent-und-bezahlschranken)
-6. [Werbeblocker](#6-werbeblocker-browsercontentblocker)
+6. [Werbeblocker](#6-werbeblocker-browsercontentblocker) (mit 6.10 [Filterlisten ohne App-Update aktualisieren](#610-filterlisten-ohne-app-update-aktualisieren-browserfilterlistupdater))
 7. [Klickziele, Seitenfarbe, Glow-Farbe](#7-klickziele-seitenfarbe-glow-farbe-browserclicktargettracker)
 8. [Fernbedienung](#8-fernbedienung-browserremoteinputcontroller)
 9. [Obere Leiste](#9-obere-leiste-browsertopbarview) (mit 9.1 [Reader-Modus](#91-reader-modus-browserreadermode))
@@ -268,12 +268,13 @@ Blockiert Werbung/Tracker über WebKit-Content-Rule-Lists. Die Regeln stammen au
 - `_Project/Browser/BrowserContentBlocker.m/.h`: Singleton `sharedBlocker`
 - `_Project/Browser/ContentBlocker/`: `network-1.json.z`, `network-2.json.z`, `cosmetic-generic.json.z`, `cosmetic-domain.json.z`, `manifest.json` (Namen, Dateien, Hash, Regelzahl, Statistik nicht umsetzbarer Regeln)
 - `tools/build_adblock_rules.py` (Konverter), `tools/validate_adblock_rules.swift` (Prüfer mit echtem WebKit), `tools/add_resource.py`
-- Einstellungen: `adBlockEnabled` (Standard an), `adBlockExceptionHosts`; Menü: `adBlockMenuItem`, `adBlockSiteMenuItem`
+- Einstellungen: `adBlockEnabled` (Standard an), `adBlockExceptionHosts`; Menü: `adBlockMenuItem`, `adBlockSiteMenuItem`, `filterListUpdateMenuItem`
+- Aktualisierung ohne App-Update: `BrowserFilterListUpdater.m/.h`, `.github/workflows/filterlisten.yml`, `tools/publish_filterlists.py` (6.10)
 
 ### 6.3 Datenfluss
-1. `BrowserWebView commonInit` → `applyToUserContentController:` → `prepare` (einmal): liest `manifest.json`, legt `Library/Caches/ContentRuleLists` an, erzeugt `WKContentRuleListStore storeWithURL:`.
+1. `BrowserWebView commonInit` → `applyToUserContentController:` → `prepare` (einmal): holt den Listenstand von `BrowserFilterListUpdater preferredContentBlockerSet` (mitgeliefertes `ContentBlocker/manifest.json` oder, wenn neuer, den heruntergeladenen Stand, 6.10), legt `Library/Caches/ContentRuleLists` an, erzeugt `WKContentRuleListStore storeWithURL:` und startet `startWithSet:`.
 2. `processNextEntry` arbeitet die Listen **nacheinander** ab: `lookUpContentRuleListForIdentifier:completionHandler:` mit Kennung `adblock-<name>-<hash>`; nicht gefunden → `compileEntry:` entpackt die `.json.z` auf einer eigenen Queue (`decompressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib`, entspricht raw deflate) und ruft `compileContentRuleListForIdentifier:encodedContentRuleList:completionHandler:`.
-3. Jede fertige Liste → `listBecameReady:` → `refreshAllControllersForce:NO` setzt auf allen Tabs `removeAllContentRuleLists` + `addContentRuleList:` für alle fertigen Listen. Danach `removeStaleLists` entfernt Stände mit anderem Hash.
+3. Jede fertige Liste → `listBecameReady:` → `refreshAllControllersForce:NO` setzt auf allen Tabs `removeAllContentRuleLists` + `addContentRuleList:` für alle fertigen Listen. Danach `removeStaleLists` entfernt Stände mit anderem Hash. Die Signatur je Controller enthält `generation` (Zähler je Listenstand), damit ein Wechsel auf gleich viele neue Listen trotzdem neu bestückt.
 4. Ausnahmen pro Seite wirken nur ganz oder gar nicht (`ignore-previous-rules` wirkt nicht über Listen hinweg): `updateUserContentController:forNavigationToURL:` nimmt alle Listen weg oder hängt sie wieder an.
 
 ### 6.4 Private/fragile APIs
@@ -306,7 +307,7 @@ python3 tools/build_adblock_rules.py --no-register   # ohne Eintrag im Xcode-Pro
 swiftc -O tools/validate_adblock_rules.swift -o /tmp/validate_adblock
 /tmp/validate_adblock _Project/Browser/ContentBlocker   # kompiliert jeden Satz mit echtem WebKit, sucht bei Fehlern per Halbierung die Regel
 ```
-Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `gorhill/uBlock`, `platform/mv3/rulesets.json`, Gruppen „default“ und „malware“, dazu EasyList Germany). Nach einem Lauf ändern sich die Hashes im `manifest.json`; die App kompiliert beim nächsten Start neu und räumt alte Stände weg. Ergebnisdateien committen. `tools/add_resource.py ContentBlocker` trägt den Ordner nur einmalig als Ordnerreferenz ein; neue Dateien darin brauchen keine Projektänderung.
+Ohne App-Update übernimmt das der Workflow `filterlisten.yml` täglich (6.10); die Schritte hier braucht es nur noch, um die **mitgelieferten** Listen (Rückfall, Stand beim ersten Start) aufzufrischen. Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `gorhill/uBlock`, `platform/mv3/rulesets.json`, Gruppen „default“ und „malware“, dazu EasyList Germany). Nach einem Lauf ändern sich die Hashes im `manifest.json`; die App kompiliert beim nächsten Start neu und räumt alte Stände weg. Ergebnisdateien committen. `tools/add_resource.py ContentBlocker` trägt den Ordner nur einmalig als Ordnerreferenz ein; neue Dateien darin brauchen keine Projektänderung.
 
 ### 6.8 Automatische Ausnahme bei Adblock-Sperre
 - **Zweck:** Seiten wie bild.de zeigen „Aufgrund Ihres Blockers zeigen wir BILD.de nicht an“. Die App erkennt solche Sperren und pausiert den Werbeblocker für diese Seite.
@@ -368,7 +369,72 @@ python3 tools/build_adblock_rules.py --refresh   # Listen neu laden (gemeinsamer
 python3 tools/build_scriptlets.py                # erzeugt Scriptlets/, trägt den Ordner bei Bedarf ins Projekt ein
 python3 tools/build_scriptlets.py --refresh      # alternativ: Listen hier neu laden
 ```
-Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang von `build_scriptlets.py`; nach einer Änderung neu bauen und `THIRD_PARTY_NOTICES.md` anpassen. Neue Dateien im Ordner `Scriptlets/` brauchen keine Projektänderung.
+Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang von `build_scriptlets.py`; nach einer Änderung neu bauen und `THIRD_PARTY_NOTICES.md` anpassen. Neue Dateien im Ordner `Scriptlets/` brauchen keine Projektänderung. `scriptlets.json.z` kommt auch per Aktualisierung (6.10), `runtime.js` und `extended-css.min.js` nur mit der App: Wer an deren Schnittstelle etwas ändert, muss `MIN_APP_FORMAT` in `publish_filterlists.py` und `kFilterListAppFormat` in `BrowserFilterListUpdater.m` erhöhen.
+
+### 6.10 Filterlisten ohne App-Update aktualisieren (`BrowserFilterListUpdater`)
+
+**Zweck.** Regelsätze (6.1 bis 6.7) und Scriptlets (6.9) veralten schnell, vor allem die YouTube-Regeln. Ein GitHub-Workflow baut sie täglich neu und veröffentlicht sie; die App lädt höchstens einmal am Tag den neuen Stand. Kein eigener Server, keine Kennungen, kein Tracking.
+
+**Server-Seite (GitHub Actions).**
+- `.github/workflows/filterlisten.yml`: täglich 03:17 UTC (`schedule`) und von Hand (`workflow_dispatch`, Schalter „force“ veröffentlicht auch ohne Änderung). Läuft auf `macos-latest`, weil `tools/validate_adblock_rules.swift` jeden Regelsatz mit dem echten WebKit kompiliert (gibt es nur auf macOS; für öffentliche Repos kostenlos). Schritte: `build_adblock_rules.py --refresh --out-dir out/contentblocker` → WebKit-Prüfung (bricht bei einer abgelehnten Regel ab, dann wird nichts veröffentlicht) → `build_scriptlets.py --out-dir out/scriptlets` (Node 22 für `scriptlets_convert.mjs` und `npm install` der AdGuard-Pakete) → bisheriges Manifest vom Release holen → `tools/publish_filterlists.py` → hochladen, nur wenn sich der Inhalt geändert hat.
+- **Veröffentlichung:** GitHub-Release **`filterlisten-latest`** (Vorabversion, nie „Latest“), keine Dateien in `main`, kein Force-Push, keine Git-Historie mit Binärdateien. Feste Adresse der App: `https://github.com/dennisek-lab/tvos-browser/releases/download/filterlisten-latest/manifest.json` (GitHub leitet auf `release-assets.githubusercontent.com` um).
+- **Atomar für Leser:** Dateinamen tragen einen SHA-256-Präfix (`network-1-<sha16>.json.z`, `scriptlets-<sha16>.json.z`), zuerst werden die Daten hochgeladen, das Manifest zuletzt. Dateien des vorigen Stands bleiben einen Lauf lang liegen (`keep.txt`), ältere werden gelöscht.
+- `tools/publish_filterlists.py`: stellt Dateien und Gesamtmanifest zusammen, erkennt unveränderte Stände (`changed=false` → kein Upload). `build_adblock_rules.py` und `build_scriptlets.py` haben dafür `--out-dir` (impliziert `--no-register`) und schreiben `generatedAt` (Unix-Sekunden) und `date` ins Manifest.
+- **Rechte:** Der Workflow verlangt selbst `contents: write` (Release) und `actions: write` (siehe unten). Er läuft nur von `main` aus (zeitgesteuerte Workflows immer vom Standard-Branch).
+- **60-Tage-Regel:** GitHub schaltet zeitgesteuerte Workflows in öffentlichen Repos nach 60 Tagen ohne Repo-Aktivität ab. Der letzte Schritt aktiviert den Workflow per API erneut (`PUT …/actions/workflows/filterlisten.yml/enable`), das setzt die Frist zurück. Kommt trotzdem eine Mail „scheduled workflow disabled“: unter *Actions → Filterlisten → Enable workflow* wieder einschalten.
+
+**Manifest** (`manifest.json` am Release):
+
+| Feld | Bedeutung |
+|:--|:--|
+| `format` | Formatversion der Dateien (derzeit 1) |
+| `minAppFormat` | kleinste App-Formatversion, die den Stand versteht. Die App kennt `kFilterListAppFormat` (derzeit 1) und lässt Stände mit größerem Wert liegen. Erhöhen (in `publish_filterlists.py`, `MIN_APP_FORMAT`), wenn ältere Apps die Dateien nicht mehr verstehen, z. B. wenn `Scriptlets/runtime.js` oder `extended-css.min.js` (beide nur im App-Paket) zu neuen Regeln passen müssen. |
+| `version`, `generatedAt`, `date` | Gesamtstand (`JJJJMMTT-HHMM-<Regelsätze>-<Scriptlets>`), Zeitpunkt |
+| `contentBlocker` | `{version, generatedAt, date, lists: [{name, file, hash, sha256, bytes, rules, jsonBytes}]}`; `hash` = SHA-256-Präfix (12) des entpackten JSON wie im mitgelieferten Manifest (Kennung `adblock-<name>-<hash>` im Store), `sha256`/`bytes` der geladenen Datei |
+| `scriptlets` | `{version, generatedAt, date, library, file, sha256, bytes}` |
+
+**App-Seite.**
+- `_Project/Browser/BrowserFilterListUpdater.m/.h` (Singleton). Auslöser: `BrowserWebView webView:didFinishNavigation:` → `pageDidFinishLoading` → wenn fällig (letzte erfolgreiche Prüfung ≥ 23 h her **und** letzter Versuch ≥ 1 h her) 10 s später prüfen. Also nicht blockierend, nach dem ersten Seitenaufbau, höchstens einmal am Tag; ein langer laufender App-Prozess prüft am nächsten Tag beim nächsten Seitenaufbau.
+- Verbindung: eigene `NSURLSession` (ephemeral, ohne Cookies, Cache, Zugangsdaten; User-Agent `tvOS-Browser-Filterlisten`, keine weiteren Kopfzeilen oder Parameter). Namensauflösung wie bei allen App-Verbindungen über Cloudflare-DoH (`BrowserDNSProxy` setzt das für `NW_DEFAULT_PRIVACY_CONTEXT`). Weiterleitungen nur auf HTTPS; Dateinamen aus dem Manifest nur `[A-Za-z0-9._-]`, relativ zur Manifest-Adresse. Größenbremse: Manifest 512 KB, Datei 64 MB.
+- Ablauf: Manifest laden → `minAppFormat` prüfen → je Bestandteil nur, wenn `generatedAt` neuer ist als der aktuell gültige Stand (der neuere aus mitgeliefert und heruntergeladen) und die Version abweicht → Dateien laden, **Größe, SHA-256 der Datei und Inhaltskennung** (`hash`) prüfen → in einen Staging-Ordner schreiben → umbenennen → Regelsätze mit `installListSetAtDirectory:manifest:completion:` **vollständig kompilieren**, erst dann alle Tabs in einem Schritt umschalten (`generation` in der Signatur erzwingt das Neubestücken); Scriptlets mit `scriptletDataFromPackedData:` entpacken und den Aufbau samt aller Indizes prüfen, dann `activateScriptletData:` (ab der nächsten Navigation). Erst danach wird der neue Stand in `NSUserDefaults` als aktiv vermerkt und alte Ordner gelöscht. Jeder Fehler (Netz, HTTP-Status, Größe, Prüfsumme, Entpacken, WebKit-Fehler) verwirft nur den neuen Stand; die bisherigen Listen bleiben.
+- Ablage: `Library/Caches/FilterLists/contentblocker/<generatedAt>-<version>/` (`manifest.json` + Regelsätze) und `…/scriptlets/<…>/`. **Caches statt Application Support**, weil tvOS Apps dauerhaftes lokales Schreiben außerhalb von `Caches` nicht zusichert (wie beim WebKit-Regelspeicher und Datenspeicher, 3. und 6.4). Räumt tvOS die Caches auf, fehlen die Dateien: beim nächsten Start gelten die mitgelieferten Listen, und kompiliert wird ohnehin neu.
+- Welcher Stand beim Start gilt: `preferredContentBlockerSet` bzw. `preferredScriptletsFileURLDownloaded:` nehmen den heruntergeladenen Stand nur, wenn er vollständig da ist **und** `generatedAt` neuer ist als beim mitgelieferten. Bringt ein App-Update neuere Listen mit, gewinnen diese; der überholte heruntergeladene Stand wird bei der nächsten Prüfung gelöscht. Lässt sich ein heruntergeladener Regelsatz beim Start nicht lesen oder kompilieren, verwirft `fallBackToBundledListsAfterProblem:` den Stand und beginnt mit den mitgelieferten; die nächste Prüfung kommt dann sofort statt erst morgen.
+- `NSUserDefaults`: `FilterListLastCheck`, `FilterListLastAttempt`, `FilterListContentBlockerDirectory`, `FilterListScriptletsDirectory`.
+- Seitenleiste, Abschnitt *Erweiterungen*, direkt unter „Werbeblocker bei Sperre automatisch pausieren“: **„Filterlisten aktualisieren“** mit Detail „Stand TT.MM.JJJJ“ (Stand der aktiven Regelsätze; während einer Prüfung „Prüft …“). Auswählen prüft sofort ohne Tagesgrenze und meldet das Ergebnis in einem Hinweis; bei neuen Listen wird die Seite neu geladen.
+
+**Woran man merkt, dass es kaputt ist** (alle Zeilen auch im Release):
+
+| Logzeile | Bedeutung |
+|:--|:--|
+| `[AdBlock] Listenstand <version> vom <Datum> (mitgeliefert\|heruntergeladen)` | Start: welcher Stand gilt |
+| `[FilterLists] prüfe <URL>` / `Server <version>: Regelsätze … (neuer\|nicht neuer), Scriptlets …` | Prüfung läuft, Vergleich |
+| `[FilterLists] <name> geladen und geprüft` → `[AdBlock] umgeschaltet auf Listenstand …` → `[FilterLists] Regelsätze umgeschaltet auf …` | erfolgreich |
+| `[FilterLists] <name> verworfen: Prüfsumme (SHA-256) stimmt nicht` (oder Dateigröße, Entpacken, Inhaltskennung) | Datei kaputt oder Manifest/Datei passen nicht zusammen; alter Stand bleibt |
+| `[AdBlock] neuer Listenstand … verworfen: <name>: WebKit-Fehler N` | Regelsatz lässt sich auf tvOS nicht kompilieren (Workflow-Prüfung lief auf macOS-WebKit) |
+| `[FilterLists] Aktualisierung nicht möglich: Server nicht erreichbar (…)` / `Server antwortet mit 404` | Netz oder Release fehlt (Workflow noch nie gelaufen?) |
+| `[FilterLists] Neue Listen brauchen eine neuere App-Version` | `minAppFormat` größer als `kFilterListAppFormat` |
+| `[AdBlock] heruntergeladene Listen unbrauchbar (…), nehme mitgelieferte` / `[Scriptlets] heruntergeladene Regeln unbrauchbar, nehme mitgelieferte` | Start mit kaputtem Stand, Rückfall |
+| `[FilterLists] <bestandteil>: mitgelieferte Listen gelten (neuer nach App-Update oder heruntergeladene unvollständig), heruntergeladene entfernt` | App-Update hat neuere Listen gebracht (oder tvOS hat Caches geleert) |
+
+**Test** (DEBUG, eigener Simulator, lokaler Server als Quelle):
+```
+python3 -m http.server 8000 --directory <ordner>   # mit <ordner>/good/manifest.json usw. aus publish_filterlists.py
+SIMCTL_CHILD_FILTERLIST_URL=http://127.0.0.1:8000/good/manifest.json \
+SIMCTL_CHILD_FILTERLIST_CHECK_NOW=1 \
+SIMCTL_CHILD_POINTER_SELFTEST='wait;wait;wait;wait;wait;wait;url:http://127.0.0.1:8000/test.html;wait;wait;js:…' \
+  xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app
+```
+`FILTERLIST_URL` ersetzt die Quelle (nur DEBUG, auch `http://`), `FILTERLIST_CHECK_NOW=1` prüft 2 s nach dem ersten Seitenaufbau ohne Tagesgrenze. Geprüft am 8. November 2026 (tvOS-27.2-Simulator) mit einem Teststand, der zusätzlich `flt-testwerbung\.js` blockt, `#flt-testbanner` per Regelsatz und `#flt-scriptletbanner` per Scriptlet-CSS für `127.0.0.1` ausblendet:
+
+| Fall | Ergebnis |
+|---|---|
+| Server nicht erreichbar | `Aktualisierung nicht möglich`, mitgelieferte Listen bleiben, Testbanner sichtbar |
+| falsche Prüfsumme (network-2, Scriptlets) | Datei verworfen (`Prüfsumme (SHA-256) stimmt nicht`), kein Rest in `Caches/FilterLists`, bisherige Listen bleiben |
+| neuerer Stand | 4 Listen geladen und geprüft, `umgeschaltet auf Listenstand …`, Scriptlets umgeschaltet; Testseite: beide Banner weg, `flt-testwerbung.js` nicht angefragt |
+| Neustart / danach offline | heruntergeladener Stand wird ohne Prüfung (nicht fällig) bzw. trotz Fehler weiter genutzt, weiterhin geblockt |
+| Menüeintrag | „Filterlisten aktualisieren“ unter „…pausieren“ mit „Stand 08.11.2026“, Meldung „Die Filterlisten sind aktuell …“ |
+| App-Update mit neueren mitgelieferten Listen | mitgelieferte gelten, heruntergeladene Ordner entfernt, Serverstand „nicht neuer“; nach Rückbau wieder Umschaltung auf den Serverstand |
+
 
 ---
 
@@ -1121,6 +1187,7 @@ POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:fra
 | `[WebProcess] Seitenprozess beendet (Grund N) <host> -> …` | `BrowserWebView handleWebContentProcessTerminationWithReason:` (3.1) | nein |
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
 | `[Scriptlets] geladen/nicht verfügbar` bzw. `[Scriptlets] <host> N Regeln` | `BrowserScriptletInjector` | erste nein, zweite ja |
+| `[FilterLists] …` | `BrowserFilterListUpdater` (6.10) | nein |
 | `[CookieBlock] …` | `BrowserCookieConsentBlocker handleMessageBody:` und Fehlzeile für das Bundle | ja |
 | `[Input] Clickpad über GameController`, `[Pointer] Geste …`, `[PointerTest] …` | `BrowserRemoteInputController` | erste: nein, die anderen: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |

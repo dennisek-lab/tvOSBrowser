@@ -3,6 +3,7 @@
 #import "BrowserClickTargetTracker.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserCookieConsentBlocker.h"
+#import "BrowserFilterListUpdater.h"
 #import "BrowserScriptletInjector.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebAudioCapture.h"
@@ -1342,6 +1343,8 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     self.lastRequest = [self request];
     [self installYouTubeRequestCaptureHook];
     [self applyPageScalingIfNeeded];
+    // Filterlisten höchstens einmal am Tag prüfen, verzögert und erst nach dem Seitenaufbau
+    [[BrowserFilterListUpdater sharedUpdater] pageDidFinishLoading];
     if ([self.delegate respondsToSelector:@selector(webViewDidFinishLoad:)]) {
         [self.delegate webViewDidFinishLoad:self];
     }

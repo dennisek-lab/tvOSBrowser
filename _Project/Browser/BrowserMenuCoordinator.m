@@ -5,6 +5,7 @@
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
+#import "BrowserFilterListUpdater.h"
 #import "BrowserCookieConsentBlocker.h"
 #import "BrowserWebView.h"
 
@@ -42,6 +43,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Unbenutzte Tabs nach 30 Min. schließen": @"clock.badge.xmark",
             @"Werbeblocker": @"hand.raised.fill",
             @"Werbeblocker bei Sperre automatisch pausieren": @"pause.circle",
+            @"Filterlisten aktualisieren": @"arrow.triangle.2.circlepath",
             @"Cookie-Banner ablehnen": @"checkmark.shield.fill",
             @"Bezahlschranken zustimmen": @"eurosign.circle",
             @"Native Player automatisch": @"play.rectangle",
@@ -1328,6 +1330,25 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Zeigt den Stand der Werbeblocker-Listen und prüft auf Wunsch sofort auf neue (BrowserFilterListUpdater).
+- (BrowserAdvancedMenuItem *)filterListUpdateMenuItem {
+    BrowserFilterListUpdater *updater = [BrowserFilterListUpdater sharedUpdater];
+    NSString *detail = updater.isChecking ? @"Prüft …"
+        : [@"Stand " stringByAppendingString:[BrowserFilterListUpdater displayStringForDate:updater.activeListsDate]];
+    return [self advancedMenuItemWithTitle:@"Filterlisten aktualisieren"
+                                    detail:detail
+                                   handler:^{
+        [updater checkNowWithCompletion:^(BOOL updated, NSString *message) {
+            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Filterlisten" message:message];
+            [alertController addAction:[self browserActionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+            [self.host browserPresentViewController:alertController];
+            if (updated) {
+                [[self.host browserWebView] reload];
+            }
+        }];
+    }];
+}
+
 /// Schaltet den Werbeblocker für den Host der aktuellen Seite aus bzw. wieder ein.
 - (BrowserAdvancedMenuItem *)adBlockSiteMenuItem {
     NSURL *url = [[self.host browserWebView] request].URL;
@@ -1546,6 +1567,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     return @[
         [self adBlockMenuItem],
         [self adBlockAutoPauseMenuItem],
+        [self filterListUpdateMenuItem],
         [self cookieBannerMenuItem],
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],

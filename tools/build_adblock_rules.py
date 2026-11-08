@@ -6,6 +6,7 @@ Aufruf (aus dem Repo-Wurzelverzeichnis, nur Python-3-Standardbibliothek):
     python3 tools/build_adblock_rules.py            # laedt Listen (Cache in tools/.adblock-cache), schreibt JSON
     python3 tools/build_adblock_rules.py --refresh  # Listen neu herunterladen
     python3 tools/build_adblock_rules.py --no-register  # nicht im Xcode-Projekt eintragen
+    python3 tools/build_adblock_rules.py --out-dir DIR  # anderer Ausgabeordner (GitHub-Workflow filterlisten.yml)
 
 Ausgabe: _Project/Browser/ContentBlocker/*.json.z (raw deflate) und manifest.json. Die Dateien werden in der
 Sources/Resources-Phase des App-Targets registriert (tools/add_resource.py). Das Skript
@@ -32,6 +33,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from collections import Counter, OrderedDict
 
@@ -489,7 +491,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--no-register", action="store_true")
+    ap.add_argument("--out-dir", type=pathlib.Path, default=None,
+                    help="Ausgabeordner statt _Project/Browser/ContentBlocker (impliziert --no-register)")
     args = ap.parse_args()
+    out_dir = args.out_dir.resolve() if args.out_dir else OUT_DIR
+    if args.out_dir:
+        args.no_register = True
 
     conv = Converter()
     per_list = {}
@@ -509,8 +516,8 @@ def main():
         print(f"  uebersetzt {sum(ok.values())}, uebersprungen {sum(skipped.values())}", file=sys.stderr)
 
     lists = conv.build_lists()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for old in list(OUT_DIR.glob("*.json")) + list(OUT_DIR.glob("*.json.z")):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in list(out_dir.glob("*.json")) + list(out_dir.glob("*.json.z")):
         old.unlink()
     manifest = {"lists": []}
     total = 0
@@ -520,15 +527,19 @@ def main():
         # Raw-Deflate (NSDataCompressionAlgorithmZlib), das spart im Paket etwa 90 %
         comp = zlib.compressobj(9, zlib.DEFLATED, -15)
         packed = comp.compress(data) + comp.flush()
-        (OUT_DIR / f"{name}.json.z").write_bytes(packed)
+        (out_dir / f"{name}.json.z").write_bytes(packed)
         manifest["lists"].append({"name": name, "file": f"{name}.json.z", "hash": digest,
                                   "rules": len(rules), "jsonBytes": len(data)})
         total += len(packed)
         print(f"{name}: {len(rules)} Regeln, {len(data) / 1e6:.2f} MB JSON, {len(packed) / 1e6:.2f} MB gepackt", file=sys.stderr)
     manifest["version"] = hashlib.sha256("".join(l["hash"] for l in manifest["lists"]).encode()).hexdigest()[:12]
+    # Erzeugungszeit (Unix-Sekunden, UTC): Die App vergleicht damit mitgelieferte und heruntergeladene Listen,
+    # der neuere Stand gewinnt (BrowserFilterListUpdater).
+    manifest["generatedAt"] = int(time.time())
+    manifest["date"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(manifest["generatedAt"]))
     manifest["sources"] = {k: {"converted": v[0], "skipped": v[1], "skippedByReason": v[2]} for k, v in per_list.items()}
     manifest["totals"] = {"converted": dict(conv.stats.converted), "skipped": dict(conv.stats.skipped)}
-    (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False))
     print(f"Gesamt im Paket: {total / 1e6:.2f} MB", file=sys.stderr)
     print("Uebersprungen nach Grund:", file=sys.stderr)
     for reason, n in conv.stats.skipped.most_common():
