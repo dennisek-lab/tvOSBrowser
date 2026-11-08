@@ -1,4 +1,5 @@
 #import "BrowserNativeVideoPlayerViewController.h"
+#import "BrowserShape.h"
 #import "BrowserNativeVideoAssetLoader.h"
 #import "BrowserNowPlayingController.h"
 
@@ -526,7 +527,7 @@ static BOOL BrowserLanguageMatches(NSString *candidate, NSString *wanted) {
     label.textColor = UIColor.whiteColor;
     label.font = [UIFont systemFontOfSize:48.0 weight:UIFontWeightSemibold];
     label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
-    label.layer.cornerRadius = 10.0;
+    BrowserShapeApply(label.layer, BrowserShapeSmallRadius);
     label.layer.masksToBounds = YES;
     label.hidden = YES;
     [overlay addSubview:label];

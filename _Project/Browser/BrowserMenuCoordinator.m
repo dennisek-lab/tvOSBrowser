@@ -1,5 +1,6 @@
 #import "BrowserMenuCoordinator.h"
 #import "BrowserMotion.h"
+#import "BrowserShape.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
@@ -18,6 +19,78 @@ static NSString * const kBrowserMediaDiagnosticsLogPrefix = @"[MediaDiagnostics]
 static NSString * const kBrowserWebKitMediaPrefsLogPrefix = @"[WebKitMediaPrefs]";
 
 typedef void (^BrowserAdvancedMenuItemHandler)(void);
+
+/// SF Symbol je Menüeintrag (nach Titel). Unbekannte Titel bekommen einen Punkt.
+static NSString *BrowserMenuSymbolForTitle(NSString *title) {
+    static NSDictionary<NSString *, NSString *> *symbols;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        symbols = @{
+            @"Zusammenfassen": @"list.bullet.rectangle",
+            @"Übersetzen": @"translate",
+            @"Neu laden": @"arrow.clockwise",
+            @"Seitenzoom": @"plus.magnifyingglass",
+            @"Werbeblocker hier": @"hand.raised",
+            @"Cookie-Banner hier ablehnen": @"checkmark.shield",
+            @"Diese Seite als Startseite": @"house.and.flag",
+            @"Startseite öffnen": @"house",
+            @"Favoriten": @"star",
+            @"Verlauf": @"clock.arrow.circlepath",
+            @"Tabs anzeigen": @"square.on.square",
+            @"Neuer Tab": @"plus.square.on.square",
+            @"Werbeblocker": @"hand.raised.fill",
+            @"Werbeblocker bei Sperre automatisch pausieren": @"pause.circle",
+            @"Cookie-Banner ablehnen": @"checkmark.shield.fill",
+            @"Bezahlschranken zustimmen": @"eurosign.circle",
+            @"Native Player automatisch": @"play.rectangle",
+            @"Automatische Untertitel": @"captions.bubble",
+            @"Untertitel (Webseite)": @"text.bubble",
+            @"Cloudflare-DNS": @"network",
+            @"Obere Leiste": @"rectangle.topthird.inset.filled",
+            @"Regenbogen-Leuchten": @"sparkles",
+            @"Liquid-Glass-Animationen": @"drop",
+            @"Zeiger": @"cursorarrow",
+            @"Zeigertempo": @"speedometer",
+            @"Zeiger gleitet aus": @"cursorarrow.motionlines",
+            @"Vollbild-Player": @"arrow.up.left.and.arrow.down.right",
+            @"Seite an Breite anpassen": @"arrow.left.and.right",
+            @"Browser-Kennung": @"desktopcomputer",
+            @"Schrift größer": @"textformat.size.larger",
+            @"Schrift kleiner": @"textformat.size.smaller",
+            @"Schriftgröße zurücksetzen": @"textformat",
+            @"Cache leeren": @"trash",
+            @"Cookies löschen": @"xmark.bin",
+            @"Bedienung": @"questionmark.circle",
+            @"Was ist neu": @"gift",
+            @"Medien-Diagnose": @"waveform.path.ecg",
+            @"WebKit-Medieneinstellungen": @"slider.horizontal.3",
+        };
+    });
+    return symbols[title] ?: @"circle.fill";
+}
+
+/// Farbe der Symbolkreise je Abschnitt.
+static UIColor *BrowserMenuTintForSection(NSString *title) {
+    static NSDictionary<NSString *, UIColor *> *tints;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        tints = @{
+            @"Diese Seite": UIColor.systemBlueColor,
+            @"Navigation": UIColor.systemIndigoColor,
+            @"Erweiterungen": UIColor.systemGreenColor,
+            @"Ansicht & Wiedergabe": UIColor.systemOrangeColor,
+            @"Daten": UIColor.systemRedColor,
+            @"Hilfe": UIColor.systemTealColor,
+            @"Erweitert": UIColor.systemGrayColor,
+        };
+    });
+    return tints[title] ?: UIColor.systemGrayColor;
+}
+
+static CGFloat const kMenuRowHeight = 72.0;
+static CGFloat const kMenuIconSide = 48.0;
+static CGFloat const kMenuSwitchWidth = 66.0;
+static CGFloat const kMenuSwitchHeight = 38.0;
 
 @interface BrowserAdvancedMenuItem : NSObject
 
@@ -62,6 +135,170 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     section.title = title ?: @"";
     section.items = [items copy] ?: @[];
     return section;
+}
+
+@end
+
+/// Zeile der Seitenleiste: farbiger Symbolkreis, Titel, rechts Wert oder Schalter. Fokus als Glas-Kapsel
+/// (konzentrisch zu den Panel-Ecken), leicht angehoben; keine zusätzliche Aufhellung des Inhalts.
+@interface BrowserAdvancedMenuCell : UITableViewCell
+- (void)configureWithItem:(BrowserAdvancedMenuItem *)item tint:(UIColor *)tint;
+- (void)setHighlightedForFocus:(BOOL)focused animated:(BOOL)animated;
+@end
+
+@implementation BrowserAdvancedMenuCell {
+    UIView *_platter;
+    UIView *_iconCircle;
+    UIImageView *_iconView;
+    UILabel *_titleLabel;
+    UILabel *_detailLabel;
+    UIView *_switchTrack;
+    UIView *_switchKnob;
+    NSLayoutConstraint *_knobLeading;
+    NSLayoutConstraint *_titleToDetail;
+    NSLayoutConstraint *_titleToSwitch;
+}
+
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        self.backgroundColor = UIColor.clearColor;
+        self.contentView.backgroundColor = UIColor.clearColor;
+        self.clipsToBounds = NO;
+        self.contentView.clipsToBounds = NO;
+        self.preservesSuperviewLayoutMargins = NO;
+        self.layoutMargins = UIEdgeInsetsZero;
+        self.selectionStyle = UITableViewCellSelectionStyleNone;
+        if ([self respondsToSelector:@selector(setFocusStyle:)]) {
+            [self setValue:@(1) forKey:@"focusStyle"]; // UITableViewCellFocusStyleCustom
+        }
+
+        _platter = [UIView new];
+        _platter.translatesAutoresizingMaskIntoConstraints = NO;
+        _platter.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
+        _platter.layer.borderWidth = 1.0;
+        _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.22].CGColor;
+        _platter.layer.shadowColor = UIColor.blackColor.CGColor;
+        _platter.layer.shadowOpacity = 0.25;
+        _platter.layer.shadowRadius = 16.0;
+        _platter.layer.shadowOffset = CGSizeMake(0.0, 8.0);
+        BrowserShapeApply(_platter.layer, BrowserShapeCapsuleRadius(kMenuRowHeight - 4.0));
+        _platter.alpha = 0.0;
+        [self.contentView addSubview:_platter];
+
+        // Symbolkreis konzentrisch in der Kapsel: Abstand (Zeilenhöhe − Kreis) / 2 rundum.
+        _iconCircle = [UIView new];
+        _iconCircle.translatesAutoresizingMaskIntoConstraints = NO;
+        BrowserShapeApply(_iconCircle.layer, kMenuIconSide / 2.0);
+        [self.contentView addSubview:_iconCircle];
+
+        _iconView = [UIImageView new];
+        _iconView.translatesAutoresizingMaskIntoConstraints = NO;
+        _iconView.contentMode = UIViewContentModeCenter;
+        _iconView.tintColor = UIColor.whiteColor;
+        [_iconCircle addSubview:_iconView];
+
+        _titleLabel = [UILabel new];
+        _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        _titleLabel.font = [UIFont systemFontOfSize:30.0 weight:UIFontWeightMedium];
+        _titleLabel.adjustsFontSizeToFitWidth = YES;
+        _titleLabel.minimumScaleFactor = 0.75;
+        [_titleLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+        [self.contentView addSubview:_titleLabel];
+
+        _detailLabel = [UILabel new];
+        _detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        _detailLabel.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightRegular];
+        _detailLabel.textColor = UIColor.secondaryLabelColor;
+        _detailLabel.textAlignment = NSTextAlignmentRight;
+        _detailLabel.adjustsFontSizeToFitWidth = YES;
+        _detailLabel.minimumScaleFactor = 0.7;
+        [_detailLabel setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [_detailLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
+        [self.contentView addSubview:_detailLabel];
+
+        _switchTrack = [UIView new];
+        _switchTrack.translatesAutoresizingMaskIntoConstraints = NO;
+        BrowserShapeApply(_switchTrack.layer, kMenuSwitchHeight / 2.0);
+        [self.contentView addSubview:_switchTrack];
+        _switchKnob = [UIView new];
+        _switchKnob.translatesAutoresizingMaskIntoConstraints = NO;
+        _switchKnob.backgroundColor = UIColor.whiteColor;
+        BrowserShapeApply(_switchKnob.layer, (kMenuSwitchHeight - 6.0) / 2.0);
+        _switchKnob.layer.shadowColor = UIColor.blackColor.CGColor;
+        _switchKnob.layer.shadowOpacity = 0.2;
+        _switchKnob.layer.shadowRadius = 3.0;
+        _switchKnob.layer.shadowOffset = CGSizeMake(0.0, 1.0);
+        [_switchTrack addSubview:_switchKnob];
+
+        CGFloat iconInset = (kMenuRowHeight - kMenuIconSide) / 2.0;
+        _knobLeading = [_switchKnob.leadingAnchor constraintEqualToAnchor:_switchTrack.leadingAnchor constant:3.0];
+        _titleToDetail = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_detailLabel.leadingAnchor constant:-16.0];
+        _titleToSwitch = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_switchTrack.leadingAnchor constant:-16.0];
+        [NSLayoutConstraint activateConstraints:@[
+            [_platter.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor],
+            [_platter.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor],
+            [_platter.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:2.0],
+            [_platter.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-2.0],
+
+            [_iconCircle.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:iconInset],
+            [_iconCircle.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_iconCircle.widthAnchor constraintEqualToConstant:kMenuIconSide],
+            [_iconCircle.heightAnchor constraintEqualToConstant:kMenuIconSide],
+            [_iconView.centerXAnchor constraintEqualToAnchor:_iconCircle.centerXAnchor],
+            [_iconView.centerYAnchor constraintEqualToAnchor:_iconCircle.centerYAnchor],
+
+            [_titleLabel.leadingAnchor constraintEqualToAnchor:_iconCircle.trailingAnchor constant:20.0],
+            [_titleLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+
+            [_detailLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-28.0],
+            [_detailLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_detailLabel.widthAnchor constraintLessThanOrEqualToAnchor:self.contentView.widthAnchor multiplier:0.42],
+
+            [_switchTrack.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-(kMenuRowHeight - kMenuSwitchHeight) / 2.0],
+            [_switchTrack.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_switchTrack.widthAnchor constraintEqualToConstant:kMenuSwitchWidth],
+            [_switchTrack.heightAnchor constraintEqualToConstant:kMenuSwitchHeight],
+            [_switchKnob.centerYAnchor constraintEqualToAnchor:_switchTrack.centerYAnchor],
+            [_switchKnob.widthAnchor constraintEqualToConstant:kMenuSwitchHeight - 6.0],
+            [_switchKnob.heightAnchor constraintEqualToConstant:kMenuSwitchHeight - 6.0],
+            _knobLeading,
+        ]];
+    }
+    return self;
+}
+
+- (void)configureWithItem:(BrowserAdvancedMenuItem *)item tint:(UIColor *)tint {
+    BOOL destructive = item.style == UIAlertActionStyleDestructive;
+    _titleLabel.text = item.title;
+    _titleLabel.textColor = destructive ? UIColor.systemRedColor : UIColor.labelColor;
+    _iconCircle.backgroundColor = destructive ? UIColor.systemRedColor : tint;
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:22.0 weight:UIImageSymbolWeightSemibold];
+    _iconView.image = [UIImage systemImageNamed:BrowserMenuSymbolForTitle(item.title) withConfiguration:config]
+        ?: [UIImage systemImageNamed:@"circle.fill" withConfiguration:config];
+
+    // „An“/„Aus“ als Schalter, alles andere als Wert rechts.
+    BOOL isSwitch = [item.detail isEqualToString:@"An"] || [item.detail isEqualToString:@"Aus"];
+    BOOL isOn = [item.detail isEqualToString:@"An"];
+    _switchTrack.hidden = !isSwitch;
+    _detailLabel.hidden = isSwitch;
+    _detailLabel.text = isSwitch ? nil : item.detail;
+    _titleToSwitch.active = isSwitch;
+    _titleToDetail.active = !isSwitch;
+    _switchTrack.backgroundColor = isOn ? UIColor.systemGreenColor : [UIColor colorWithWhite:1.0 alpha:0.22];
+    _knobLeading.constant = isOn ? kMenuSwitchWidth - kMenuSwitchHeight + 3.0 : 3.0;
+}
+
+- (void)setHighlightedForFocus:(BOOL)focused animated:(BOOL)animated {
+    void (^changes)(void) = ^{
+        self->_platter.alpha = focused ? 1.0 : 0.0;
+        self.contentView.transform = focused ? CGAffineTransformMakeScale(1.025, 1.025) : CGAffineTransformIdentity;
+    };
+    if (animated) {
+        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:changes completion:nil];
+    } else {
+        changes();
+    }
 }
 
 @end
@@ -134,7 +371,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     UIVisualEffectView *panelView = [[UIVisualEffectView alloc] initWithEffect:[self panelEffect]];
     panelView.translatesAutoresizingMaskIntoConstraints = NO;
     panelView.backgroundColor = UIColor.clearColor;
-    panelView.layer.cornerRadius = 28.0;
+    BrowserShapeApply(panelView.layer, BrowserShapePanelRadius);
     panelView.layer.masksToBounds = YES;
     panelView.layer.borderWidth = self.usingNativeGlassEffect ? 0.0 : 1.0;
     panelView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.28].CGColor;
@@ -152,7 +389,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     UILabel *titleLabel = [UILabel new];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     titleLabel.text = self.menuTitle;
-    titleLabel.font = [UIFont boldSystemFontOfSize:34.0];
+    titleLabel.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightBold];
     titleLabel.textAlignment = NSTextAlignmentLeft;
     if (@available(tvOS 13.0, *)) {
         titleLabel.textColor = UIColor.labelColor;
@@ -164,7 +401,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     UIView *separator = [UIView new];
     separator.translatesAutoresizingMaskIntoConstraints = NO;
     if (@available(tvOS 13.0, *)) {
-        separator.backgroundColor = UIColor.separatorColor;
+        separator.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
     } else {
         separator.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.2];
     }
@@ -186,7 +423,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     tableView.translatesAutoresizingMaskIntoConstraints = NO;
     tableView.dataSource = self;
     tableView.delegate = self;
-    tableView.rowHeight = 68.0;
+    tableView.rowHeight = kMenuRowHeight;
     tableView.backgroundColor = UIColor.clearColor;
     tableView.preservesSuperviewLayoutMargins = NO;
     tableView.layoutMargins = UIEdgeInsetsZero;
@@ -221,23 +458,24 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
         [panelView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor constant:-16.0],
         self.panelTrailingConstraint,
 
-        [titleLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:32.0],
+        [titleLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset + 24.0],
         [titleLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-32.0],
-        [titleLabel.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:26.0],
+        [titleLabel.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:34.0],
 
-        [separator.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:20.0],
-        [separator.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-20.0],
-        [separator.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:20.0],
+        [separator.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset + 24.0],
+        [separator.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-(BrowserShapePanelInset + 24.0)],
+        [separator.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:22.0],
         [separator.heightAnchor constraintEqualToConstant:1.0],
 
-        [tableView.topAnchor constraintEqualToAnchor:separator.bottomAnchor constant:12.0],
-        [tableView.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:16.0],
-        [tableView.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-16.0],
+        // Zeilen mit gleichem Abstand zum Rand wie unten: Kapsel-Zeilen liegen konzentrisch in den Panel-Ecken.
+        [tableView.topAnchor constraintEqualToAnchor:separator.bottomAnchor constant:6.0],
+        [tableView.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset],
+        [tableView.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-BrowserShapePanelInset],
         [tableView.bottomAnchor constraintEqualToAnchor:footerLabel.topAnchor constant:-8.0],
 
         [footerLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:24.0],
         [footerLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-24.0],
-        [footerLabel.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor constant:-12.0],
+        [footerLabel.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor constant:-18.0],
     ]];
     if (panelTint != nil) {
         [constraints addObject:[panelTint.leadingAnchor constraintEqualToAnchor:panelView.contentView.leadingAnchor]];
@@ -315,7 +553,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     UILabel *label = [UILabel new];
     label.translatesAutoresizingMaskIntoConstraints = NO;
     label.text = [self.sections[(NSUInteger)section].title uppercaseString];
-    label.font = [UIFont systemFontOfSize:22.0 weight:UIFontWeightSemibold];
+    label.font = [UIFont systemFontOfSize:21.0 weight:UIFontWeightSemibold];
     label.textColor = UIColor.secondaryLabelColor;
     [header addSubview:label];
     [NSLayoutConstraint activateConstraints:@[
@@ -327,92 +565,19 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
 }
 
 - (CGFloat)tableView:(__unused UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return section == 0 ? 52.0 : 76.0;
+    return section == 0 ? 46.0 : 70.0;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     static NSString * const kCellIdentifier = @"BrowserAdvancedMenuCell";
-    static NSInteger const kMenuTitleLabelTag = 9191;
-    static NSInteger const kMenuFocusBackgroundTag = 9292;
-    static NSInteger const kMenuDetailLabelTag = 9393;
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kCellIdentifier];
+    BrowserAdvancedMenuCell *cell = [tableView dequeueReusableCellWithIdentifier:kCellIdentifier];
     if (cell == nil) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kCellIdentifier];
-        cell.backgroundColor = UIColor.clearColor;
-        cell.contentView.backgroundColor = UIColor.clearColor;
-        cell.clipsToBounds = NO;
-        cell.contentView.clipsToBounds = NO;
-        cell.preservesSuperviewLayoutMargins = NO;
-        cell.layoutMargins = UIEdgeInsetsZero;
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        if ([cell respondsToSelector:@selector(setFocusStyle:)]) {
-            [cell setValue:@(1) forKey:@"focusStyle"]; // UITableViewCellFocusStyleCustom
-        }
-
-        UIView *focusBackgroundView = [UIView new];
-        focusBackgroundView.translatesAutoresizingMaskIntoConstraints = NO;
-        focusBackgroundView.tag = kMenuFocusBackgroundTag;
-        focusBackgroundView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.18];
-        focusBackgroundView.layer.cornerRadius = 12.0;
-        focusBackgroundView.alpha = 0.0;
-        [cell.contentView addSubview:focusBackgroundView];
-
-        UILabel *titleLabel = [UILabel new];
-        titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        titleLabel.tag = kMenuTitleLabelTag;
-        titleLabel.font = [UIFont systemFontOfSize:31.0 weight:UIFontWeightRegular];
-        titleLabel.textAlignment = NSTextAlignmentLeft;
-        titleLabel.numberOfLines = 1;
-        [cell.contentView addSubview:titleLabel];
-
-        UILabel *detailLabel = [UILabel new];
-        detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        detailLabel.tag = kMenuDetailLabelTag;
-        detailLabel.font = [UIFont systemFontOfSize:27.0 weight:UIFontWeightMedium];
-        detailLabel.textAlignment = NSTextAlignmentRight;
-        detailLabel.textColor = UIColor.secondaryLabelColor;
-        detailLabel.numberOfLines = 1;
-        detailLabel.adjustsFontSizeToFitWidth = YES;
-        detailLabel.minimumScaleFactor = 0.7;
-        [detailLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
-        [detailLabel setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-        [cell.contentView addSubview:detailLabel];
-        [titleLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-
-        [NSLayoutConstraint activateConstraints:@[
-            [focusBackgroundView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:0.0],
-            [focusBackgroundView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:0.0],
-            [focusBackgroundView.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:2.0],
-            [focusBackgroundView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-2.0],
-
-            [titleLabel.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:24.0],
-            [titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:detailLabel.leadingAnchor constant:-12.0],
-            [titleLabel.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
-            [detailLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-24.0],
-            [detailLabel.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
-            [detailLabel.widthAnchor constraintLessThanOrEqualToAnchor:cell.contentView.widthAnchor multiplier:0.5],
-        ]];
+        cell = [[BrowserAdvancedMenuCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kCellIdentifier];
     }
-
     BrowserAdvancedMenuSection *section = self.sections[(NSUInteger)indexPath.section];
     BrowserAdvancedMenuItem *item = section.items[(NSUInteger)indexPath.row];
-    UILabel *titleLabel = (UILabel *)[cell.contentView viewWithTag:kMenuTitleLabelTag];
-    UIView *focusBackgroundView = [cell.contentView viewWithTag:kMenuFocusBackgroundTag];
-    titleLabel.text = item.title;
-    UILabel *detailLabel = (UILabel *)[cell.contentView viewWithTag:kMenuDetailLabelTag];
-    detailLabel.text = item.detail;
-    BOOL isOn = [item.detail isEqualToString:@"An"];
-    detailLabel.textColor = isOn ? [UIColor colorWithRed:0.35 green:0.85 blue:0.5 alpha:1.0] : UIColor.secondaryLabelColor;
-    UIColor *titleColor = nil;
-    if (item.style == UIAlertActionStyleDestructive) {
-        titleColor = UIColor.redColor;
-    } else if (@available(tvOS 13.0, *)) {
-        titleColor = UIColor.labelColor;
-    } else {
-        titleColor = UIColor.whiteColor;
-    }
-    titleLabel.textColor = titleColor;
-    focusBackgroundView.alpha = cell.isFocused ? 1.0 : 0.0;
+    [cell configureWithItem:item tint:BrowserMenuTintForSection(section.title)];
+    [cell setHighlightedForFocus:cell.isFocused animated:NO];
     return cell;
 }
 
@@ -421,16 +586,15 @@ didUpdateFocusInContext:(UITableViewFocusUpdateContext *)context
 withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSIndexPath *previousIndexPath = context.previouslyFocusedIndexPath;
     NSIndexPath *nextIndexPath = context.nextFocusedIndexPath;
-
-    UITableViewCell *previousCell = previousIndexPath ? [tableView cellForRowAtIndexPath:previousIndexPath] : nil;
-    UITableViewCell *nextCell = nextIndexPath ? [tableView cellForRowAtIndexPath:nextIndexPath] : nil;
-
+    BrowserAdvancedMenuCell *previousCell = previousIndexPath ? (BrowserAdvancedMenuCell *)[tableView cellForRowAtIndexPath:previousIndexPath] : nil;
+    BrowserAdvancedMenuCell *nextCell = nextIndexPath ? (BrowserAdvancedMenuCell *)[tableView cellForRowAtIndexPath:nextIndexPath] : nil;
     [coordinator addCoordinatedAnimations:^{
-        UIView *previousFocusBackground = [previousCell.contentView viewWithTag:9292];
-        previousFocusBackground.alpha = 0.0;
-
-        UIView *nextFocusBackground = [nextCell.contentView viewWithTag:9292];
-        nextFocusBackground.alpha = 1.0;
+        if ([previousCell isKindOfClass:BrowserAdvancedMenuCell.class]) {
+            [previousCell setHighlightedForFocus:NO animated:YES];
+        }
+        if ([nextCell isKindOfClass:BrowserAdvancedMenuCell.class]) {
+            [nextCell setHighlightedForFocus:YES animated:YES];
+        }
     } completion:nil];
 }
 
@@ -971,6 +1135,14 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)whatsNewMenuItem {
+    return [self advancedMenuItemWithTitle:@"Was ist neu"
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        [self.host browserShowWhatsNew];
+    }];
+}
+
 - (UIAlertAction *)wkWebViewProofOfConceptAction {
     return [self browserActionWithTitle:@"WKWebView-Test öffnen"
                                   style:UIAlertActionStyleDefault
@@ -1362,6 +1534,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Hilfe"
                                                items:@[
             [self usageGuideMenuItem],
+            [self whatsNewMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Erweitert"
                                                items:@[

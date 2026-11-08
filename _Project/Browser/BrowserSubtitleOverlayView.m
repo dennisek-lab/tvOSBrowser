@@ -1,4 +1,5 @@
 #import "BrowserSubtitleOverlayView.h"
+#import "BrowserShape.h"
 
 #import <MediaAccessibility/MediaAccessibility.h>
 
@@ -24,8 +25,7 @@ static const CGFloat kSubtitleBaseFontSize = 54.0;   // bei 1920 × 1080 pt, Rel
         self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
         _captionBox = [UIView new];
-        _captionBox.layer.cornerRadius = 10.0;
-        _captionBox.layer.cornerCurve = kCACornerCurveContinuous;
+        BrowserShapeApply(_captionBox.layer, BrowserShapeSmallRadius);
         _captionBox.alpha = 0.0;
         [self addSubview:_captionBox];
 
@@ -37,7 +37,7 @@ static const CGFloat kSubtitleBaseFontSize = 54.0;   // bei 1920 × 1080 pt, Rel
 
         _statusBox = [UIView new];
         _statusBox.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
-        _statusBox.layer.cornerRadius = 12.0;
+        BrowserShapeApply(_statusBox.layer, BrowserShapeSmallRadius);
         _statusBox.alpha = 0.0;
         [self addSubview:_statusBox];
 

@@ -166,8 +166,15 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self.tabCoordinator webViewDidAppear];
-    if (!self.preferencesStore.dontShowHintsOnLaunch && !self.displayedHintsOnLaunch) {
-        [self showHintsAlert];
+    if (!self.displayedHintsOnLaunch) {
+        // Neue Fassung: einmal „Was ist neu“, sonst wie gewohnt die Bedienungshilfe (abschaltbar).
+        NSString *seen = [NSUserDefaults.standardUserDefaults stringForKey:@"WhatsNewSeenVersion"];
+        if (![seen isEqualToString:BrowserGuideViewController.whatsNewVersion]) {
+            [NSUserDefaults.standardUserDefaults setObject:BrowserGuideViewController.whatsNewVersion forKey:@"WhatsNewSeenVersion"];
+            [self showWhatsNew];
+        } else if (!self.preferencesStore.dontShowHintsOnLaunch) {
+            [self showHintsAlert];
+        }
     }
     self.displayedHintsOnLaunch = YES;
     [self startWebSubtitlesIfEnabled];
@@ -412,6 +419,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                 }
                 if ([step isEqualToString:@"guide"]) {
                     [self showHintsAlert];
+                    return;
+                }
+                if ([step isEqualToString:@"whatsnew"]) {
+                    [self showWhatsNew];
                     return;
                 }
                 if ([step isEqualToString:@"clearall"]) {
@@ -1142,6 +1153,23 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         weakSelf.preferencesStore.dontShowHintsOnLaunch = dontShowOnLaunch;
     };
     [self presentViewController:guide animated:YES completion:nil];
+}
+
+- (void)showWhatsNew {
+    if (self.presentedViewController != nil) {
+        return;
+    }
+    BrowserGuideViewController *whatsNew = [[BrowserGuideViewController alloc] init];
+    whatsNew.whatsNew = YES;
+    __weak typeof(self) weakSelf = self;
+    whatsNew.showGuideHandler = ^{
+        [weakSelf showHintsAlert];
+    };
+    [self presentViewController:whatsNew animated:YES completion:nil];
+}
+
+- (void)browserShowWhatsNew {
+    [self showWhatsNew];
 }
 
 - (BOOL)topBarAcceptsPointer {

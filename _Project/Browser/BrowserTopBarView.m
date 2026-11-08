@@ -1,4 +1,5 @@
 #import "BrowserTopBarView.h"
+#import "BrowserShape.h"
 #import "BrowserMotion.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
@@ -157,13 +158,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.progressView = [[UIView alloc] initWithFrame:CGRectZero];
     self.progressView.userInteractionEnabled = NO;
     self.progressView.backgroundColor = UIColor.systemBlueColor;
-    self.progressView.layer.cornerRadius = 1.5;
+    BrowserShapeApply(self.progressView.layer, 1.5);
     self.progressView.alpha = 0.0;
     [self.chromeEffectView.contentView addSubview:self.progressView];
 
     self.focusHighlightView = [[UIView alloc] initWithFrame:CGRectZero];
     self.focusHighlightView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.18];
-    self.focusHighlightView.layer.cornerRadius = 22.0;
+    BrowserShapeApply(self.focusHighlightView.layer, 22.0);
     self.focusHighlightView.alpha = 0.0;
     self.focusHighlightView.hidden = YES;
     [self.chromeEffectView.contentView addSubview:self.focusHighlightView];
@@ -582,7 +583,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     // Seitenname nicht springen, wenn die Lesbarkeit erst nach dem Laden feststeht.
     self.readerImageView.frame = self.fullscreenImageView.frame;
     self.readerHighlightView.frame = CGRectInset(self.readerImageView.frame, -6.0, -2.0);
-    self.readerHighlightView.layer.cornerRadius = 16.0;
+    // Kapsel wie die Leiste, in der der Knopf liegt.
+    self.readerHighlightView.layer.cornerRadius = BrowserShapeCapsuleRadius(CGRectGetHeight(self.readerHighlightView.frame));
     CGFloat spinnerSide = 34.0;
     rightX = CGRectGetMinX(self.readerImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
     self.loadingSpinner.frame = CGRectMake(rightX,

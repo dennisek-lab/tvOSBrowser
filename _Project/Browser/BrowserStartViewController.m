@@ -3,6 +3,7 @@
 //
 
 #import "BrowserStartViewController.h"
+#import "BrowserShape.h"
 #import "BrowserHistoryStore.h"
 
 // Aufbau der Kachelabschnitte, hier leicht änderbar.
@@ -116,7 +117,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
     if (self) {
         _entry = entry;
         _displayName = BrowserStartDisplayName(entry);
-        self.layer.cornerRadius = 28;
+        BrowserShapeApply(self.layer, BrowserShapeTileRadius);
         self.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
         self.layer.shadowColor = UIColor.blackColor.CGColor;
         self.layer.shadowOpacity = 0;
@@ -126,7 +127,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
         _iconView = [UIImageView new];
         _iconView.contentMode = UIViewContentModeScaleAspectFill;
         _iconView.clipsToBounds = YES;
-        _iconView.layer.cornerRadius = 20;
+        _iconView.layer.cornerCurve = kCACornerCurveContinuous;
         _iconView.backgroundColor = BrowserStartColorForHost(entry.host);
         [self addSubview:_iconView];
 
@@ -168,6 +169,8 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
     [super layoutSubviews];
     CGFloat pad = (self.bounds.size.height - kStartIconSize) / 2.0;
     self.iconView.frame = CGRectMake(pad, pad, kStartIconSize, kStartIconSize);
+    // Konzentrisch zur Kachel: gleicher Abstand rundum, Radius um den Abstand kleiner.
+    self.iconView.layer.cornerRadius = BrowserShapeConcentricRadius(BrowserShapeTileRadius, pad);
     self.letterLabel.frame = self.iconView.bounds;
     CGFloat textX = pad + kStartIconSize + 24;
     CGFloat textW = MAX(0, self.bounds.size.width - textX - pad);

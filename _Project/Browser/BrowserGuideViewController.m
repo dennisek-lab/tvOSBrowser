@@ -1,5 +1,6 @@
 #import "BrowserGuideViewController.h"
 #import "BrowserMotion.h"
+#import "BrowserShape.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -11,6 +12,30 @@
 @end
 
 @implementation BrowserGuideViewController
+
++ (NSString *)whatsNewVersion {
+    return @"2.0-fork-1";
+}
+
+/// Neuerungen gegenüber dem ursprünglichen tvOS Browser (Symbol, Titel, Text). Zwei Spalten, höchstens 14.
++ (NSArray<NSArray<NSString *> *> *)whatsNewItems {
+    return @[
+        @[@"drop", @"Liquid Glass", @"Leiste, Menüs und Dialoge aus Glas, federnde Animationen."],
+        @[@"sparkles", @"Regenbogen-Leuchten", @"Das gewählte Element leuchtet weich in allen Farben."],
+        @[@"cursorarrow.motionlines", @"Neuer Zeiger", @"Gleitet flüssig, rastet auf Links ein, Lupe über kleinem Text."],
+        @[@"square.on.square", @"Tabs", @"Übersicht mit Vorschau, bleiben nach Neustart erhalten."],
+        @[@"text.page", @"Reader", @"Artikel ohne Werbung und Ablenkung lesen."],
+        @[@"hand.raised.fill", @"Werbeblocker", @"Filterlisten von uBlock Origin Lite, Ausnahme bei Sperrseiten."],
+        @[@"checkmark.shield.fill", @"Cookie-Banner", @"Werden automatisch abgelehnt."],
+        @[@"play.rectangle", @"Nativer Player", @"Videos im Apple-Player, mit Bild-in-Bild und iPhone-Steuerung."],
+        @[@"captions.bubble", @"Automatische Untertitel", @"Auf dem Gerät erzeugt, im Player und in der Webseite."],
+        @[@"list.bullet.rectangle", @"Zusammenfassen und fragen", @"Seite in wenigen Sätzen, passende Stelle anspringen."],
+        @[@"translate", @"Übersetzen", @"Hinweis bei fremdsprachigen Seiten, ein Druck genügt."],
+        @[@"mic", @"Sprachbefehle", @"„Reader“, „zurück“ oder „suche Wetter“ per Siri-Taste."],
+        @[@"star", @"Favoriten im Adressfeld", @"Favoriten, oft und zuletzt besuchte Seiten auf einen Blick."],
+        @[@"network", @"Cloudflare-DNS", @"Verschlüsselte Namensauflösung, abschaltbar."],
+    ];
+}
 
 - (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
@@ -39,10 +64,22 @@
     UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:cardEffect];
     card.translatesAutoresizingMaskIntoConstraints = NO;
     card.clipsToBounds = YES;
-    card.layer.cornerRadius = 56.0;
-    card.layer.cornerCurve = kCACornerCurveContinuous;
+    BrowserShapeApply(card.layer, BrowserShapeCardRadius);
     [self.view addSubview:card];
     self.motionCardView = card;
+    [NSLayoutConstraint activateConstraints:@[
+        [backdrop.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [backdrop.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [backdrop.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [backdrop.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [card.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [card.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+    ]];
+
+    if (self.whatsNew) {
+        [self buildWhatsNewInCard:card];
+        return;
+    }
 
     UILabel *title = [[UILabel alloc] init];
     title.text = @"So bedienst du den Browser";
@@ -92,18 +129,122 @@
     [card.contentView addSubview:content];
 
     [NSLayoutConstraint activateConstraints:@[
-        [backdrop.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-        [backdrop.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-        [backdrop.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [backdrop.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [card.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [card.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [card.widthAnchor constraintEqualToConstant:1280.0],
-        [content.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:40.0],
-        [content.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-40.0],
-        [content.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:64.0],
-        [content.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-64.0],
+        [content.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:BrowserShapeCardInset],
+        [content.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-BrowserShapeCardInset],
+        [content.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:BrowserShapeCardInset],
+        [content.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-BrowserShapeCardInset],
     ]];
+    rows.layoutMarginsRelativeArrangement = YES;
+    rows.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(0.0, 20.0, 0.0, 20.0);
+}
+
+- (void)buildWhatsNewInCard:(UIVisualEffectView *)card {
+    UILabel *title = [[UILabel alloc] init];
+    title.text = @"Was ist neu";
+    title.font = [UIFont systemFontOfSize:52.0 weight:UIFontWeightBold];
+    title.textColor = UIColor.whiteColor;
+    title.textAlignment = NSTextAlignmentCenter;
+
+    UILabel *subtitle = [[UILabel alloc] init];
+    subtitle.text = @"Diese Fassung des tvOS Browser bringt gegenüber dem Original mit:";
+    subtitle.font = [UIFont systemFontOfSize:27.0 weight:UIFontWeightRegular];
+    subtitle.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
+    subtitle.textAlignment = NSTextAlignmentCenter;
+
+    NSArray<NSArray<NSString *> *> *items = [self.class whatsNewItems];
+    NSUInteger half = (items.count + 1) / 2;
+    UIStackView *left = [[UIStackView alloc] init];
+    UIStackView *right = [[UIStackView alloc] init];
+    for (UIStackView *column in @[left, right]) {
+        column.axis = UILayoutConstraintAxisVertical;
+        column.spacing = 18.0;
+        column.alignment = UIStackViewAlignmentFill;
+    }
+    for (NSUInteger i = 0; i < items.count; i++) {
+        NSArray<NSString *> *item = items[i];
+        UIView *row = [self compactRowWithSymbol:item[0] title:item[1] text:item[2]];
+        [(i < half ? left : right) addArrangedSubview:row];
+    }
+    UIStackView *columns = [[UIStackView alloc] initWithArrangedSubviews:@[left, right]];
+    columns.axis = UILayoutConstraintAxisHorizontal;
+    columns.spacing = 56.0;
+    columns.distribution = UIStackViewDistributionFillEqually;
+    columns.alignment = UIStackViewAlignmentTop;
+    columns.layoutMarginsRelativeArrangement = YES;
+    columns.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(0.0, 20.0, 0.0, 20.0);
+
+    self.primaryButton = [self buttonWithTitle:@"Weiter" prominent:YES action:@selector(closeTapped)];
+    UIButton *secondary = [self buttonWithTitle:@"Bedienung ansehen" prominent:NO action:@selector(showGuideTapped)];
+    UIStackView *buttons = [[UIStackView alloc] initWithArrangedSubviews:@[self.primaryButton, secondary]];
+    buttons.axis = UILayoutConstraintAxisHorizontal;
+    buttons.spacing = 32.0;
+    buttons.distribution = UIStackViewDistributionFillEqually;
+
+    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle, columns, buttons]];
+    content.axis = UILayoutConstraintAxisVertical;
+    content.spacing = 10.0;
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [content setCustomSpacing:40.0 afterView:subtitle];
+    [content setCustomSpacing:44.0 afterView:columns];
+    [card.contentView addSubview:content];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [card.widthAnchor constraintEqualToConstant:1660.0],
+        [content.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:BrowserShapeCardInset],
+        [content.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-BrowserShapeCardInset],
+        [content.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:BrowserShapeCardInset],
+        [content.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-BrowserShapeCardInset],
+    ]];
+}
+
+- (UIView *)compactRowWithSymbol:(NSString *)symbol title:(NSString *)title text:(NSString *)text {
+    CGFloat side = 60.0;
+    UIView *circle = [[UIView alloc] init];
+    circle.translatesAutoresizingMaskIntoConstraints = NO;
+    circle.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.16];
+    BrowserShapeApply(circle.layer, side / 2.0);
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:27.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *image = [UIImage systemImageNamed:symbol withConfiguration:config] ?: [UIImage systemImageNamed:@"sparkles" withConfiguration:config];
+    UIImageView *icon = [[UIImageView alloc] initWithImage:image];
+    icon.translatesAutoresizingMaskIntoConstraints = NO;
+    icon.tintColor = UIColor.whiteColor;
+    icon.contentMode = UIViewContentModeScaleAspectFit;
+    [circle addSubview:icon];
+    [NSLayoutConstraint activateConstraints:@[
+        [circle.widthAnchor constraintEqualToConstant:side],
+        [circle.heightAnchor constraintEqualToConstant:side],
+        [icon.centerXAnchor constraintEqualToAnchor:circle.centerXAnchor],
+        [icon.centerYAnchor constraintEqualToAnchor:circle.centerYAnchor],
+    ]];
+
+    UILabel *titleLabel = [[UILabel alloc] init];
+    titleLabel.text = title;
+    titleLabel.font = [UIFont systemFontOfSize:29.0 weight:UIFontWeightBold];
+    titleLabel.textColor = UIColor.whiteColor;
+    UILabel *textLabel = [[UILabel alloc] init];
+    textLabel.text = text;
+    textLabel.font = [UIFont systemFontOfSize:24.0 weight:UIFontWeightRegular];
+    textLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.75];
+    textLabel.numberOfLines = 2;
+    UIStackView *texts = [[UIStackView alloc] initWithArrangedSubviews:@[titleLabel, textLabel]];
+    texts.axis = UILayoutConstraintAxisVertical;
+    texts.spacing = 2.0;
+
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[circle, texts]];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.alignment = UIStackViewAlignmentCenter;
+    row.spacing = 24.0;
+    return row;
+}
+
+- (void)showGuideTapped {
+    void (^handler)(void) = self.showGuideHandler;
+    [self dismissViewControllerAnimated:YES completion:^{
+        if (handler != nil) {
+            handler();
+        }
+    }];
 }
 
 - (UIView *)rowWithSymbol:(NSString *)symbol title:(NSString *)title text:(NSString *)text {
@@ -156,7 +297,10 @@
     }
     config.title = title;
     config.contentInsets = NSDirectionalEdgeInsetsMake(20.0, 36.0, 20.0, 36.0);
+    config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
     UIButton *button = [UIButton buttonWithConfiguration:config primaryAction:nil];
+    // Kapsel mit 80 pt Höhe: liegt mit BrowserShapeCardInset Abstand konzentrisch in der Kartenecke.
+    [button.heightAnchor constraintEqualToConstant:2.0 * (BrowserShapeCardRadius - BrowserShapeCardInset)].active = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventPrimaryActionTriggered];
     return button;
 }

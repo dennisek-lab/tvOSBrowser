@@ -1,4 +1,5 @@
 #import "BrowserWebSubtitleOverlay.h"
+#import "BrowserShape.h"
 
 #import <MediaAccessibility/MediaAccessibility.h>
 #import <QuartzCore/QuartzCore.h>
@@ -48,8 +49,7 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
         _state.paused = YES;
         _state.rate = 1.0;
         _bubble = [[UIView alloc] initWithFrame:CGRectZero];
-        _bubble.layer.cornerRadius = 10.0;
-        _bubble.layer.cornerCurve = kCACornerCurveContinuous;
+        BrowserShapeApply(_bubble.layer, BrowserShapeSmallRadius);
         _bubble.hidden = YES;
         [self addSubview:_bubble];
         _label = [[UILabel alloc] initWithFrame:CGRectZero];

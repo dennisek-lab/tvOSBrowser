@@ -29,6 +29,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 17. [App-Icon und Top Shelf](#17-app-icon-und-top-shelf)
 18. [Animationen (Liquid Glass / schlicht)](#18-animationen-browsermotion)
 19. [Intelligente Funktionen: Zusammenfassen, Übersetzen, Sprachbefehle sinngemäß, Frag die Seite](#19-intelligente-funktionen-browserintelligence)
+20. [Formen und Eckenradien](#20-formen-und-eckenradien-browsershape)
 
 ---
 
@@ -860,6 +861,8 @@ Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 - **Sprachbefehle** (`BrowserCommand.m`, `BrowserCommandParser.m`, `BrowserCommandRouter.m`; Konzept `docs/SIRI_STEUERUNG.md`): Text aus dem Adressfeld (Diktat oder Tastatur) geht in `handleEnteredAddressText:` (`ViewController.m`) zuerst an `BrowserCommandParser parseText:`. Treffer → `BrowserCommandRouter performCommandNamed:argument:source:`, sonst wie bisher `openAddressOrSearch:`. Die Tabelle `BrowserCommand allCommands` enthält Name, Titel, Symbol, Argumentart (keins, an/aus/umschalten, Text, Sekunden) und Phrasen als Muster mit Alternativen (`"(starte|start) (den |)reader"`). Der Parser normalisiert (klein, Satzzeichen weg, Bindestrich = Leerzeichen, Füllwörter wie „bitte“ weg) und akzeptiert **nur ganze Phrasen**; danach „30 Sekunden zurück“ und die Präfixe „suche [nach] X“/„google X“ (Suche) und „öffne X“/„gehe zu X“ (nur, wenn X wie eine Adresse klingt, „heise punkt de“ wird `heise.de`). Der Router ruft das Host-Protokoll `BrowserCommandHost` (im `ViewController`, Abschnitt „BrowserCommandHost“) und blendet eine Glas-Kapsel unten mittig ein (`BrowserCommandToastView`, im Fenster, 1,8 s; keine Einblendung bei `address`, `tabs`, `menu`, `help`, die selbst etwas öffnen). Siri (`handleSiriCommandNotification:`) nutzt denselben Router. Neue Funktion anbinden: Eintrag in `allCommands`, Zweig in `performCommandNamed:`, Methode im Host. Debug-Build meldet doppelte Phrasen (`[Command] Phrase doppelt`). Screenshots in `docs/command-screens/`.
 - **Bedienungsdialog** (`BrowserGuideViewController.m`): Glas-Karte mit kurzer Bedienungshilfe, Schalter für den Start-Hinweis (`dontShowHintsOnLaunch`, `toggleHandler`). Aufruf `showHintsAlert` in `ViewController` (beim Start einmal, per Selbsttest `guide`). Der Text sollte mit Abschnitt 8.2 übereinstimmen; bei geänderter Belegung hier und in `README.mdown` nachziehen.
   Stand 8. November 2026: sechs Zeilen (Zeigen/Klicken, Scrollen und Adresse, Knopf zu Knopf, Play/Pause, Zurück, Reader und mehr) plus Fußzeile (Kreisbewegung, iPhone/iPad); Abstände so gewählt, dass eine siebte Zeile (z. B. „Sprachbefehle“) noch auf den Bildschirm passt (Test mit Platzhalterzeile: `docs/guide-screens/guide-7-zeilen-test.png`, aktueller Stand `guide.png`). Der Dialog erscheint beim Start, bis „Nicht mehr anzeigen“ gewählt wird (Standard: anzeigen, also beim ersten Start automatisch); im ••• Menü unter „Hilfe → Bedienung“ jederzeit abrufbar. Startseite bleibt die einstellbare Webseite (`homePageURLString`, Vorgabe google.com); eine eigene HTML-Startseite gibt es nicht. Alle Dialogtexte sind deutsch (alte Sitzungen mit dem Tabtitel „New Tab“ werden beim Laden umbenannt).
+- **Was ist neu** (`BrowserGuideViewController.m` mit `whatsNew = YES`): gleiche Glas-Karte wie der Bedienungsdialog, Titel „Was ist neu“, 14 Neuerungen dieser Fassung gegenüber dem Original in zwei Spalten (`+whatsNewItems`: Symbol, Titel, eine Zeile Text; höchstens 14, sonst passt die Karte nicht mehr auf den Bildschirm). Knöpfe „Weiter“ und „Bedienung ansehen“ (`showGuideHandler` öffnet danach den Bedienungsdialog). Erscheint einmal beim Start, wenn `WhatsNewSeenVersion` in den Defaults nicht `+whatsNewVersion` entspricht (dann statt des Bedienungsdialogs); neue Punkte → Liste ergänzen und `whatsNewVersion` hochzählen. Jederzeit unter ••• → Hilfe → „Was ist neu“ (`browserShowWhatsNew`), Selbsttest `whatsnew`. Hinweis: `xcrun simctl spawn … defaults delete` erreicht den App-Container nicht; zum Testen App deinstallieren oder den Selbsttest nutzen.
+- **Seitenleiste (•••)** (`BrowserMenuCoordinator.m`, `BrowserAdvancedMenuViewController`, Zelle `BrowserAdvancedMenuCell`): Glas-Panel rechts (Radius `BrowserShapePanelRadius`, Zeilen mit `BrowserShapePanelInset` Abstand, dadurch konzentrisch). Jede Zeile: farbiger Symbolkreis (Farbe je Abschnitt, `BrowserMenuTintForSection`; Symbol je Titel, `BrowserMenuSymbolForTitle`, unbekannte Titel bekommen einen Punkt), Titel, rechts Wert oder – bei „An“/„Aus“ – ein Schalter (grün/grau). Fokus: Glas-Kapsel mit feiner Lichtkante, leicht angehoben (1,025, Feder über `BrowserMotion` Snap), keine Aufhellung des Inhalts. Neuer Eintrag: Titel in `BrowserMenuSymbolForTitle` eintragen, sonst erscheint der Platzhalterpunkt.
 - **Tab-Übersicht** (`BrowserTabOverviewController.m`): Kartenansicht der Tabs; Host-Protokoll `BrowserTabOverviewControllerHost`; Tastenlogik in `BrowserRemoteInputController` (`TabOverviewVisible`, `…DismissTabOverview`, `…HandleTabOverviewAlternateAction`). Offen laut PLAN.md: Konflikte mit Play/Pause und Dialogen prüfen.
 - **Sitzung** (`BrowserSessionStore.m`, `BrowserTabCoordinator.m`): offene Tabs und Cookie-Kopie in `NSUserDefaults`; `persistSession` vor Rückgabe an Home. Cookie-Sicherung `saveCookiesToDefaults`/`restoreCookiesFromDefaults` (AppDelegate), aufgerufen von `SceneDelegate`.
 - **Formular-Eingabedialog** (`BrowserPageActionCoordinator.m`): Texteingabe und Login in einem Dialog (Benutzername + Passwort), `textContentType` aus `autocomplete` und Feldtyp (`BrowserTextContentType`), Werte über den nativen Setter des Eingabefeldes (React-kompatibel, `Object.getOwnPropertyDescriptor(proto, 'value')`), Absenden nur auf Wunsch über `requestSubmit()`. Test: Selbsttest `fill:` (loggt Titel, Felder, `textContentType`; letzter Wert ist der Index der Aktion).
@@ -1200,3 +1203,24 @@ POINTER_SELFTEST="parse:geh eine Seite zurück|lade die Seite nochmal|Tabs vs Sp
 ```
 
 **Aktualisieren.** Schwellen `kAsk…` und `kCommand…` oben in den jeweiligen Blöcken von `BrowserIntelligence.m`, Stoppwörter `BrowserNLQuestionStopTerms`/`BrowserCommandStopWords`, Wörterbuch `BrowserNLTranslations`, Markier-Skript `kAskHighlightScript`. Wer Schwellen ändert, lässt den `parse:`-Selbsttest oben laufen: alle Suchbegriffe müssen „-> Suche“ bleiben.
+
+---
+
+## 20. Formen und Eckenradien (`BrowserShape`)
+
+**Regeln** (Apple, Liquid Glass / tvOS 26): Ecken immer mit kontinuierlicher Kurve (`kCACornerCurveContinuous`, „Squircle“); Knöpfe, Zeilen, Leisten und Hervorhebungen in Leisten als Kapsel (Radius = halbe Höhe); verschachtelte Formen konzentrisch, also innerer Radius = äußerer Radius − Abstand zum Rand.
+
+**Umsetzung.** `_Project/Browser/BrowserShape.h` (nur Header, nicht im Projekt eingetragen nötig) mit den Stufen und Helfern:
+
+| Stufe | Wert | Wo |
+|:--|:--|:--|
+| `BrowserShapeCardRadius` / `…CardInset` | 84 / 44 | Bedienungsdialog, Was ist neu, Zusammenfassungs-Karte; Knöpfe 80 pt hoch (Kapsel) mit 44 pt Abstand → konzentrisch |
+| `BrowserShapePanelRadius` / `…PanelInset` | 50 / 14 | Seitenleiste, Tab-Übersicht; Kapsel-Zeilen 72 pt (36 + 14 = 50) |
+| `BrowserShapeTileRadius` | 32 | Tab-Karten, Kacheln der alten Startansicht (Icon darin `BrowserShapeConcentricRadius(32, Abstand)`) |
+| `BrowserShapeSmallRadius` | 16 | Untertitel-Kästen (Player und Webseite), Hinweise im Player |
+| Kapsel | Höhe/2 | Leiste, Diktierfeld, Reader-Hervorhebung, Schalter, Symbolkreise, Befehls-Einblendung, Ladelinie |
+
+Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `BrowserShapeCapsuleRadius(height)`, `BrowserShapeConcentricRadius(outer, inset)`. Eigene Radien weiter in Gebrauch, weil an Inhalt gebunden: Aufklapp-Karte 40 (wächst aus der Kapsel-Leiste, gleiche Stufe wie die halbe Leistenhöhe), Favicon-Kacheln `iconSize × 0,24` (App-Icon-Form), Einrast-Hervorhebung/Glow (Kapsel bis 120 pt Höhe, sonst `MIN(34, Höhe/2)`, folgt dem Seitenelement), Antwort-Karte „Frag die Seite“ 44.
+
+**Neue Fläche:** Stufe aus `BrowserShape.h` nehmen, nicht frei wählen; liegt etwas mit Abstand in einer runden Fläche, Radius mit `BrowserShapeConcentricRadius` ableiten.
+

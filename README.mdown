@@ -43,13 +43,14 @@ Bedienung
 
 **Texteingabe:** Bei jedem Textfeld bietet das iPhone eine Tastatur-Mitteilung an; darüber lassen sich auch Passwörter einfügen.
 
-Die Bedienungshilfe erscheint beim ersten Start und unter *••• → Hilfe → Bedienung*.
+Beim ersten Start erscheint „Was ist neu“ (Neuerungen dieser Fassung), danach die Bedienungshilfe. Beide sind unter *••• → Hilfe* jederzeit abrufbar.
 
 
 Funktionen
 =============
 
-- **Oberfläche:** Leiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben, animiertes Regenbogen-Leuchten um das gewählte Element. Neue App-Icons mit Parallax-Ebenen.
+- **Oberfläche:** Leiste, Seitenleiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben (kontinuierlich, konzentrisch, Kapseln), animiertes Regenbogen-Leuchten um das gewählte Element. Seitenleiste mit Symbolen und Schaltern. Neue App-Icons mit Parallax-Ebenen.
+- **Was ist neu:** Beim ersten Start nach einem Update zeigt die App alle Neuerungen dieser Fassung, jederzeit unter *••• → Hilfe → Was ist neu*.
 - **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), Einrasten mit Hysterese, Lupe über kleinem Text, moderne Zeigerbilder in drei Stilen.
 - **Tabs:** Tab-Übersicht mit Vorschaubildern, Sitzung bleibt nach Neustart erhalten.
 - **Reader-Modus:** Artikel ohne Ablenkung (Readability), Knopf links neben •••.
@@ -72,6 +73,7 @@ Einstellungen (•••)
 | Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitel (Webseite), Cloudflare-DNS |
 | Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
 | Daten | Cache leeren, Cookies löschen |
+| Hilfe | Bedienung, Was ist neu |
 | Erweitert | Browser-Kennung (Desktop/Mobil), Medien-Diagnose, WebKit-Medieneinstellungen |
 
 

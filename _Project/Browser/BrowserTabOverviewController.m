@@ -1,4 +1,5 @@
 #import "BrowserTabOverviewController.h"
+#import "BrowserShape.h"
 #import "BrowserMotion.h"
 
 #import "BrowserTabViewModel.h"
@@ -12,7 +13,7 @@ static CGFloat const kTabOverviewPanelBottomInset = 88.0;
 static CGFloat const kTabOverviewPanelSideInset = 54.0;
 static CGFloat const kTabOverviewHeaderTopInset = 34.0;
 static CGFloat const kTabOverviewTitleHeight = 64.0;
-static CGFloat const kTabOverviewSubtitleTop = 94.0;
+static CGFloat const kTabOverviewSubtitleTop = 104.0;
 static CGFloat const kTabOverviewSubtitleHeight = 36.0;
 static CGFloat const kTabOverviewContentTopInset = 166.0;
 static CGFloat const kTabOverviewFooterHeight = 28.0;
@@ -99,7 +100,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
         _cardBackgroundView = [[UIView alloc] initWithFrame:self.contentView.bounds];
         _cardBackgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         _cardBackgroundView.backgroundColor = [UIColor colorWithWhite:0.14 alpha:1.0];
-        _cardBackgroundView.layer.cornerRadius = 30.0;
+        BrowserShapeApply(_cardBackgroundView.layer, BrowserShapeTileRadius);
         _cardBackgroundView.clipsToBounds = YES;
         [self.contentView addSubview:_cardBackgroundView];
 
@@ -251,7 +252,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
     UIVisualEffectView *panelView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
     panelView.translatesAutoresizingMaskIntoConstraints = NO;
     panelView.alpha = 0.98;
-    panelView.layer.cornerRadius = kTopBarHeight / 2.0;
+    BrowserShapeApply(panelView.layer, BrowserShapePanelRadius);
     panelView.layer.masksToBounds = YES;
     [self.view addSubview:panelView];
     self.panelView = panelView;

@@ -4,6 +4,7 @@
 //
 
 #import "BrowserIntelligenceController.h"
+#import "BrowserShape.h"
 #import "BrowserIntelligence.h"
 #import "BrowserMotion.h"
 #import "BrowserWebView.h"
@@ -12,7 +13,7 @@
 #import <UIKit/UIGlassEffect.h>
 #endif
 
-static const CGFloat kCardCornerRadius = 56.0;
+static const CGFloat kCardCornerRadius = BrowserShapeCardRadius;
 static const CGFloat kCardPadding = 64.0;
 static const NSTimeInterval kHintDuration = 10.0;
 
