@@ -3,6 +3,7 @@
 #import "BrowserClickTargetTracker.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserCookieConsentBlocker.h"
+#import "BrowserScriptletInjector.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebAudioCapture.h"
 
@@ -621,6 +622,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     self.contentController = BrowserUserContentController(configuration);
     [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     [[BrowserCookieConsentBlocker sharedBlocker] applyToUserContentController:self.contentController];
+    [[BrowserScriptletInjector sharedInjector] prepare];
     // Untertitel für Videos in der Seite: Skript ruht, bis die App den Abgriff startet; früh installiert, damit auch iframes es haben.
     if ([BrowserPreferencesStore new].webSubtitlesEnabled) {
         [BrowserWebAudioCapture installIntoUserContentController:self.contentController];
@@ -1355,6 +1357,12 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
         // Cookie-Banner-Ablehner: Skript für Ausnahme-Seiten herausnehmen bzw. wieder einsetzen
         [[BrowserCookieConsentBlocker sharedBlocker] updateUserContentController:self.contentController
                                                               forNavigationToURL:request.URL];
+    }
+    if (shouldAllow && request != nil) {
+        // Erweiterte Werbeblocker-Regeln (Scriptlets): passendes Skript vor dem Laden einspielen, auch für Unterframes
+        [[BrowserScriptletInjector sharedInjector] updateUserContentController:self.contentController
+                                                            forNavigationToURL:request.URL
+                                                                     mainFrame:isMainFrameRequest];
     }
 
     if (decisionHandler != nil) {

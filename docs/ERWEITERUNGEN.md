@@ -41,6 +41,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Nutzerskripte, `userScripts`-Handling | `BrowserCookieConsentBlocker.m` (`refreshController:…`), `BrowserWebView.m`, `BrowserClickTargetTracker.m` | hoch |
 | Cookie-Ablehner (autoconsent) + Bezahlschranken | `BrowserCookieConsentBlocker.m/.h`, `Autoconsent/bridge.js`, `Autoconsent/autoconsent.standalone.js` | mittel (Drittcode) bis hoch (Brücke hängt an Interna des Bundles) |
 | Werbeblocker | `BrowserContentBlocker.m/.h`, `ContentBlocker/*`, `tools/build_adblock_rules.py`, `tools/validate_adblock_rules.swift` | hoch (Store-Pfad, Regelformat) |
+| Werbeblocker, erweiterte Regeln (Scriptlets, prozedurales CSS) | `BrowserScriptletInjector.m/.h`, `Scriptlets/*`, `tools/build_scriptlets.py`, `tools/scriptlets_convert.mjs`, `tools/scriptlets-extra/` | mittel (Drittcode) bis hoch (YouTube ändert laufend, `_removeUserScript:` privat) |
 | Klickziele, Seitenfarbe, Glow-Farbe, Videomeldungen | `BrowserClickTargetTracker.m/.h` | mittel |
 | Fernbedienung (GameController, Presses, Ring, Magnetic Buttons, Lupe) | `BrowserRemoteInputController.m/.h`, `UIApplication+BrowserSelectPressForwarding.m`, Host-Methoden in `ViewController.m` | hoch (GameController-Verhalten, `sendEvent:`-Tausch) |
 | Obere Leiste | `BrowserTopBarView.m/.h`, `BrowserTabCoordinator.m` (`updateTopNavAndWebView`) | mittel (`UIGlassEffect`) |
@@ -72,7 +73,7 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 2. **Lädt eine Seite?** Logzeilen `[Load] commit/layout/paint/finish +N ms`. Fehlen `layout`/`paint`: `_webView:renderingProgressDidChange:` kommt nicht mehr an (Abschnitt 3).
 3. **Datenspeicher:** Log `[DataStore] eigener Speicher in Caches, N Verzeichnisse gesetzt, store=ok`. Bei `nicht verfügbar` oder `store=nil` gehen Logins/LocalStorage nach Neustart verloren. Verzeichnisanzahl mit dem Vorwert vergleichen (aktuell bis zu 14 Selektoren, nicht alle müssen greifen).
 4. **Zoom und Layout:** Selbsttest `zoom` (loggt `_viewScale`), Wikipedia öffnen (Überzoom-Fix), Klickziele bei 150 % treffen.
-5. **Werbeblocker:** Logzeilen `[AdBlock] … aus Store` bzw. `kompiliert`; `Fehler`/`nicht lesbar` heißt Regelformat oder Store defekt. Danach Testseite mit Werbung.
+5. **Werbeblocker:** Logzeilen `[AdBlock] … aus Store` bzw. `kompiliert`; `Fehler`/`nicht lesbar` heißt Regelformat oder Store defekt. Danach Testseite mit Werbung. Scriptlets: `[Scriptlets] geladen: …` beim Start, im DEBUG-Build je Seite `[Scriptlets] <host> N Regeln`; YouTube-Test aus 6.9.
 6. **Cookie-Ablehner:** Selbsttest mit `clearsite:`/`clearall` und `url:`, dann `[CookieBlock] …`-Zeilen. Prüfen, dass andere Nutzerskripte (Zeiger-Ziele, Video-Hooks) nach dem Umschalten noch laufen (Abschnitt 4).
 7. **Fernbedienung:** Log `[Input] Clickpad über GameController: …` beim Start; sonst läuft nur der UIKit-Fallback. Mit echter Fernbedienung Zeiger, oben/unten, links/rechts, Ring, Play/Pause, Menü prüfen.
 8. **Magnetic Buttons und Linse:** Zeiger auf einen Link ziehen, Glas-Hervorhebung/Glow prüfen (Snapshot-Linse: `resizableSnapshotViewFromRect:`).
@@ -148,6 +149,7 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 | `BrowserFrameVideoScript` (Manifeste und Videos in eingebetteten Frames) | document-start, alle Frames (überspringt den Hauptframe selbst) | ebenda |
 | `BrowserMediaSessionHookScript` | document-start, Hauptframe | ebenda |
 | `WebSubtitles/web_audio_tap.js` (nur wenn Untertitel in der Webseite an) | document-start, **alle** Frames | `BrowserWebAudioCapture installIntoUserContentController:` (in `commonInit` nach dem Cookie-Ablehner oder beim Einschalten) |
+| Scriptlets (`Scriptlets/runtime.js` plus Regeln der Seite) | document-start, **alle** Frames, Seitenwelt; wird **je Navigation getauscht** | `BrowserScriptletInjector updateUserContentController:forNavigationToURL:mainFrame:` (Abschnitt 6.9) |
 
 Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner), `browserWebAudio` (Untertitel in der Webseite, Abschnitt 10.6). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`, `BrowserWebAudioMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
 
@@ -162,6 +164,8 @@ for (id script in scripts) { if (script != oldScript) addScript(controller, scri
 `[… copy]` wäre falsch: `copy` auf der Live-Ansicht gibt dieselbe Ansicht zurück, die nach `removeAllUserScripts` leer ist; dann würden **alle** anderen Skripte (Zeigerziele, Video-Hooks, Viewport-Fix, YouTube-Erfassung) verloren gehen. Symptom: Nach Umschalten von Cookie-Ablehner oder Seitenwechsel auf eine Ausnahme-Seite rasten Zeiger nicht mehr ein, Videos werden nicht mehr erkannt, Wikipedia überzoomt. Ändert Apple den Rückgabetyp von `userScripts` (z. B. `NSArray` zu Proxy-Objekt), muss die Kopie weiterhin eine echte `NSArray` mit eigenem Speicher sein.
 
 Auch für anderen Code, der Skripte ändert: neue Nutzerskripte immer **vor** dem ersten Umschalten des Cookie-Ablehners installieren oder zusätzlich in dieser Routine berücksichtigen (sie fasst nur das eigene Skript an, lässt die übrigen aber stehen).
+
+Der Scriptlet-Einspieler (6.9) tauscht sein Skript bei vielen Hauptframe-Navigationen. Er entfernt nur das eigene Skript mit dem privaten `_removeUserScript:` (vorhanden unter tvOS 27) und fällt sonst auf dasselbe Muster zurück (`[NSArray arrayWithArray:]`, alle übrigen Skripte neu anhängen). Die Routine des Cookie-Ablehners nimmt das Scriptlet-Skript wie jedes andere mit.
 
 **Woran man merkt, dass es kaputt ist.** Siehe Symptome oben. Hilfreich: Selbsttest `js:` mit `typeof window.__browserTargets` (Zeiger-Skript), `typeof window.__browserVideoHook`, `typeof window.__browserViewportFix`, `typeof window.autoconsentStandalone` (alle `object`/`number`/`boolean`, nicht `undefined`).
 
@@ -270,7 +274,7 @@ Alle Zeilen sind **nicht** auf DEBUG beschränkt:
 Symptom ohne Fehlerzeile: Werbung erscheint trotz `aus Store` → Controller bekommt Listen nicht (Selektoren `removeAllContentRuleLists`/`addContentRuleList:`) oder Seite steht in den Ausnahmen.
 
 ### 6.6 Test
-Log beim Start lesen (`devicectl … --console`), dann Nachrichtenseite mit Werbung öffnen. Nicht umgesetzt sind Scriptlets (`##+js`), `$redirect`, `$removeparam`, prozedurale Kosmetik u. a. (Zahlen in `manifest.json`, Abschnitt `sources`); ein Teil der YouTube-Werbung bleibt deshalb sichtbar (offen laut PLAN.md).
+Log beim Start lesen (`devicectl … --console`), dann Nachrichtenseite mit Werbung öffnen. Im Content-Blocker nicht umgesetzt sind `$redirect`, `$removeparam`, `$replace`, HTML-Filter (`##^`) u. a. (Zahlen in `manifest.json`, Abschnitt `sources`). Scriptlets und prozedurale Kosmetik übernimmt `BrowserScriptletInjector` (6.9).
 
 ### 6.7 Aktualisieren
 ```
@@ -290,6 +294,58 @@ Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `
 - **Log (DEBUG):** `[AdBlockWall] host … erkannt → Ausnahme, neu laden`.
 - **Keine eingebaute Hostliste:** Die Filterliste „Adblock Warning Removal List“ (EasyList, antiadblockfilters) ist gepflegt, besteht aber aus Netzwerk-/Kosmetikregeln, nicht aus einer Liste von Sperr-Seiten. Eine Vorab-Ausnahme würde unnötig Werbung zeigen, daher nur Erkennung.
 - **Test:** `POINTER_SELFTEST="clearall;url:https://www.bild.de;wait;wait;wait;wait;wait;wait;wait;wait"`. Gegenprobe ohne Treffer: spiegel.de, heise.de, `de.wikipedia.org/wiki/Werbeblocker`. Sperrtexte fehlen? `BLOCKER`/`ACTION` in `adblock-wall.js` ergänzen.
+
+### 6.9 Erweiterte Regeln: Scriptlets und prozedurales CSS (`BrowserScriptletInjector`)
+
+**Zweck.** Regeln, die der WebKit-Content-Blocker nicht kann, als JavaScript in die Seite: uBO-Scriptlets (`##+js(...)`), AdGuard-Scriptlets (`#%#//scriptlet(...)`), prozedurale Kosmetik (`:has-text`, `:upward`, `:xpath`, `:remove()`, `:style()`, `:matches-css`, `#?#`, `#$#`-CSS) und Kosmetik mit Platzhalter-Domains (`google.*##…`) bzw. gemischten Domains (`a.com,~b.a.com##…`). Wichtigster Fall: YouTube-Werbung (`set-constant` auf `ytInitialPlayerResponse.adPlacements/playerAds/adSlots`, `json-prune-fetch-response`/`json-prune-xhr-response` auf `/youtubei/v1/player`, `trusted-replace-fetch-response` „adSlots“ → „no_ads“ auf `get_watch`, uBOs `serverContract`-Skript per `trusted-replace-node-text`).
+
+**Dateien.**
+- `_Project/Browser/BrowserScriptletInjector.m/.h`: Singleton `sharedInjector`, lädt die Daten, baut je Seite das Skript, tauscht es aus.
+- `_Project/Browser/Scriptlets/` (Ordnerreferenz): `scriptlets.json.z` (raw deflate, erzeugt), `manifest.json` (Zahlen, Gründe für Verworfenes), `extended-css.min.js` (AdGuard ExtendedCss, unverändert), `LICENSE-GPL-3.0.txt`, `runtime.js` (**handgeschrieben**, nicht vom Build-Skript erzeugt).
+- `tools/build_scriptlets.py`: liest dieselben Listen wie `build_adblock_rules.py` (gleicher Cache `tools/.adblock-cache`, `LISTS` von dort), wertet die uBO-Vorverarbeitung `!#if …` aus (`ENV`: Safari, kein HTML-Filter, `ext_ubol` aus), sammelt alle Regeln, die der Content-Blocker verwirft, und schreibt die Domain→Regeln-Zuordnung.
+- `tools/scriptlets_convert.mjs`: Node-Hilfsskript, wandelt mit dem Konverter aus `@adguard/scriptlets` uBO-Syntax ins AdGuard-Format und prüft die Namen.
+- `tools/scriptlets-extra/`: `eigene-regeln.txt` (eigene Ergänzungen in uBO-Syntax, derzeit: `get_watch` auf YouTube von `adPlacements`/`playerAds` befreien) und eigene Scriptlets für uBO-Namen, die AdGuard nicht hat (derzeit `trusted-prevent-dom-bypass.js`: YouTube holt sich sonst aus einem leeren iframe ein unverändertes `fetch`).
+- Bibliotheken (GPL-3.0, siehe `THIRD_PARTY_NOTICES.md`): `@adguard/scriptlets` (nur `dist/scriptlets.corelibs.json`, jedes Scriptlet als eigenständige Funktion `function(source, args)`), `@adguard/extended-css`. Das Build-Skript installiert beide per `npm install --ignore-scripts` nach `tools/vendor-download/scriptlets-npm` (nicht im Repo).
+
+**Datenformat** (`scriptlets.json.z`): `names`/`fn` (Scriptlet-Name und Funktionsquelltext), `rules` (`[Funktionsindex, Argumente]`), `css` (`[Text, prozedural 0/1, Pfadbedingung?]`), `hosts` (`host` oder `name.*` → `{s: [Regelindizes], c: [CSS-Indizes]}`), `generic` (Scriptlets ohne Domain, derzeit keine), `except` (Host → abgeschaltete Indizes, `-1` = alle Scriptlets; aus `#@#+js(...)` und `~domain`).
+
+**Datenfluss.**
+1. `BrowserWebView commonInit` → `prepare`: entpackt die Daten auf einer eigenen Queue (Simulator ~25 ms; gehalten werden ~26.000 Host-Schlüssel). Kommt eine Navigation vorher, wartet sie per `dispatch_sync`.
+2. `decidePolicyForNavigationAction` ruft für **jede** erlaubte Navigation (Haupt- und Unterframes) `updateUserContentController:forNavigationToURL:mainFrame:`. Einhängepunkt in `BrowserWebView.m` direkt hinter den Aufrufen von Werbeblocker und Cookie-Ablehner.
+3. Hauptframe: aktiv nur, wenn `BrowserContentBlocker.isEnabled` und keine Ausnahme für die Seite (`isExceptionForURL:`). Damit gelten dieselben Einstellungen wie beim Werbeblocker (`AdBlockEnabled`, `AdBlockExceptionHosts`); das Menü lädt nach dem Umschalten neu, dadurch greift es beim nächsten `decidePolicy…`. Regeln für den Host: alle Oberdomains und `name.*`-Varianten nachschlagen, generische dazu, Ausnahmen ab.
+4. Unterframe: Sein Host wird ergänzt, wenn für ihn Regeln existieren (z. B. `accounts.google.com` auf YouTube, `sp-spiegel-de.spiegel.de`). Ohne Regeln bleibt das Skript stehen.
+5. Das Skript enthält nur die Funktionen und Regeln der Hosts dieser Seite (YouTube ~185 KB mit ExtendedCss, Spiegel ~13 KB). Ändert sich die Regelmenge nicht (Signatur), wird nichts getauscht. `runtime.js` läuft in jedem Frame, nimmt den Eintrag für `location.hostname` (bei `about:blank` den des Elternframes) und ruft jede Funktion mit `{name, args, engine:'corelibs', verbose:false}` auf. CSS ohne Prozedur kommt als `<style>`, prozedurales über ExtendedCss (`new ExtendedCss({cssRules}).apply()`, jede Regel vorher mit `ExtendedCss.validate` geprüft).
+
+**Private/fragile Punkte.** `_removeUserScript:` (privat; sonst Rückfall auf `removeAllUserScripts` mit echter Kopie, Abschnitt 4). Die Aufrufkonvention der AdGuard-corelibs (`source`, `args`) und die ExtendedCss-Schnittstelle (`validate`, Konfiguration `cssRules`/`styleSheet`; `cssText` gibt es in 2.x nicht mehr). Vor allem aber die YouTube-Regeln: uBO ändert sie oft, die Liste muss regelmäßig neu gebaut werden. uBO-Scriptlets ohne AdGuard-Gegenstück fallen weg (Zahlen unter `skipped` in `Scriptlets/manifest.json`, u. a. `trusted-edit-inbound-object` für YouTube-Anfragen, `trusted-json-edit*`, `trusted-create-html`, `nobab`; HTML-Filter `##^` gehen grundsätzlich nicht). Einige uBO-Namen ordnet das Build-Skript selbst zu (`UBO_FALLBACK`, `rpnt` → `trusted-replace-node-text`, `trusted-replace-argument` mit `condition`).
+
+**Woran man merkt, dass es kaputt ist.**
+
+| Logzeile | Bedeutung |
+|:--|:--|
+| `[Scriptlets] geladen: N Scriptlets, M CSS-Regeln, H Hosts, Stand <hash> (x ms)` | Start in Ordnung (auch Release) |
+| `[Scriptlets] nicht verfügbar (Daten …, Laufzeit …)` | Datei fehlt im Paket, Entpacken scheitert oder der Platzhalter `/*BROWSER_SCRIPTLET_DATA*/` fehlt in `runtime.js` |
+| `[Scriptlets] <hosts> N Regeln (x KB)` | (DEBUG) Skript für die Seite eingespielt |
+| `[Scriptlets] keine Regeln für diese Seite` / `aus (Schalter oder Ausnahme)` | (DEBUG) kein Skript |
+
+Im DEBUG-Build setzt `runtime.js` je Frame `window.__browserScriptlets = {host, scriptlets, failed, css, extended, rejected, error}` (`failed`: Scriptlets, die geworfen haben; `rejected`: von ExtendedCss abgelehnte Selektoren; `error`: ExtendedCss-Fehler) und `window.__browserExtendedCss`. Im Release-Build entstehen keine globalen Namen.
+
+**Test** (Simulator oder Gerät, Selbsttest aus Abschnitt 14):
+```
+# Einstiegsseite: Werbedaten im Player-Response müssen fehlen
+POINTER_SELFTEST='url:https://www.youtube.com/watch?v=dQw4w9WgXcQ;wait;wait;wait;wait;js:[JSON.stringify(window.__browserScriptlets), String(ytInitialPlayerResponse.adPlacements), String(document.querySelector("#movie_player").getPlayerResponse().adPlacements), !!document.querySelector(".ad-showing")].join(" ")'
+# erwartet: {"host":"www.youtube.com","scriptlets":23,…} undefined undefined false
+```
+Gegenprobe ohne Scriptlets: Ausnahme setzen (`xcrun simctl spawn <udid> defaults write io.github.tvosbrowser.app AdBlockExceptionHosts -array youtube.com`); dann liefert dieselbe Zeile `[object Object]`, und im Simulator lief ein 15-s-Werbeclip (`.ad-showing`). Navigation innerhalb von YouTube: `js:document.querySelector("ytd-app").dispatchEvent(new CustomEvent("yt-navigate", {bubbles: true, composed: true, detail: {endpoint: {watchEndpoint: {videoId: "kJQP7kiw5Fk"}, commandMetadata: {webCommandMetadata: {url: "/watch?v=kJQP7kiw5Fk", webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832}}}}}))`, danach wie oben `getPlayerResponse()` prüfen (Stand 8. November 2026: ohne Scriptlets zwei `adPlacements`, mit Scriptlets `undefined`). Prozedurales CSS: auf heise.de `<p>=== Anzeige / Sponsorenhinweis ===</p>` an `body` hängen; ExtendedCss blendet ihn und den folgenden Absatz aus.
+
+Im Simulator spielt YouTube das Hauptvideo beim ersten Laden **auch ohne** Scriptlets nicht ab („Dieses Video kann in deinem Browser nicht abgespielt werden“). Ob Werbung wirklich wegfällt und das Video läuft, nur am Gerät beurteilen.
+
+**Aktualisieren.**
+```
+python3 tools/build_adblock_rules.py --refresh   # Listen neu laden (gemeinsamer Cache)
+python3 tools/build_scriptlets.py                # erzeugt Scriptlets/, trägt den Ordner bei Bedarf ins Projekt ein
+python3 tools/build_scriptlets.py --refresh      # alternativ: Listen hier neu laden
+```
+Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang von `build_scriptlets.py`; nach einer Änderung neu bauen und `THIRD_PARTY_NOTICES.md` anpassen. Neue Dateien im Ordner `Scriptlets/` brauchen keine Projektänderung.
 
 ---
 
@@ -833,6 +889,7 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 | `[Load] commit/layout/paint/finish +N ms host` | `BrowserWebView logLoadPhase:` | ja |
 | `[DataStore] …` | `BrowserCreatePersistentWebsiteDataStore` | nein |
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
+| `[Scriptlets] geladen/nicht verfügbar` bzw. `[Scriptlets] <host> N Regeln` | `BrowserScriptletInjector` | erste nein, zweite ja |
 | `[CookieBlock] …` | `BrowserCookieConsentBlocker handleMessageBody:` und Fehlzeile für das Bundle | ja |
 | `[Input] Clickpad über GameController`, `[Input] Raten` | `BrowserRemoteInputController` | erste: nein, zweite: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |
@@ -857,7 +914,7 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 - Zweck des `_privacyStance`-Shims ist im Code nicht kommentiert; Commit-Historie nennt nur „WIP adding hack for supporting full screen video“. Vor Entfernen mit Konsole testen.
 - `BrowserWKWebViewProofOfConceptViewController` scheint ungenutzt (nur Suche nach Verweisen im Code, kein Laufzeitnachweis).
 - Für das autoconsent-Bundle gibt es kein Update-Skript; der Ablauf in 5.8 ist aus `THIRD_PARTY_NOTICES.md` abgeleitet. Eine feste Liste von Testseiten für Cookie-Banner existiert nicht im Repo (PLAN.md nennt das Durchtesten als offen).
-- Scriptlets/erweiterte Regeln des Werbeblockers sind nicht umgesetzt (PLAN.md, Phase 2, offen).
+- Scriptlets/erweiterte Regeln: am Gerät noch nicht geprüft, ob YouTube-Werbung wirklich wegfällt und das Video danach normal läuft (im Simulator spielt YouTube grundsätzlich nicht ab). uBOs `trusted-edit-inbound-object`-Regeln für YouTube fehlen (kein AdGuard-Gegenstück).
 - Abstimmung von Zeigerempfindlichkeit, Randscrollen, Ring und Play/Pause-Zeiten mit echter Fernbedienung ist laut PLAN.md nicht abgeschlossen.
 - Test `https://1.1.1.1/help` und Langzeittests des DNS-Proxys nach Hintergrund sind laut PLAN.md offen.
 - Ob `[InputTrace]`, `[NowPlaying]`, `[TopBar]` und die Video-Logzeilen nur in DEBUG erscheinen, wurde nicht für jede Zeile geprüft.

@@ -59,6 +59,8 @@
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
 		56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */; };
 		40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */ = {isa = PBXBuildFile; fileRef = 8652E9B7A8FD897D903A8958 /* Autoconsent */; };
+		87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */; };
+		58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */ = {isa = PBXBuildFile; fileRef = 7268B5C1E882F5DAB9A49DE8 /* Scriptlets */; };
 		E4895E2842B91B8723258DD5 /* WhisperModels in Resources */ = {isa = PBXBuildFile; fileRef = 7AADFF423E379F3DCAE70806 /* WhisperModels */; };
 		68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */ = {isa = PBXBuildFile; fileRef = 738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */; };
 		6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */ = {isa = PBXBuildFile; fileRef = 7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */; };
@@ -169,6 +171,9 @@
 		5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserGuideViewController.h; sourceTree = "<group>"; };
 		AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserGuideViewController.m; sourceTree = "<group>"; };
 		8652E9B7A8FD897D903A8958 /* Autoconsent */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Autoconsent; sourceTree = "<group>"; };
+		D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserScriptletInjector.h; sourceTree = "<group>"; };
+		0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserScriptletInjector.m; sourceTree = "<group>"; };
+		7268B5C1E882F5DAB9A49DE8 /* Scriptlets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scriptlets; sourceTree = "<group>"; };
 		7AADFF423E379F3DCAE70806 /* WhisperModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WhisperModels; sourceTree = "<group>"; };
 		1455E89A52B77AEEE98922FF /* BrowserSubtitleEngine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleEngine.h; sourceTree = "<group>"; };
 		738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleEngine.m; sourceTree = "<group>"; };
@@ -361,6 +366,8 @@
 				E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */,
 				5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */,
 				AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */,
+				D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */,
+				0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */,
 				1455E89A52B77AEEE98922FF /* BrowserSubtitleEngine.h */,
 				738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */,
 				4B6A71C07A12B9684DC0AE03 /* BrowserSubtitleAudioSource.h */,
@@ -466,6 +473,7 @@
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				7268B5C1E882F5DAB9A49DE8 /* Scriptlets */,
 				7AADFF423E379F3DCAE70806 /* WhisperModels */,
 				02AB7C306633303A188E18EE /* Reader */,
 				5DC453250BE8BA6BD64CDA80 /* WebSubtitles */,
@@ -542,6 +550,7 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */,
 				E4895E2842B91B8723258DD5 /* WhisperModels in Resources */,
 				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,
 				3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */,
@@ -616,6 +625,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */,
 				02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */,
 				A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */,
 				DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */,
