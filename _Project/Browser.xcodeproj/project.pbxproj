@@ -58,6 +58,8 @@
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
 		56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */; };
 		40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */ = {isa = PBXBuildFile; fileRef = 8652E9B7A8FD897D903A8958 /* Autoconsent */; };
+		87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */; };
+		58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */ = {isa = PBXBuildFile; fileRef = 7268B5C1E882F5DAB9A49DE8 /* Scriptlets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -144,6 +146,9 @@
 		5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserGuideViewController.h; sourceTree = "<group>"; };
 		AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserGuideViewController.m; sourceTree = "<group>"; };
 		8652E9B7A8FD897D903A8958 /* Autoconsent */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Autoconsent; sourceTree = "<group>"; };
+		D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserScriptletInjector.h; sourceTree = "<group>"; };
+		0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserScriptletInjector.m; sourceTree = "<group>"; };
+		7268B5C1E882F5DAB9A49DE8 /* Scriptlets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scriptlets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -294,6 +299,8 @@
 				E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */,
 				5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */,
 				AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */,
+				D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */,
+				0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -362,6 +369,7 @@
 				B002B8661BAE420500C744AF /* main.m */,
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				7268B5C1E882F5DAB9A49DE8 /* Scriptlets */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
@@ -433,6 +441,7 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
@@ -486,6 +495,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,

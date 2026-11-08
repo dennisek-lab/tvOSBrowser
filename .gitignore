@@ -59,3 +59,6 @@ _Project/Availability.h
 ## Autoconsent-Download (tools/vendor-download)
 tools/vendor-download/
 build-ac/
+
+## Filterlisten-Cache (tools/build_adblock_rules.py, tools/build_scriptlets.py)
+tools/.adblock-cache/

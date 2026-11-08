@@ -1,0 +1,4 @@
+! Eigene Ergänzungen zu den uBO-Listen (uBO-Syntax), von tools/build_scriptlets.py zusätzlich eingelesen.
+! YouTube lädt bei Navigation innerhalb der Seite Spieler- und Werbedaten über /youtubei/v1/get_watch (Array aus
+! next- und player-Antwort). uBO ersetzt dort nur "adSlots"; hier werden auch adPlacements/playerAds entfernt.
+www.youtube.com,m.youtube.com##+js(json-prune-fetch-response, [].playerResponse.adPlacements [].playerResponse.playerAds [].playerResponse.adSlots playerResponse.adPlacements playerResponse.playerAds adPlacements playerAds, , propsToMatch, /get_watch?)

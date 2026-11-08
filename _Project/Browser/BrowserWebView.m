@@ -3,6 +3,7 @@
 #import "BrowserClickTargetTracker.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserCookieConsentBlocker.h"
+#import "BrowserScriptletInjector.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -619,6 +620,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     self.contentController = BrowserUserContentController(configuration);
     [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     [[BrowserCookieConsentBlocker sharedBlocker] applyToUserContentController:self.contentController];
+    [[BrowserScriptletInjector sharedInjector] prepare];
     self.clickTargetTracker = [BrowserClickTargetTracker new];
     [self.clickTargetTracker installIntoConfiguration:configuration];
     __weak typeof(self) weakSelf = self;
@@ -1345,6 +1347,12 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
         // Cookie-Banner-Ablehner: Skript für Ausnahme-Seiten herausnehmen bzw. wieder einsetzen
         [[BrowserCookieConsentBlocker sharedBlocker] updateUserContentController:self.contentController
                                                               forNavigationToURL:request.URL];
+    }
+    if (shouldAllow && request != nil) {
+        // Erweiterte Werbeblocker-Regeln (Scriptlets): passendes Skript vor dem Laden einspielen, auch für Unterframes
+        [[BrowserScriptletInjector sharedInjector] updateUserContentController:self.contentController
+                                                            forNavigationToURL:request.URL
+                                                                     mainFrame:isMainFrameRequest];
     }
 
     if (decisionHandler != nil) {
