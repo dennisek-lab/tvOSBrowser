@@ -6,11 +6,15 @@
 #   tools/build_whisper.sh --clean    # Build-Ordner vorher löschen
 #
 # Ergebnis: vendor/whisper.xcframework (statisch, ≈17 MB, wird committet).
-# Metal-Kernel: Ist die Metal-Toolchain installiert (xcodebuild -downloadComponent MetalToolchain),
-# werden sie vorkompiliert nach vendor/whisper-metal/<appletvos|appletvsimulator>/default.metallib;
-# die Build-Phase „Whisper-Metal-Kernel kopieren“ legt die passende Datei ins App-Paket, dort sucht
-# ggml sie. Ohne Toolchain (oder mit WHISPER_METAL_EMBED=ON) wird der Kernel-Quelltext eingebettet
-# und beim ersten Laden des Modells zur Laufzeit übersetzt (Simulator ≈14 s, Gerät vermutlich länger).
+# Metal-Kernel (Gerät): Ist die Metal-Toolchain installiert (xcodebuild -downloadComponent MetalToolchain),
+# werden sie für tvOS (-mtargetos=tvos…) vorkompiliert nach vendor/whisper-metal/appletvos/default.metallib
+# (≈15 MB, wird committet; das Framework enthält dann keinen Kernel-Quelltext mehr). Die Build-Phase
+# „Whisper-Metal-Kernel kopieren“ legt sie ins App-Paket, dort sucht ggml sie. Ohne Toolchain (oder mit
+# WHISPER_METAL_EMBED=ON) wird der Kernel-Quelltext eingebettet und beim ersten Laden des Modells zur
+# Laufzeit übersetzt (Simulator ≈16 s). ggml-tensor.metallib (Tensor-API) wird nicht übernommen: ggml nutzt
+# sie erst ab A19/M5, kein Apple TV hat das.
+# Simulator: immer eingebettet (WHISPER_METAL_SIM_EMBED=ON), weil whisper dort ohnehin auf der CPU rechnet
+# (Simulator-GPU kann die Kernel nicht); spart 15 MB vorkompilierte Kernel im Repo.
 # Das Xcode-Projekt sucht das Framework über FRAMEWORK_SEARCH_PATHS in
 # $(SRCROOT)/../vendor/whisper.xcframework/tvos-arm64[-simulator] und bindet es per
 # Modul-Autolink ein (#import <whisper/whisper.h>). Fehlt es, baut die App trotzdem,
@@ -65,7 +69,8 @@ if [[ -z "${WHISPER_METAL_EMBED:-}" ]]; then
         echo "   (vorkompilieren: xcodebuild -downloadComponent MetalToolchain, dann erneut bauen)"
     fi
 fi
-echo "== GGML_METAL_EMBED_LIBRARY=$WHISPER_METAL_EMBED"
+WHISPER_METAL_SIM_EMBED="${WHISPER_METAL_SIM_EMBED:-ON}"
+echo "== GGML_METAL_EMBED_LIBRARY Gerät=$WHISPER_METAL_EMBED Simulator=$WHISPER_METAL_SIM_EMBED"
 
 COMMON=(
     -G Xcode
@@ -79,7 +84,7 @@ COMMON=(
     -DWHISPER_BUILD_TESTS=OFF
     -DWHISPER_BUILD_SERVER=OFF
     -DGGML_METAL=ON
-    -DGGML_METAL_EMBED_LIBRARY="$WHISPER_METAL_EMBED"
+    -DGGML_METAL_TARGET_OS=tvos
     -DGGML_METAL_USE_BF16=ON
     -DGGML_BLAS_DEFAULT=ON
     -DGGML_NATIVE=OFF
@@ -91,9 +96,11 @@ COMMON=(
 
 build_slice() {
     local sdk="$1"     # appletvos | appletvsimulator
+    local embed="$2"   # ON: Kernel-Quelltext einbetten, OFF: default.metallib vorkompilieren
     local dir="$WORK/$sdk"
-    echo "== Baue $sdk"
+    echo "== Baue $sdk (Metal eingebettet: $embed)"
     "$CMAKE" -B "$dir" "${COMMON[@]}" \
+        -DGGML_METAL_EMBED_LIBRARY="$embed" \
         -DCMAKE_OSX_SYSROOT="$sdk" \
         -DCMAKE_OSX_ARCHITECTURES=arm64 \
         -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS="$sdk" >/dev/null
@@ -104,10 +111,11 @@ build_slice() {
     libs=$(find "$dir" -path "*Release-$sdk*" -name "*.a" | sort)
     echo "$libs" | sed 's/^/   /'
 
-    rm -f "$VENDOR/whisper-metal/$sdk/default.metallib"
-    if [[ "$WHISPER_METAL_EMBED" == "OFF" ]]; then
+    rm -rf "$VENDOR/whisper-metal/$sdk"
+    if [[ "$embed" == "OFF" ]]; then
+        # ggml legt die Bibliotheken in CMAKE_RUNTIME_OUTPUT_DIRECTORY ab (<build>/bin, ohne Konfigurationsordner)
         local metallib
-        metallib=$(find "$dir" -name default.metallib -path "*Release*" | head -1)
+        metallib=$(find "$dir" -name default.metallib -not -path "*/CMakeFiles/*" | head -1)
         if [[ -z "$metallib" ]]; then
             echo "default.metallib fehlt in $dir" >&2
             exit 1
@@ -163,8 +171,8 @@ EOF
 EOF
 }
 
-build_slice appletvos
-build_slice appletvsimulator
+build_slice appletvos "$WHISPER_METAL_EMBED"
+build_slice appletvsimulator "$WHISPER_METAL_SIM_EMBED"
 
 echo "== xcframework"
 rm -rf "$OUT"
