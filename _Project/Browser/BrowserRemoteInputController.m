@@ -33,12 +33,63 @@ static const CGFloat kPageScrollFraction = 0.8;
 /// Nach dieser Zeit ohne Berührung blendet sich der Zeiger aus.
 static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
+/// Glasartige Fläche für die Zielmarkierung: Tönung, Glanzverlauf, helle Lichtkante, dunkle Haarlinie außen.
+@interface BrowserGlassHighlightSurfaceView : UIView
+@property (nonatomic, strong) CAGradientLayer *glossLayer;
+@property (nonatomic, strong) CAGradientLayer *rimLayer;
+@property (nonatomic, strong) CAShapeLayer *rimMask;
+@end
+
+@implementation BrowserGlassHighlightSurfaceView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.16];
+        self.layer.borderWidth = 0.75;
+        self.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
+
+        _glossLayer = [CAGradientLayer layer];
+        _glossLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.34].CGColor,
+                               (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor];
+        _glossLayer.locations = @[@0.0, @0.55];
+        [self.layer addSublayer:_glossLayer];
+
+        // Lichtkante: oben hell, unten schwächer, als 1,5-pt-Ring maskiert.
+        _rimLayer = [CAGradientLayer layer];
+        _rimLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.95].CGColor,
+                             (id)[UIColor colorWithWhite:1.0 alpha:0.35].CGColor];
+        _rimMask = [CAShapeLayer layer];
+        _rimMask.fillColor = UIColor.clearColor.CGColor;
+        _rimMask.strokeColor = UIColor.blackColor.CGColor;
+        _rimMask.lineWidth = 3.0;
+        _rimLayer.mask = _rimMask;
+        [self.layer addSublayer:_rimLayer];
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.glossLayer.frame = self.bounds;
+    self.rimLayer.frame = self.bounds;
+    self.rimMask.frame = self.bounds;
+    self.rimMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(self.bounds, 0.75, 0.75)
+                                                   cornerRadius:MAX(0.0, self.layer.cornerRadius - 0.75)].CGPath;
+    [CATransaction commit];
+}
+
+@end
+
 @interface BrowserRemoteInputController ()
 
 @property (nonatomic, weak) id<BrowserRemoteInputControllerHost> host;
 @property (nonatomic, weak) UIView *rootView;
 @property (nonatomic, readwrite) UIImageView *cursorView;
 @property (nonatomic) UIView *highlightView;
+@property (nonatomic) UIView *highlightSurfaceView;
 @property (nonatomic, readwrite) UIPanGestureRecognizer *manualScrollPanRecognizer;
 @property (nonatomic, readwrite) UITapGestureRecognizer *playPauseDoubleTapRecognizer;
 @property (nonatomic, readwrite, getter=isCursorModeEnabled) BOOL cursorModeEnabled;
@@ -62,6 +113,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic) BOOL playPauseLongPressFired;
 @property (nonatomic) BOOL playPauseSinglePending;
 @property (nonatomic) CFTimeInterval lastUpPressTimestamp;
+@property (nonatomic) CFTimeInterval lastDownPressTimestamp;
 
 // Kreisgeste am Clickpad-Ring: Drehung der Bewegungsrichtung aufsummieren.
 @property (nonatomic) CGPoint rotationSegment;
@@ -105,13 +157,20 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
         _highlightView = [[UIView alloc] initWithFrame:CGRectZero];
         _highlightView.userInteractionEnabled = NO;
-        _highlightView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
-        _highlightView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.85].CGColor;
-        _highlightView.layer.borderWidth = 3.0;
+        // Auswahl im Glas-Look: helle, halbdurchsichtige Fläche mit Glanz oben, Lichtkante und weichem Schatten.
+        // Bewusst ohne echte Glaslinse – die bricht den Text darunter und kostet mehr Leistung.
+        _highlightView.backgroundColor = UIColor.clearColor;
         _highlightView.layer.shadowColor = UIColor.blackColor.CGColor;
-        _highlightView.layer.shadowOpacity = 0.35;
-        _highlightView.layer.shadowRadius = 10.0;
-        _highlightView.layer.shadowOffset = CGSizeZero;
+        _highlightView.layer.shadowOpacity = 0.28;
+        _highlightView.layer.shadowRadius = 14.0;
+        _highlightView.layer.shadowOffset = CGSizeMake(0.0, 6.0);
+        UIView *surface = [[BrowserGlassHighlightSurfaceView alloc] initWithFrame:CGRectZero];
+        surface.userInteractionEnabled = NO;
+        surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        surface.layer.cornerCurve = kCACornerCurveContinuous;
+        surface.clipsToBounds = YES;
+        [_highlightView addSubview:surface];
+        _highlightSurfaceView = surface;
         _highlightView.alpha = 0.0;
 
         _playPauseDoubleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handlePlayPauseDoubleTap:)];
@@ -294,9 +353,12 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     [self.rootView insertSubview:highlight belowSubview:self.cursorView];
     CGRect frame = CGRectInset(target, -6.0, -6.0);
     CGFloat radius = MIN(16.0, CGRectGetHeight(frame) / 2.0);
+    UIView *surface = self.highlightSurfaceView;
     void (^apply)(void) = ^{
         highlight.frame = frame;
         highlight.layer.cornerRadius = radius;
+        surface.layer.cornerRadius = radius;
+        highlight.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, frame.size.width, frame.size.height) cornerRadius:radius].CGPath;
         highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
     };
     if (animated && highlight.alpha > 0.0) {
@@ -306,7 +368,12 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
                          animations:apply
                          completion:nil];
     } else {
-        [UIView performWithoutAnimation:^{ highlight.frame = frame; highlight.layer.cornerRadius = radius; }];
+        [UIView performWithoutAnimation:^{
+            highlight.frame = frame;
+            highlight.layer.cornerRadius = radius;
+            surface.layer.cornerRadius = radius;
+            highlight.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, frame.size.width, frame.size.height) cornerRadius:radius].CGPath;
+        }];
         [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0; }];
     }
 }
@@ -700,6 +767,13 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
                 return YES;
             case UIPressTypeDownArrow:
                 [self revealCursorIfIdle];
+                // Zweimal kurz hintereinander unten: Leiste zur Kapsel verkleinern.
+                if (CACurrentMediaTime() - self.lastDownPressTimestamp < 0.4) {
+                    self.lastDownPressTimestamp = 0;
+                    [self.host browserRemoteInputControllerCompactTopBar];
+                    return YES;
+                }
+                self.lastDownPressTimestamp = CACurrentMediaTime();
                 [self scrollPageByFraction:kPageScrollFraction];
                 return YES;
             case UIPressTypeLeftArrow:

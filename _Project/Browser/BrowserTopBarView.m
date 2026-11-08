@@ -431,8 +431,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     rightX = CGRectGetMinX(self.menuImageView.frame) - kTopBarIconSpacing - kTopBarIconSize;
     self.fullscreenImageView.frame = CGRectMake(rightX, iconY, kTopBarIconSize, kTopBarIconSize);
 
+    // Der Knopf zum Ausblenden der Leiste entfällt: Beim Scrollen wird sie ohnehin zur Kapsel.
+    self.fullscreenImageView.hidden = YES;
     CGFloat spinnerSide = 34.0;
-    rightX = CGRectGetMinX(self.fullscreenImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
+    rightX = CGRectGetMinX(self.menuImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
     self.loadingSpinner.frame = CGRectMake(rightX,
                                            floor((CGRectGetHeight(chromeFrame) - spinnerSide) / 2.0),
                                            spinnerSide,
@@ -603,8 +605,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self setCompact:NO animated:YES];
     }
     for (BrowserTopBarFocusButton *button in self.focusButtons) {
-        button.hidden = !focusModeActive;
-        button.enabled = focusModeActive;
+        BOOL available = focusModeActive && button != self.fullscreenFocusButton;
+        button.hidden = !available;
+        button.enabled = available;
     }
 
     if (!focusModeActive) {

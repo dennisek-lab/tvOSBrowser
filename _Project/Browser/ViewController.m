@@ -586,6 +586,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 /// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
+- (void)browserRemoteInputControllerCompactTopBar {
+    [self.topMenuView setCompact:YES animated:YES];
+    self.pageScrollTravel = 0.0;
+}
+
 /// Stern in der Leiste: aktuelle Seite zu den Favoriten hinzufügen oder entfernen.
 - (void)toggleFavoriteForCurrentPage {
     NSURL *url = self.webview.request.URL;

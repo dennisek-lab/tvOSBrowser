@@ -28,6 +28,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserRemoteInputControllerNavigateBack;
 /// Zweimal oben gedrückt: Adressleiste öffnen.
 - (void)browserRemoteInputControllerOpenAddressBar;
+/// Zweimal kurz unten: obere Leiste zur Kapsel verkleinern.
+- (void)browserRemoteInputControllerCompactTopBar;
 - (void)browserRemoteInputControllerNavigateForward;
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
