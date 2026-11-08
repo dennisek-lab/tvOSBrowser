@@ -42,6 +42,8 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 @property (nonatomic) BOOL triedHLSFallback;
 @property (nonatomic) BOOL suppressedByExistingSubtitles;
 @property (nonatomic) BOOL userForcedOn;  // im Player-Menü eingeschaltet: auch neben vorhandenen Untertiteln
+/// Bei „auto“: für dieses Video festgelegte Sprache (überlebt Neustarts der Erkennung, z. B. Tonquellenwechsel).
+@property (nonatomic, copy, nullable) NSString *sessionLanguage;
 @property (nonatomic) BOOL streamingPlaylist;
 @property (nonatomic, readwrite, getter=isRunning) BOOL running;
 @property (nonatomic) BOOL detached;
@@ -247,6 +249,14 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     return NO;
 }
 
+/// Was „Automatisch“ gerade bedeutet: erkannte Sprache, „wird erkannt …“ (läuft, noch offen) oder nichts.
+- (nullable NSString *)automaticLanguageDetail {
+    if (self.sessionLanguage.length > 0) {
+        return [BrowserSubtitleEngine displayNameForLanguage:self.sessionLanguage];
+    }
+    return self.running && [self.engine.language isEqualToString:@"auto"] ? @"wird erkannt …" : nil;
+}
+
 - (UIMenu *)buildMenu {
     __weak typeof(self) weakSelf = self;
     BOOL enabled = self.preferences.autoSubtitlesEnabled;
@@ -260,20 +270,39 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     off.state = enabled ? UIMenuElementStateOff : UIMenuElementStateOn;
     NSMutableArray<UIMenuElement *> *children = [NSMutableArray arrayWithObjects:on, off, nil];
 
+    NSString *language = self.preferences.autoSubtitlesLanguage;
     if ([BrowserSubtitleEngine hasMultilingualModel]) {
-        NSString *language = self.preferences.autoSubtitlesLanguage;
-        UIAction *english = [UIAction actionWithTitle:@"Englisch" image:nil identifier:nil handler:^(__kindof UIAction *action) {
-            [weakSelf setLanguageFromMenu:@"en"];
-        }];
-        english.state = [language isEqualToString:@"en"] ? UIMenuElementStateOn : UIMenuElementStateOff;
-        UIAction *automatic = [UIAction actionWithTitle:@"Sprache automatisch" image:nil identifier:nil handler:^(__kindof UIAction *action) {
-            [weakSelf setLanguageFromMenu:@"auto"];
-        }];
-        automatic.state = [language isEqualToString:@"auto"] ? UIMenuElementStateOn : UIMenuElementStateOff;
-        [children addObject:[UIMenu menuWithTitle:@"Sprache" image:nil identifier:nil
-                                          options:UIMenuOptionsDisplayInline children:@[english, automatic]]];
+        NSString *automaticDetail = [self automaticLanguageDetail];
+        NSMutableArray<UIMenuElement *> *languages = [NSMutableArray array];
+        for (NSString *code in [BrowserSubtitleEngine selectableLanguages]) {
+            NSString *title = [BrowserSubtitleEngine displayNameForLanguage:code];
+            if ([code isEqualToString:@"auto"] && automaticDetail != nil) {
+                title = [NSString stringWithFormat:@"%@ (%@)", title, automaticDetail];
+            }
+            UIAction *action = [UIAction actionWithTitle:title image:nil identifier:nil handler:^(__kindof UIAction *a) {
+                [weakSelf setLanguageFromMenu:code];
+            }];
+            action.state = [language isEqualToString:code] ? UIMenuElementStateOn : UIMenuElementStateOff;
+            [languages addObject:action];
+        }
+        // Kurz halten, die Zeile im Menü ist schmal: „Sprache: Auto · Deutsch“, „Sprache: Auto …“, „Sprache: Deutsch“.
+        NSString *current = [BrowserSubtitleEngine displayNameForLanguage:language];
+        if ([language isEqualToString:@"auto"]) {
+            current = self.sessionLanguage.length > 0
+                ? [@"Auto · " stringByAppendingString:[BrowserSubtitleEngine displayNameForLanguage:self.sessionLanguage]]
+                : (automaticDetail != nil ? @"Auto …" : current);
+        }
+        [children addObject:[UIMenu menuWithTitle:[NSString stringWithFormat:@"Sprache: %@", current] image:nil identifier:nil
+                                          options:UIMenuOptionsSingleSelection children:languages]];
+    } else {
+        // Nur das englische Modell im Paket (tools/fetch_whisper_model.sh base-q5_1 für weitere Sprachen).
+        UIAction *info = [UIAction actionWithTitle:@"Sprache: nur Englisch (Modell)" image:nil identifier:nil
+                                           handler:^(__unused __kindof UIAction *a) {}];
+        info.attributes = UIMenuElementAttributesDisabled;
+        [children addObject:info];
     }
-    UIImage *image = [UIImage systemImageNamed:enabled ? @"captions.bubble.fill" : @"captions.bubble"];
+    // Eigenes Symbol (Sprache → Text), damit der Knopf nicht wie der Untertitel-Knopf des Systems daneben aussieht.
+    UIImage *image = [UIImage systemImageNamed:@"waveform.and.mic"] ?: [UIImage systemImageNamed:@"captions.bubble"];
     return [UIMenu menuWithTitle:[BrowserSubtitleController menuTitle] image:image identifier:kSubtitleMenuIdentifier
                          options:0 children:children];
 }
@@ -307,6 +336,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     NSLog(@"%@ Menü: Sprache %@", kSubtitleControllerLogPrefix, language);
     self.preferences.autoSubtitlesLanguage = language;
+    if ([language isEqualToString:@"auto"]) {
+        self.sessionLanguage = nil;  // bewusst „Automatisch“: neu erkennen
+    }
     if (self.running) {
         [self stopRecognitionClearing:YES];
         [self startRecognition];
@@ -336,8 +368,27 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     self.triedHLSFallback = NO;
     BrowserSubtitleEngine *engine = [[BrowserSubtitleEngine alloc] initWithModelPath:modelPath language:language];
     self.engine = engine;
-    [self.overlay showStatus:@"Untertitel werden vorbereitet …" duration:10.0];
     __weak typeof(self) weakSelf = self;
+    if ([engine.language isEqualToString:@"auto"]) {
+        if (self.sessionLanguage.length > 0) {
+            [engine lockLanguage:self.sessionLanguage];  // einmal je Video erkennen, nicht nach jedem Neustart
+        }
+        engine.languageLockHandler = ^(NSString *detected, __unused NSUInteger speechWindows) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) strongSelf = weakSelf;
+                if (strongSelf == nil || strongSelf.engine != engine) {
+                    return;
+                }
+                strongSelf.sessionLanguage = detected;
+                NSLog(@"%@ Sprache für dieses Video: %@", kSubtitleControllerLogPrefix, detected);
+                [strongSelf.overlay showStatus:[NSString stringWithFormat:@"Sprache erkannt: %@",
+                                                [BrowserSubtitleEngine displayNameForLanguage:detected]] duration:3.0];
+                [strongSelf installMenu];
+            });
+        };
+    }
+    [self installMenu];  // „wird erkannt …“ im Menü
+    [self.overlay showStatus:@"Untertitel werden vorbereitet …" duration:10.0];
     dispatch_async(self.engineQueue, ^{
         NSError *error = nil;
         BOOL loaded = [engine loadModel:&error];
@@ -351,7 +402,12 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
                 [strongSelf stopRecognitionClearing:NO];
                 return;
             }
-            [strongSelf.overlay showStatus:[NSString stringWithFormat:@"Automatische Untertitel an (%@)", engine.modelName] duration:3.0];
+            NSString *languageText = [engine.language isEqualToString:@"auto"]
+                ? (engine.lockedLanguage != nil ? [BrowserSubtitleEngine displayNameForLanguage:engine.lockedLanguage] : @"Sprache wird erkannt …")
+                : [BrowserSubtitleEngine displayNameForLanguage:engine.language];
+            [strongSelf.overlay showStatus:[NSString stringWithFormat:@"Automatische Untertitel an (%@)", languageText] duration:3.0];
+            NSLog(@"%@ Erkennung mit %@, Sprache %@ (eingestellt %@)", kSubtitleControllerLogPrefix, engine.modelName,
+                  engine.lockedLanguage ?: engine.language, language);
             [strongSelf startSourcePreferringHLS:[strongSelf playbackURLLooksLikeHLS]];
         });
     });
@@ -435,6 +491,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     [self.overlay setSubtitleText:nil];
     NSLog(@"%@ Erkennung gestoppt (RTF Schnitt %.2f)", kSubtitleControllerLogPrefix, engine.averageRealTimeFactor);
+    [self installMenu];  // „wird erkannt …“ entfernen
 }
 
 #pragma mark Tonquelle (Hintergrund)

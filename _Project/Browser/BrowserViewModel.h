@@ -13,6 +13,8 @@
 
 - (BrowserTabViewModel *)activeTab;
 - (BrowserTabViewModel *)addTab;
+/// Neuer Tab am Ende, der aktive Tab bleibt aktiv (Pop-ups, Links mit target=_blank). nil bei Höchstzahl.
+- (BrowserTabViewModel *)addBackgroundTab;
 - (BrowserTabViewModel *)ensureActiveTab;
 - (BrowserTabViewModel *)removeTabAtIndex:(NSInteger)tabIndex;
 - (void)restoreTabs:(NSArray<BrowserTabViewModel *> *)tabs activeTabIndex:(NSInteger)activeTabIndex;

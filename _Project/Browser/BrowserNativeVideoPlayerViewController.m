@@ -65,6 +65,8 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 @property (nonatomic) BOOL initialSeekInFlight;
 @property (nonatomic) BOOL didEndSession;
 @property (nonatomic) BOOL didReportFailure;
+/// Hat die Wiedergabe je begonnen (timeControlStatus „playing“)? Sonst greift der Startwächter.
+@property (nonatomic) BOOL didStartPlayback;
 @property (nonatomic) BOOL didSelectStreamSubtitles;
 
 @property (nonatomic, readwrite, getter=isPictureInPictureActive) BOOL pictureInPictureActive;
@@ -199,10 +201,12 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
         // Erst an die Position der Seite springen, dann spielen (sonst kurz ab 0).
         [self log:@"viewDidAppear, warte auf Startposition %.1f", self.initialPlaybackTime];
         self.playWhenReady = YES;
+        [self armStartWatchdog];
         return;
     }
     [self log:@"viewDidAppear play"];
     [self.player play];
+    [self armStartWatchdog];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -240,6 +244,33 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 - (void)dealloc {
     [self detachObservers];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - Startwächter
+
+/// Startet die Wiedergabe nicht (Server verweigert AVPlayer die Segmente, Stream hängt beim Puffern, Status bleibt
+/// „unknown“), meldet AVKit oft keinen Fehler, und der Nutzer säße vor einem schwarzen Bild, während das Video der
+/// Seite angehalten wartet. Nach `kBrowserNativePlayerStartTimeout` ohne Wiedergabe gilt die Übergabe als
+/// gescheitert: `failureHandler` schließt den Player und lässt das Video in der Seite weiterlaufen.
+static const NSTimeInterval kBrowserNativePlayerStartTimeout = 15.0;
+
+- (void)armStartWatchdog {
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBrowserNativePlayerStartTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf == nil || strongSelf.didStartPlayback || strongSelf.didEndSession || strongSelf.didReportFailure ||
+            strongSelf.pictureInPictureActive) {
+            return;
+        }
+        AVPlayerItem *item = strongSelf.player.currentItem;
+        [strongSelf log:@"Startwächter: nach %.0f s keine Wiedergabe (status=%ld, wartet: %@), zurück zur Seite",
+         kBrowserNativePlayerStartTimeout, (long)item.status, strongSelf.player.reasonForWaitingToPlay ?: @"-"];
+        strongSelf.didReportFailure = YES;
+        if (strongSelf.failureHandler != nil) {
+            strongSelf.failureHandler([NSError errorWithDomain:@"BrowserNativeVideoPlayer" code:-1
+                                                      userInfo:@{NSLocalizedDescriptionKey: @"Wiedergabe startet nicht"}]);
+        }
+    });
 }
 
 #pragma mark - Startposition
@@ -709,54 +740,9 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
     return cues;
 }
 
-#pragma mark - Fernbedienung (aus UIApplication+BrowserSelectPressForwarding)
-
-- (void)togglePlayback {
-    if (self.player.rate > 0.0) {
-        [self log:@"toggle pause"];
-        [self.player pause];
-    } else {
-        [self log:@"toggle play"];
-        [self.player play];
-    }
-}
-
-- (void)skipByInterval:(NSTimeInterval)delta {
-    if (self.player.currentItem == nil) {
-        return;
-    }
-
-    NSTimeInterval currentTime = CMTimeGetSeconds(self.player.currentTime);
-    if (!isfinite(currentTime)) {
-        currentTime = 0.0;
-    }
-
-    NSTimeInterval duration = CMTimeGetSeconds(self.player.currentItem.duration);
-    NSTimeInterval targetTime = currentTime + delta;
-    if (isfinite(duration) && duration > 0.0) {
-        targetTime = MIN(MAX(targetTime, 0.0), MAX(duration - 0.05, 0.0));
-    } else {
-        targetTime = MAX(targetTime, 0.0);
-    }
-
-    [self log:@"seek delta=%0.3f from=%0.3f to=%0.3f", delta, currentTime, targetTime];
-    CMTime seekTime = CMTimeMakeWithSeconds(targetTime, NSEC_PER_SEC);
-    [self.player seekToTime:seekTime toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
-}
-
-- (void)scrubByHorizontalDelta:(CGFloat)delta {
-    // Approximate touch-surface horizontal movement to timeline seek.
-    NSTimeInterval secondsDelta = (NSTimeInterval)delta / 4.0;
-    if (fabs(secondsDelta) < 0.01) {
-        return;
-    }
-    [self skipByInterval:secondsDelta];
-}
-
-- (void)closePlayer {
-    [self log:@"close player"];
-    [self dismissViewControllerAnimated:YES completion:nil];
-}
+#pragma mark - Fernbedienung
+// Tasten und Wischen bedient AVKit selbst (Transportleiste, Untertitel/Audio, Infobereich, Spulen, Menü).
+// UIApplication+BrowserSelectPressForwarding lässt sie unverändert durch; unten werden sie nur protokolliert.
 
 #pragma mark - Protokoll
 
@@ -765,12 +751,22 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
     AVMediaSelectionGroup *group = [item.asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
     AVMediaSelectionOption *legible = group != nil ? [item.currentMediaSelection selectedMediaOptionInMediaSelectionGroup:group] : nil;
     NSString *status = item.status == AVPlayerItemStatusReadyToPlay ? @"ready" : (item.status == AVPlayerItemStatusFailed ? @"failed" : @"unknown");
-    return [NSString stringWithFormat:@"t=%.1f dur=%.1f rate=%.1f status=%@ live=%d hls=%d loader=%d pipAllowed=%d pipSupported=%d pip=%d legible=%lu/%@ sidecar=%@ cues=%lu meta=%lu art=%d",
+    AVMediaSelectionGroup *audible = item.status == AVPlayerItemStatusReadyToPlay ? [item.asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicAudible] : nil;
+    id focused = [UIFocusSystem focusSystemForEnvironment:self].focusedItem;
+    NSMutableArray<NSString *> *menus = [NSMutableArray array];
+    for (UIMenuElement *element in self.transportBarCustomMenuItems ?: @[]) {
+        [menus addObject:element.title ?: @"?"];
+    }
+    return [NSString stringWithFormat:@"t=%.1f dur=%.1f rate=%.1f status=%@ live=%d hls=%d loader=%d pipAllowed=%d pipSupported=%d pip=%d legible=%lu/%@ audible=%lu sidecar=%@ cues=%lu meta=%lu art=%d fokus=%@ menüs=[%@] oben=%@",
             CMTimeGetSeconds(self.player.currentTime), CMTimeGetSeconds(item.duration), self.player.rate, status, self.live,
             self.streamingPlaylist, self.assetLoader != nil, self.allowsPictureInPicturePlayback,
             [AVPictureInPictureController isPictureInPictureSupported], self.pictureInPictureActive,
-            (unsigned long)group.options.count, legible.displayName ?: @"-", self.activeSidecarTrack.label ?: @"-",
-            (unsigned long)self.sidecarCues.count, (unsigned long)item.externalMetadata.count, self.artworkImage != nil];
+            (unsigned long)group.options.count, legible.displayName ?: @"-",
+            (unsigned long)audible.options.count,
+            self.activeSidecarTrack.label ?: @"-",
+            (unsigned long)self.sidecarCues.count, (unsigned long)item.externalMetadata.count, self.artworkImage != nil,
+            focused != nil ? NSStringFromClass([focused class]) : @"-", [menus componentsJoinedByString:@", "],
+            self.presentedViewController != nil ? NSStringFromClass(self.presentedViewController.class) : @"-"];
 }
 
 - (void)handlePlayerItemFailedToPlayToEndTime:(NSNotification *)notification {
@@ -823,6 +819,7 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
                 break;
             case AVPlayerTimeControlStatusPlaying:
                 status = @"playing";
+                self.didStartPlayback = YES;
                 break;
         }
         [self log:@"timeControlStatus=%@ reason=%@", status, self.player.reasonForWaitingToPlay ?: @""];

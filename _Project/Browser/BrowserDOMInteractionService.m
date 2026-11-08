@@ -52,8 +52,8 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                             "var element = root.elementFromPoint(px, py);"
                             "while (element) {"
                                 "if (element.shadowRoot && typeof element.shadowRoot.elementFromPoint === 'function') {"
-                                    "var shadowRect = element.getBoundingClientRect();"
-                                    "var shadowElement = resolveElement(element.shadowRoot, px - shadowRect.left, py - shadowRect.top);"
+                                    // ShadowRoot.elementFromPoint nimmt Viewport-Koordinaten (wie document), nicht relativ zum Host.
+                                    "var shadowElement = resolveElement(element.shadowRoot, px, py);"
                                     "if (shadowElement && shadowElement !== element) {"
                                         "element = shadowElement;"
                                         "continue;"

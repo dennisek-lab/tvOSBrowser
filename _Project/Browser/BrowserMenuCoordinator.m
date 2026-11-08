@@ -7,6 +7,7 @@
 #import "BrowserContentBlocker.h"
 #import "BrowserFilterListUpdater.h"
 #import "BrowserCookieConsentBlocker.h"
+#import "BrowserSubtitleEngine.h"
 #import "BrowserWebView.h"
 
 static UIColor *MenuTextColor(void) {
@@ -40,6 +41,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Verlauf": @"clock.arrow.circlepath",
             @"Tabs anzeigen": @"square.on.square",
             @"Neuer Tab": @"plus.square.on.square",
+            @"Unbenutzte Tabs nach 30 Min. schließen": @"clock.badge.xmark",
             @"Werbeblocker": @"hand.raised.fill",
             @"Werbeblocker bei Sperre automatisch pausieren": @"pause.circle",
             @"Filterlisten aktualisieren": @"arrow.triangle.2.circlepath",
@@ -47,6 +49,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Bezahlschranken zustimmen": @"eurosign.circle",
             @"Native Player automatisch": @"play.rectangle",
             @"Automatische Untertitel": @"captions.bubble",
+            @"Untertitelsprache": @"character.bubble",
             @"Untertitel (Webseite)": @"text.bubble",
             @"Cloudflare-DNS": @"network",
             @"Obere Leiste": @"rectangle.topthird.inset.filled",
@@ -1255,6 +1258,16 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Pop-ups und im Hintergrund geöffnete Links, die der Nutzer nie angesehen hat, schließen sich nach 30 Minuten.
+- (BrowserAdvancedMenuItem *)closeUnusedTabsMenuItem {
+    BOOL enabled = self.preferencesStore.closeUnusedTabsEnabled;
+    return [self advancedMenuItemWithTitle:@"Unbenutzte Tabs nach 30 Min. schließen"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.closeUnusedTabsEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)favoritesMenuItem {
     return [self advancedMenuItemWithTitle:@"Favoriten"
                                      style:UIAlertActionStyleDefault
@@ -1493,6 +1506,23 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Sprache der automatischen Untertitel durchschalten: Automatisch → Deutsch → Englisch → … (gilt für den nativen
+/// Player und die Webseite). Ohne mehrsprachiges Modell geht nur Englisch.
+- (BrowserAdvancedMenuItem *)autoSubtitlesLanguageMenuItem {
+    NSString *current = self.preferencesStore.autoSubtitlesLanguage;
+    if (![BrowserSubtitleEngine hasMultilingualModel]) {
+        return [self advancedMenuItemWithTitle:@"Untertitelsprache" detail:@"Nur Englisch (Modell)" handler:^{}];
+    }
+    NSArray<NSString *> *languages = [BrowserSubtitleEngine selectableLanguages];
+    NSUInteger index = [languages indexOfObject:current];
+    NSString *next = languages[index == NSNotFound ? 0 : (index + 1) % languages.count];
+    return [self advancedMenuItemWithTitle:@"Untertitelsprache"
+                                    detail:[BrowserSubtitleEngine displayNameForLanguage:current]
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesLanguage = next;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)webSubtitlesMenuItem {
     BOOL enabled = self.preferencesStore.webSubtitlesEnabled;
     return [self advancedMenuItemWithTitle:@"Untertitel (Webseite)"
@@ -1561,6 +1591,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],
         [self autoSubtitlesMenuItem],
+        [self autoSubtitlesLanguageMenuItem],
         [self webSubtitlesMenuItem],
         [self cloudflareDNSMenuItem],
     ];
@@ -1628,6 +1659,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self historyMenuItem],
             [self showTabsMenuItem],
             [self newTabMenuItem],
+            [self closeUnusedTabsMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Erweiterungen"
                                                items:[self extensionMenuItems]],

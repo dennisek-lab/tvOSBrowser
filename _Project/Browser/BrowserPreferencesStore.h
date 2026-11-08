@@ -33,7 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
 /// Automatische Untertitel (whisper.cpp) im nativen Player. Standard: aus.
 @property (nonatomic) BOOL autoSubtitlesEnabled;
-/// Sprache der automatischen Untertitel: „en“ (Standard, Modell base.en) oder „auto“ (mehrsprachiges Modell, erkennt die Sprache selbst).
+/// Sprache der automatischen Untertitel (nativer Player und Webseite): „auto“ (Standard, erkennt die Sprache einmal
+/// je Video, mehrsprachiges Modell) oder fest „de“, „en“, „fr“ … (BrowserSubtitleEngine +selectableLanguages).
+/// Ein gespeichertes „en“ des alten Standards wird einmalig zu „auto“ (Begründung im .m).
 @property (nonatomic, copy) NSString *autoSubtitlesLanguage;
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
@@ -56,6 +58,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL classicDesignEnabled;
 /// Ersteinrichtung (Favoriten, Startseite, Schutz, Design) abgeschlossen. Standard: nein.
 @property (nonatomic) BOOL setupCompleted;
+
+/// Unbenutzte Tabs (Pop-ups, im Hintergrund geöffnete Links) nach 30 Minuten automatisch schließen. Standard: an.
+@property (nonatomic) BOOL closeUnusedTabsEnabled;
+/// Ablaufzeit für unbenutzte Tabs in Sekunden, 0 = aus. 30 Minuten; im DEBUG-Build per Umgebungsvariable
+/// TAB_EXPIRY_SECONDS kürzer (nur wenn die Einstellung an ist).
+@property (nonatomic, readonly) NSTimeInterval unusedTabExpiryInterval;
 
 - (void)ensureUserAgentConsistency;
 

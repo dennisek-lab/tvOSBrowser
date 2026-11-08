@@ -49,6 +49,19 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)sendVideoCommand:(NSString * _Nonnull)command atPoint:(CGPoint)point;
 /// Videobefehl an das aktive Video der Seite (für Systembefehle): zusätzlich "play", "pause", "seekto:S", "action:nexttrack".
 - (void)sendVideoCommand:(NSString * _Nonnull)command;
+/// Videobefehl über die Player-Brücke, synchron (Hauptframe, Shadow DOM, iframes; Punkt in Koordinaten dieser
+/// Ansicht). strict: nur ein Player am Punkt oder ein laufendes Video. Ergebnis: play, pause, seek, click (Play-Knopf
+/// des Players), frame (an iframe weitergereicht), none oder nil (Brücke fehlt).
+- (nullable NSString *)playerCommand:(NSString * _Nonnull)command atPoint:(CGPoint)point strict:(BOOL)strict;
+/// Klick über die Player-Brücke (CSS-Pixel): in fremde iframes und Shadow DOM. `page` = Ziel im Hauptdokument
+/// (bisheriger Klickweg), nil = Brücke fehlt.
+- (nullable NSString *)playerBridgeClickAtCSSPoint:(CGPoint)cssPoint;
+/// Videobefehl an den Frame mit dieser Adresse (asynchron), z. B. Position nach dem nativen Player zurückgeben.
+- (void)sendVideoCommand:(NSString * _Nonnull)command toFrameURL:(NSString * _Nonnull)frameURL;
+#if DEBUG
+/// Selbsttest `fvideo`: Zustand der Videos in allen Frames (auch fremden iframes), je Frame eine Zeile.
+- (void)debugFrameVideoStatesWithCompletion:(void (^ _Nonnull)(NSString * _Nonnull report))completion;
+#endif
 /// Ist auf der Seite gerade etwas im Vollbild (Element-Vollbild oder Video-Vollbild von WebKit)?
 @property (nonatomic, readonly) BOOL pageFullscreen;
 /// Farbe der Seite für die Umgebung (Hintergrund hinter der oberen Leiste).

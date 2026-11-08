@@ -63,6 +63,10 @@ static bool BrowserWhisperAbort(void *userData) {
 }
 @property (nonatomic, copy) NSString *modelPath;
 @property (nonatomic, copy, readwrite) NSString *detectedLanguage;
+@property (atomic, copy, readwrite, nullable) NSString *lockedLanguage;
+/// Stimmen je erkannter Sprache (nur Abschnitte mit behaltenen Segmenten), bis zur Festlegung.
+@property (nonatomic, strong) NSCountedSet<NSString *> *languageVotes;
+@property (nonatomic) NSUInteger speechWindows;
 @end
 
 @implementation BrowserSubtitleEngine
@@ -110,6 +114,22 @@ static bool BrowserWhisperAbort(void *userData) {
     return path != nil && [self isMultilingualModelName:path.lastPathComponent];
 }
 
++ (NSArray<NSString *> *)selectableLanguages {
+    return @[@"auto", @"de", @"en", @"fr", @"es", @"it", @"nl", @"pl", @"tr", @"pt", @"ru"];
+}
+
++ (NSString *)displayNameForLanguage:(NSString *)language {
+    if (language.length == 0 || [language isEqualToString:@"auto"]) {
+        return @"Automatisch";
+    }
+    NSLocale *german = [NSLocale localeWithLocaleIdentifier:@"de_DE"];
+    NSString *name = [german localizedStringForLanguageCode:language];
+    if (name.length == 0) {
+        return language;
+    }
+    return [[name substringToIndex:1].uppercaseString stringByAppendingString:[name substringFromIndex:1]];
+}
+
 + (double)currentMemoryFootprintMB {
     task_vm_info_data_t info;
     mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
@@ -128,6 +148,7 @@ static bool BrowserWhisperAbort(void *userData) {
         // .en-Modelle können nur Englisch.
         _language = multilingual ? ([language copy] ?: @"auto") : @"en";
         _detectedLanguage = _language;
+        _languageVotes = [NSCountedSet set];
         atomic_store(&_abortFlag, false);
     }
     return self;
@@ -157,6 +178,52 @@ static bool BrowserWhisperAbort(void *userData) {
 
 - (void)cancel {
     atomic_store(&_abortFlag, true);
+}
+
+- (void)lockLanguage:(NSString *)language {
+    if (language.length == 0 || ![self.language isEqualToString:@"auto"] || self.lockedLanguage != nil) {
+        return;
+    }
+    self.lockedLanguage = language;
+    self.detectedLanguage = language;
+    NSLog(@"%@ Sprache übernommen: %@", kSubtitleLogPrefix, language);
+}
+
+/// Sprache, mit der whisper rechnen soll: fest eingestellt, festgelegt oder „auto“ (erkennt je Abschnitt).
+- (NSString *)decodingLanguage {
+    return self.lockedLanguage ?: self.language;
+}
+
+/// Stimme eines Abschnitts mit Sprache zählen und ggf. festlegen (Queue der Auswertung).
+- (void)voteForDetectedLanguage:(NSString *)language {
+    if (language.length == 0 || self.lockedLanguage != nil || ![self.language isEqualToString:@"auto"]) {
+        return;
+    }
+    self.speechWindows++;
+    [self.languageVotes addObject:language];
+    NSString *winner = nil;
+    if ([self.languageVotes countForObject:language] >= 2) {
+        winner = language;
+    } else if (self.speechWindows >= 6) {
+        NSUInteger best = 0;
+        for (NSString *candidate in self.languageVotes) {
+            NSUInteger count = [self.languageVotes countForObject:candidate];
+            if (count > best) {
+                best = count;
+                winner = candidate;
+            }
+        }
+    }
+    if (winner == nil) {
+        NSLog(@"%@ Sprache erkannt: %@ (Abschnitt %lu, noch nicht festgelegt)", kSubtitleLogPrefix, language, (unsigned long)self.speechWindows);
+        return;
+    }
+    self.lockedLanguage = winner;
+    NSLog(@"%@ Sprache festgelegt: %@ nach %lu Abschnitten mit Sprache (Stimmen %@)", kSubtitleLogPrefix, winner,
+          (unsigned long)self.speechWindows, self.languageVotes);
+    if (self.languageLockHandler != nil) {
+        self.languageLockHandler(winner, self.speechWindows);
+    }
 }
 
 - (BOOL)loadModel:(NSError **)error {
@@ -253,7 +320,8 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
     params.single_segment = false;
     params.suppress_blank = true;
     params.suppress_nst = true;
-    params.language = self.language.UTF8String;
+    NSString *decodingLanguage = [self decodingLanguage];
+    params.language = decodingLanguage.UTF8String;
     params.detect_language = false;
     params.translate = false;
     params.temperature_inc = 0.0f;  // keine Wiederholungen mit höherer Temperatur: schneller, für Live-Untertitel genug
@@ -278,10 +346,12 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
     _totalCompute += compute;
     _totalAudio += seconds;
 
-    if ([self.language isEqualToString:@"auto"]) {
+    NSString *windowLanguage = nil;
+    if ([decodingLanguage isEqualToString:@"auto"]) {
         const char *lang = whisper_lang_str(whisper_full_lang_id(_context));
         if (lang != NULL) {
-            self.detectedLanguage = [NSString stringWithUTF8String:lang];
+            windowLanguage = [NSString stringWithUTF8String:lang];
+            self.detectedLanguage = windowLanguage;
         }
     }
 
@@ -303,6 +373,9 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
         NSTimeInterval t1 = startTime + whisper_full_get_segment_t1(_context, i) / 100.0;
         t1 = MIN(t1, startTime + seconds);
         [cues addObject:[[BrowserSubtitleCue alloc] initWithStart:t0 end:t1 text:text]];
+    }
+    if (windowLanguage != nil && cues.count > 0) {
+        [self voteForDetectedLanguage:windowLanguage];  // nur Abschnitte mit Sprache zählen (nicht Musik/Stille)
     }
     NSLog(@"%@ Abschnitt %.1f s @ %.1f s: %lu Segmente in %.2f s (RTF %.2f, Schnitt %.2f), ctx %d, Sprache %@, Speicher %.0f MB%@%@",
           kSubtitleLogPrefix, seconds, startTime, (unsigned long)cues.count, compute, compute / seconds,
