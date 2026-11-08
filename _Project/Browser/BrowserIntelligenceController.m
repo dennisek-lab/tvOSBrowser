@@ -8,6 +8,7 @@
 #import "BrowserIntelligence.h"
 #import "BrowserMotion.h"
 #import "BrowserWebView.h"
+#import "BrowserAppleTranslator.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -612,6 +613,8 @@ static const CGFloat kAnswerPaddingY = 34.0;
 @property (nonatomic) NSTimeInterval answerElapsed;
 /// Hosts, denen der Hinweis in dieser Sitzung schon angeboten wurde (nicht bei jeder Unterseite erneut).
 @property (nonatomic, strong) NSMutableSet<NSString *> *offeredHosts;
+/// Laufende Apple-Übersetzungen im DOM, je WebView (Tab).
+@property (nonatomic, strong) NSMapTable<BrowserWebView *, BrowserPageTranslation *> *pageTranslations;
 @end
 
 @implementation BrowserIntelligenceController
@@ -625,6 +628,9 @@ static const CGFloat kAnswerPaddingY = 34.0;
         _webViewProvider = [webViewProvider copy];
         _feedbackHandler = [feedbackHandler copy];
         _offeredHosts = [NSMutableSet set];
+        _pageTranslations = [NSMapTable weakToStrongObjectsMapTable];
+        // Sprachpaare früh holen: das Menü zeigt dann gleich „Apple“ statt „Google“.
+        [BrowserAppleTranslator.sharedTranslator prepareWithCompletion:nil];
     }
     return self;
 }
@@ -694,6 +700,12 @@ static const CGFloat kAnswerPaddingY = 34.0;
 #pragma mark Übersetzen
 
 - (BOOL)translateCurrentPageFromHint:(BOOL)fromHint {
+    return [self translateCurrentPageFromHint:fromHint forceGoogle:NO];
+}
+
+/// Übersetzen: zuerst Apple direkt in der Seite (Cookies und Anmeldung bleiben, Zurückschalten ohne Neuladen),
+/// Google (translate.goog) als Rückfall, wenn Apple die Sprache nicht kann oder scheitert.
+- (BOOL)translateCurrentPageFromHint:(BOOL)fromHint forceGoogle:(BOOL)forceGoogle {
     BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
     NSURL *url = webView.request.URL;
     [self dismissTranslationHint];
@@ -701,44 +713,125 @@ static const CGFloat kAnswerPaddingY = 34.0;
         [self feedback:@"Keine Seite geladen" symbol:@"translate" success:NO];
         return NO;
     }
-    if ([BrowserIntelligence isTranslationProxyURL:url]) {
+    if ([BrowserIntelligence isTranslationProxyURL:url] || [self appleTranslationForWebView:webView] != nil) {
         [self feedback:@"Seite ist schon übersetzt" symbol:@"translate" success:YES];
         return NO;
     }
     NSString *target = BrowserIntelligence.systemLanguageCode;
     NSURL *proxy = [BrowserIntelligence translationProxyURLForURL:url targetLanguage:target];
-    NSLog(@"[AI] übersetzen %@ -> %@", url.absoluteString, proxy.absoluteString ?: @"(nicht möglich)");
-    if (proxy == nil) {
+    NSLog(@"[AI] übersetzen %@ (Google-Rückfall %@)", url.absoluteString, proxy.absoluteString ?: @"nicht möglich");
+    if (proxy == nil && (forceGoogle || ![url.scheme.lowercaseString hasPrefix:@"http"])) {
         [self feedback:@"Diese Seite lässt sich nicht übersetzen" symbol:@"translate" success:NO];
         return NO;
     }
-    if (fromHint) {
-        [self loadTranslation:proxy inWebView:webView target:target];
-        return YES;
-    }
-    // Befehl oder Menü: Seiten, die schon in der Systemsprache sind, nicht über Google schicken.
+    // Seiten, die schon in der Systemsprache sind, nicht übersetzen (der Hinweis erscheint dort ohnehin nicht).
     [BrowserIntelligence.sharedIntelligence languageInfoForWebView:webView completion:^(BrowserPageLanguageInfo *info) {
         if (![webView.request.URL isEqual:url]) {
             return;
         }
-        if (info.confidence >= 0.65 && [info.language.lowercaseString hasPrefix:target]) {
+        BOOL sure = info.confidence >= 0.65 && info.language.length > 0;
+        if (!fromHint && sure && [info.language.lowercaseString hasPrefix:target]) {
             NSLog(@"[AI] übersetzen: Seite ist schon %@", info.language);
             [self feedback:[NSString stringWithFormat:@"Seite ist schon auf %@", [BrowserIntelligence displayNameForLanguage:target]]
                     symbol:@"translate" success:YES];
             return;
         }
-        [self loadTranslation:proxy inWebView:webView target:target];
+        if (forceGoogle) {
+            [self loadTranslation:proxy inWebView:webView target:target];
+            return;
+        }
+        [self startAppleTranslationInWebView:webView url:url language:sure ? info.language : nil target:target googleFallback:proxy];
     }];
     return YES;
 }
 
+- (nullable BrowserPageTranslation *)appleTranslationForWebView:(nullable BrowserWebView *)webView {
+    BrowserPageTranslation *translation = webView != nil ? [self.pageTranslations objectForKey:webView] : nil;
+    if (translation != nil && !translation.active) {
+        [self.pageTranslations removeObjectForKey:webView];
+        return nil;
+    }
+    return translation;
+}
+
+- (void)startAppleTranslationInWebView:(BrowserWebView *)webView url:(NSURL *)url language:(nullable NSString *)language
+                                target:(NSString *)target googleFallback:(nullable NSURL *)proxy {
+    BrowserAppleTranslator *apple = BrowserAppleTranslator.sharedTranslator;
+    [apple prepareWithCompletion:^(BOOL available) {
+        if (![webView.request.URL isEqual:url]) {
+            return;
+        }
+        BOOL pairKnown = language == nil || [apple localesForSourceLanguage:language targetLanguage:target] != nil;
+        if (!available || !pairKnown) {
+            NSLog(@"[AI] Apple-Übersetzung %@ (%@ -> %@), nehme Google", available ? @"kann das Sprachpaar nicht" : @"nicht verfügbar",
+                  language ?: @"?", target);
+            if (proxy != nil) {
+                [self loadTranslation:proxy inWebView:webView target:target];
+            } else {
+                [self feedback:@"Diese Seite lässt sich nicht übersetzen" symbol:@"translate" success:NO];
+            }
+            return;
+        }
+        BrowserPageTranslation *translation = [[BrowserPageTranslation alloc] initWithWebView:webView sourceLanguage:language targetLanguage:target];
+        [self.pageTranslations setObject:translation forKey:webView];
+        [self feedback:@"Wird übersetzt …" symbol:@"translate" success:YES];
+        CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+        __weak typeof(self) weakSelf = self;
+        [translation startWithFirstBatchHandler:^(BOOL ok, NSError *error) {
+            typeof(self) self_ = weakSelf;
+            NSLog(@"[AI] Apple-Übersetzung erster Stapel %@ nach %.2f s%@", ok ? @"ok" : @"fehlgeschlagen", CFAbsoluteTimeGetCurrent() - start,
+                  error != nil ? [NSString stringWithFormat:@": %@ %ld %@", error.domain, (long)error.code, error.localizedDescription] : @"");
+            if (ok || self_ == nil) {
+                return;
+            }
+            if ([self_.pageTranslations objectForKey:webView] == translation) {
+                [self_.pageTranslations removeObjectForKey:webView];
+            }
+            if (error.code == BrowserAppleTranslatorErrorPageGone || ![webView.request.URL isEqual:url]) {
+                return;
+            }
+            if (error.code == BrowserAppleTranslatorErrorNoText) {
+                [self_ feedback:@"Kein Text zum Übersetzen" symbol:@"translate" success:NO];
+                return;
+            }
+            if (proxy != nil) {
+                [self_ feedback:@"Apple-Übersetzung nicht möglich, nehme Google" symbol:@"translate" success:NO];
+                [webView loadRequest:[NSURLRequest requestWithURL:proxy]];
+            } else {
+                [self_ feedback:@"Übersetzung nicht möglich" symbol:@"translate" success:NO];
+            }
+        }];
+    }];
+}
+
 - (BOOL)currentPageIsTranslated {
     BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
-    return [BrowserIntelligence isTranslationProxyURL:webView.request.URL];
+    return [BrowserIntelligence isTranslationProxyURL:webView.request.URL] || [self appleTranslationForWebView:webView] != nil;
+}
+
+- (NSString *)translationProviderName {
+    BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    if ([self appleTranslationForWebView:webView] != nil) {
+        return @"Apple";
+    }
+    if ([BrowserIntelligence isTranslationProxyURL:webView.request.URL]) {
+        return @"Google";
+    }
+    return BrowserAppleTranslator.sharedTranslator.available ? @"Apple" : @"Google";
 }
 
 - (BOOL)showOriginalOfCurrentPage {
     BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    BrowserPageTranslation *translation = [self appleTranslationForWebView:webView];
+    if (translation != nil) {
+        [self.pageTranslations removeObjectForKey:webView];
+        NSLog(@"[AI] Übersetzung beenden (Apple) %@", webView.request.URL.absoluteString);
+        [translation stopRestoringOriginal:YES completion:^(NSUInteger restored) {
+            NSLog(@"[AI] Original wiederhergestellt: %lu Textknoten", (unsigned long)restored);
+        }];
+        [self feedback:@"Original" symbol:@"translate" success:YES];
+        return YES;
+    }
     NSURL *original = [BrowserIntelligence originalURLForTranslationProxyURL:webView.request.URL];
     NSLog(@"[AI] Übersetzung beenden %@ -> %@", webView.request.URL.absoluteString, original.absoluteString ?: @"(keine)");
     if (original == nil) {
@@ -916,7 +1009,13 @@ static const NSTimeInterval kAnswerDuration = 25.0;
 
 #pragma mark Seitenereignisse
 
-- (void)pageDidStartLoadInWebView:(__unused BrowserWebView *)webView {
+- (void)pageDidStartLoadInWebView:(BrowserWebView *)webView {
+    BrowserPageTranslation *translation = [self.pageTranslations objectForKey:webView];
+    if (translation != nil) {
+        // Neues Dokument: die Übersetzung geht mit dem alten (nichts zurückzusetzen).
+        [self.pageTranslations removeObjectForKey:webView];
+        [translation stopRestoringOriginal:NO completion:nil];
+    }
     [self dismissSummary];
     [self dismissTranslationHint];
     [self dismissAnswerClearingHighlight:NO]; // neue Seite: die Markierung geht mit dem alten Dokument
@@ -1011,6 +1110,10 @@ static const NSTimeInterval kAnswerDuration = 25.0;
         }
         return YES;
     }
+    if ([step hasPrefix:@"ltprobe"]) {
+        [BrowserAppleTranslator.sharedTranslator runProbeDumpingClasses:[step isEqualToString:@"ltprobe:dump"]];
+        return YES;
+    }
     if ([step isEqualToString:@"summarize"]) {
         NSLog(@"[SelfTest] summarize %@", webView.request.URL.absoluteString ?: @"-");
         [self summarizeCurrentPage];
@@ -1021,6 +1124,20 @@ static const NSTimeInterval kAnswerDuration = 25.0;
         NSLog(@"[SelfTest] translate %@ -> %@", url.absoluteString ?: @"-",
               [BrowserIntelligence translationProxyURLForURL:url targetLanguage:BrowserIntelligence.systemLanguageCode] ?: @"-");
         [self translateCurrentPage];
+        return YES;
+    }
+    if ([step isEqualToString:@"translate:google"]) {
+        NSLog(@"[SelfTest] translate:google %@", webView.request.URL.absoluteString ?: @"-");
+        [self translateCurrentPageFromHint:NO forceGoogle:YES];
+        return YES;
+    }
+    if ([step isEqualToString:@"translate:state"]) {
+        BrowserPageTranslation *translation = [self appleTranslationForWebView:webView];
+        NSLog(@"[SelfTest] translate:state übersetzt=%d Anbieter=%@ Apple verfügbar=%d", self.currentPageIsTranslated,
+              self.translationProviderName, BrowserAppleTranslator.sharedTranslator.available);
+        [translation debugStateWithCompletion:^(NSString *state) {
+            NSLog(@"[SelfTest] translate:state %@", state);
+        }];
         return YES;
     }
     if ([step isEqualToString:@"translate:hint"]) {

@@ -32,8 +32,11 @@
 /// Intelligente Funktionen (BrowserIntelligenceController), Menü „Diese Seite“.
 - (void)browserSummarizePage;
 - (void)browserTranslatePage;
-/// Läuft die Seite gerade übersetzt (translate.goog)? Dann bietet das Menü „Übersetzung beenden“ statt „Übersetzen“.
+/// Läuft die Seite gerade übersetzt (Apple im DOM oder translate.goog)? Dann bietet das Menü „Übersetzung beenden“
+/// statt „Übersetzen“.
 - (BOOL)browserCurrentPageIsTranslated;
+/// "Apple" oder "Google": womit übersetzt ist bzw. würde (Detail der Menüzeile).
+- (nullable NSString *)browserTranslationProviderName;
 - (void)browserShowOriginalPage;
 
 @end

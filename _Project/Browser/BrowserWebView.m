@@ -995,6 +995,37 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, handler);
 }
 
+- (void)evaluateJavaScript:(NSString *)script inContentWorldNamed:(NSString *)worldName
+             resultHandler:(void (^)(id, NSError *))resultHandler {
+    static NSMutableDictionary<NSString *, id> *worlds;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        worlds = [NSMutableDictionary dictionary];
+    });
+    Class worldClass = NSClassFromString(@"WKContentWorld");
+    SEL named = NSSelectorFromString(@"worldWithName:");
+    SEL selector = NSSelectorFromString(@"evaluateJavaScript:inFrame:inContentWorld:completionHandler:");
+    id world = worlds[worldName];
+    if (world == nil && [worldClass respondsToSelector:named]) {
+        world = ((id (*)(id, SEL, id))objc_msgSend)(worldClass, named, worldName);
+        if (world != nil) {
+            worlds[worldName] = world;
+        }
+    }
+    if (world == nil || script.length == 0 || ![self.runtimeWebView respondsToSelector:selector]) {
+        [self evaluateJavaScriptAsync:script resultHandler:resultHandler];
+        return;
+    }
+    void (^handler)(id, NSError *) = ^(id result, NSError *error) {
+        if (resultHandler != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                resultHandler(result, error);
+            });
+        }
+    };
+    ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(self.runtimeWebView, selector, script, nil, world, handler);
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     ((UIView *)self.runtimeWebView).frame = self.bounds;

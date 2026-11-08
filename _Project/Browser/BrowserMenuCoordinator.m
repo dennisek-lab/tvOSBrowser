@@ -1066,13 +1066,15 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self.host browserSummarizePage];
         }]];
     }
+    NSString *provider = [self.host respondsToSelector:@selector(browserTranslationProviderName)]
+        ? [self.host browserTranslationProviderName] : nil;
     if ([self.host respondsToSelector:@selector(browserCurrentPageIsTranslated)] && [self.host browserCurrentPageIsTranslated] &&
         [self.host respondsToSelector:@selector(browserShowOriginalPage)]) {
-        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzung beenden" detail:@"Original" handler:^{
+        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzung beenden" detail:provider ?: @"Original" handler:^{
             [self.host browserShowOriginalPage];
         }]];
     } else if ([self.host respondsToSelector:@selector(browserTranslatePage)]) {
-        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzen" detail:@"Google" handler:^{
+        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzen" detail:provider ?: @"Google" handler:^{
             [self.host browserTranslatePage];
         }]];
     }

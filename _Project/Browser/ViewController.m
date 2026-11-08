@@ -2027,6 +2027,10 @@ static NSString *BrowserDisplayHost(NSString *host) {
     [self.intelligenceController showOriginalOfCurrentPage];
 }
 
+- (NSString *)browserTranslationProviderName {
+    return self.intelligenceController.translationProviderName;
+}
+
 - (void)browserCommandBeginAddressEditing {
     [self beginAddressEditing];
 }

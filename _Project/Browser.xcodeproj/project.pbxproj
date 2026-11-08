@@ -69,7 +69,9 @@
 		B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */ = {isa = PBXBuildFile; fileRef = 835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */; };
 		87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */; };
 		BC7377FCB96ADE6D0703EE8F /* Reader in Resources */ = {isa = PBXBuildFile; fileRef = 02AB7C306633303A188E18EE /* Reader */; };
+		A1B2C3D4E5F6A7B8C9D0E1F5 /* PageTranslation in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F6 /* PageTranslation */; };
 		F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */ = {isa = PBXBuildFile; fileRef = EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* BrowserAppleTranslator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F4 /* BrowserAppleTranslator.m */; };
 		C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */; };
 		3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */; };
 		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
@@ -198,8 +200,11 @@
 		C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleController.h; sourceTree = "<group>"; };
 		52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleController.m; sourceTree = "<group>"; };
 		02AB7C306633303A188E18EE /* Reader */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Reader; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F6 /* PageTranslation */ = {isa = PBXFileReference; lastKnownFileType = folder; path = PageTranslation; sourceTree = "<group>"; };
 		083704A0266ED4493FABF426 /* BrowserReaderMode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserReaderMode.h; sourceTree = "<group>"; };
 		EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserReaderMode.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F3 /* BrowserAppleTranslator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAppleTranslator.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F4 /* BrowserAppleTranslator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAppleTranslator.m; sourceTree = "<group>"; };
 		1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAppIntents.swift; sourceTree = "<group>"; };
 		CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFaviconCache.h; sourceTree = "<group>"; };
@@ -410,6 +415,8 @@
 				52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */,
 				083704A0266ED4493FABF426 /* BrowserReaderMode.h */,
 				EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */,
+				A1B2C3D4E5F6A7B8C9D0E1F3 /* BrowserAppleTranslator.h */,
+				A1B2C3D4E5F6A7B8C9D0E1F4 /* BrowserAppleTranslator.m */,
 				1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */,
 				2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */,
 				70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */,
@@ -521,6 +528,7 @@
 				7268B5C1E882F5DAB9A49DE8 /* Scriptlets */,
 				7AADFF423E379F3DCAE70806 /* WhisperModels */,
 				02AB7C306633303A188E18EE /* Reader */,
+				A1B2C3D4E5F6A7B8C9D0E1F6 /* PageTranslation */,
 				5DC453250BE8BA6BD64CDA80 /* WebSubtitles */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
@@ -598,6 +606,7 @@
 				58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */,
 				E4895E2842B91B8723258DD5 /* WhisperModels in Resources */,
 				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,
+				A1B2C3D4E5F6A7B8C9D0E1F5 /* PageTranslation in Resources */,
 				3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */,
 				33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
@@ -688,6 +697,7 @@
 				68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */,
 				C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */,
 				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* BrowserAppleTranslator.m in Sources */,
 				C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */,
 				232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */,
 				7A1D3C5E9B2F4A6C8E0D1F21 /* BrowserAddressInputController.m in Sources */,
