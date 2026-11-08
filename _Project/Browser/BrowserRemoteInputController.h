@@ -21,6 +21,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)browserRemoteInputControllerHandleMenuPress;
 - (void)browserRemoteInputControllerHandlePlayPausePress;
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress;
+@optional
+/// Siri-Taste zweimal kurz (erkannt an sehr kurzen „rechts“-Drücken ohne Clickpad-Klick, siehe BrowserRemoteInputController.m).
+- (void)browserRemoteInputControllerHandleSiriDoublePress;
+@required
 /// Play/Pause gehalten (ab 0,6 s).
 - (void)browserRemoteInputControllerHandlePlayPauseLongPress;
 /// Einrastziele für den magnetischen Zeiger (Seitenelemente und Knöpfe der oberen Leiste), in Koordinaten von rootView.

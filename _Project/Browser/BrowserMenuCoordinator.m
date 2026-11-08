@@ -6,6 +6,7 @@
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserFilterListUpdater.h"
+#import "BrowserPerf.h"
 #import "BrowserCookieConsentBlocker.h"
 #import "BrowserSubtitleEngine.h"
 #import "BrowserWebView.h"
@@ -106,12 +107,33 @@ static CGFloat const kMenuIconSide = 50.0;
 static CGFloat const kMenuSwitchWidth = 64.0;
 static CGFloat const kMenuSwitchHeight = 38.0;
 
+/// Wertkacheln (mit „detail“) lassen die Leiste offen, außer sie navigieren, öffnen einen Dialog oder bauen die
+/// Webansicht neu. Aktionen ohne Wert schließen sie, bis auf die Schriftgröße, die man mehrfach drückt.
+static BOOL BrowserMenuItemKeepsMenuOpen(NSString *title, BOOL hasDetail) {
+    static NSSet<NSString *> *closing;
+    static NSSet<NSString *> *staying;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        closing = [NSSet setWithArray:@[@"Zusammenfassen", @"Übersetzen", @"Übersetzung beenden",
+                                        @"Startseite festlegen", @"Filterlisten aktualisieren", @"Obere Leiste",
+                                        @"Browser-Kennung"]];
+        staying = [NSSet setWithArray:@[@"Schrift größer", @"Schrift kleiner", @"Schriftgröße zurücksetzen"]];
+    });
+    if (title == nil) {
+        return NO;
+    }
+    return hasDetail ? ![closing containsObject:title] : [staying containsObject:title];
+}
+
 @interface BrowserAdvancedMenuItem : NSObject
 
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *detail;
 @property (nonatomic) UIAlertActionStyle style;
 @property (nonatomic, copy) BrowserAdvancedMenuItemHandler handler;
+/// Schalter und Einstellwerte: Die Leiste bleibt nach der Auswahl offen und zeigt den neuen Wert. Alles, was
+/// navigiert oder einen Dialog öffnet, schließt sie wie bisher (Nutzerwunsch 9. November 2026).
+@property (nonatomic) BOOL keepsMenuOpen;
 
 + (instancetype)itemWithTitle:(NSString *)title
                         style:(UIAlertActionStyle)style
@@ -340,6 +362,9 @@ static CGFloat const kMenuSwitchHeight = 38.0;
                      sections:(NSArray<BrowserAdvancedMenuSection *> *)sections
                    footerText:(NSString *)footerText;
 
+/// Baut die Abschnitte nach einer Einstellung neu, damit die Kacheln den neuen Wert zeigen.
+@property (nonatomic, copy, nullable) NSArray<BrowserAdvancedMenuSection *> *(^sectionsProvider)(void);
+
 @end
 
 @interface BrowserAdvancedMenuViewController ()
@@ -473,12 +498,27 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     ]];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    // Sofort hereinfedern, parallel zur Überblendung der Präsentation. Früher erst in viewDidAppear, also nach der
+    // ganzen Überblendung des (durchsichtigen) Controllers: Die Leiste kam spürbar verzögert (Nutzer 9. November 2026).
+    [self.view layoutIfNeeded];
+    [self animateInIfNeeded];
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self animateInIfNeeded];
+}
+
+- (void)animateInIfNeeded {
     if (self.didAnimateIn) {
         return;
     }
     self.didAnimateIn = YES;
+#if DEBUG
+    BrowserPerfLog(@"Seitenleiste: Hereinfedern beginnt");
+#endif
     self.panelTrailingConstraint.constant = -16.0;
     // Liquid Glass: Glas materialisiert beim Hereinfedern; schlicht: einblenden und gleiten (BrowserMotion).
     [BrowserMotion glassAppear:self.panelView effect:self.panelView.effect kind:BrowserMotionKindAppear alongside:^{
@@ -560,6 +600,16 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     BrowserAdvancedMenuSection *section = self.sections[(NSUInteger)indexPath.section];
     BrowserAdvancedMenuItem *item = section.items[(NSUInteger)indexPath.item];
     BrowserAdvancedMenuItemHandler handler = item.handler;
+    if (item.keepsMenuOpen && !self.dismissalInProgress) {
+#if DEBUG
+        NSLog(@"[Menu] Auswahl „%@“: Leiste bleibt offen", item.title);
+#endif
+        if (handler != nil) {
+            handler();
+        }
+        [self refreshSections];
+        return;
+    }
     [self dismissMenuWithCompletion:^{
         if (handler != nil) {
             handler();
@@ -569,6 +619,35 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
 - (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {
     return @[self.collectionView];
+}
+
+/// Gleiche Struktur: sichtbare Kacheln an Ort und Stelle neu befüllen, damit der Fokus bleibt, wo er ist.
+/// Hat sich die Zahl der Kacheln geändert (z. B. Untertitel aus blendet die Sprache aus), alles neu laden.
+- (void)refreshSections {
+    if (self.sectionsProvider == nil) {
+        return;
+    }
+    NSArray<BrowserAdvancedMenuSection *> *fresh = self.sectionsProvider();
+    BOOL sameShape = fresh.count == self.sections.count;
+    for (NSUInteger index = 0; sameShape && index < fresh.count; index++) {
+        sameShape = fresh[index].items.count == self.sections[index].items.count;
+    }
+    self.sections = fresh;
+    if (!sameShape) {
+        [self.collectionView reloadData];
+        return;
+    }
+    for (NSIndexPath *indexPath in self.collectionView.indexPathsForVisibleItems) {
+        BrowserAdvancedMenuTile *tile = (BrowserAdvancedMenuTile *)[self.collectionView cellForItemAtIndexPath:indexPath];
+        if (![tile isKindOfClass:BrowserAdvancedMenuTile.class]) {
+            continue;
+        }
+        BrowserAdvancedMenuSection *section = fresh[(NSUInteger)indexPath.section];
+        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+            [tile configureWithItem:section.items[(NSUInteger)indexPath.item] tint:BrowserMenuTintForSection(section.title)];
+            [tile layoutIfNeeded];
+        } completion:nil];
+    }
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
@@ -603,9 +682,16 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (void)showAdvancedMenu {
+#if DEBUG
+    BrowserPerfLog(@"Seitenleiste: öffnen");
+#endif
     BrowserAdvancedMenuViewController *menuViewController = [[BrowserAdvancedMenuViewController alloc] initWithTitle:@"tvOS Browser"
                                                                                                             sections:[self advancedMenuSections]
                                                                                                           footerText:[self advancedMenuFooterText]];
+    __weak typeof(self) weakSelf = self;
+    menuViewController.sectionsProvider = ^NSArray<BrowserAdvancedMenuSection *> *{
+        return [weakSelf advancedMenuSections] ?: @[];
+    };
     [self.host browserPresentViewController:menuViewController];
 }
 
@@ -624,7 +710,9 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 - (BrowserAdvancedMenuItem *)advancedMenuItemWithTitle:(NSString *)title
                                                   style:(UIAlertActionStyle)style
                                                 handler:(BrowserAdvancedMenuItemHandler)handler {
-    return [BrowserAdvancedMenuItem itemWithTitle:title style:style handler:handler];
+    BrowserAdvancedMenuItem *item = [BrowserAdvancedMenuItem itemWithTitle:title style:style handler:handler];
+    item.keepsMenuOpen = BrowserMenuItemKeepsMenuOpen(title, NO);
+    return item;
 }
 
 - (BrowserAdvancedMenuItem *)advancedMenuItemWithTitle:(NSString *)title
@@ -632,6 +720,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                                 handler:(BrowserAdvancedMenuItemHandler)handler {
     BrowserAdvancedMenuItem *item = [BrowserAdvancedMenuItem itemWithTitle:title style:UIAlertActionStyleDefault handler:handler];
     item.detail = detail ?: @"";
+    item.keepsMenuOpen = BrowserMenuItemKeepsMenuOpen(title, YES);
     return item;
 }
 
