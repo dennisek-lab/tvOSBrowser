@@ -36,7 +36,7 @@ Kurz gesagt: **Siri auf dem Apple TV löst nach allem, was belegbar ist, keine e
 
 ### (a) Sprachbefehle über das Diktatfeld
 
-Der Weg: Play/Pause halten (heute schon) oder das Adressfeld öffnen, dann die Siri-Taste halten und sprechen. tvOS setzt den erkannten Satz auf einmal ins Feld. `searchFieldDidChange:` in `ViewController.m` und die Startansicht (`BrowserStartViewController.m`) erkennen das bereits und lösen sofort aus. Vor `openAddressOrSearch:` kommt neu ein Abgleich mit der Befehlstabelle:
+Der Weg: Play/Pause halten (heute schon) oder das Adressfeld öffnen, dann die Siri-Taste halten und sprechen. tvOS setzt den erkannten Satz auf einmal ins Feld. Die Adresseingabe erkennt das bereits und löst sofort aus (heute `BrowserAddressInputController`, früher `searchFieldDidChange:` und die Startansicht). Vor `openAddressOrSearch:` kommt neu ein Abgleich mit der Befehlstabelle:
 
 - **Nur kurze, ganze Sätze** gelten als Befehl („Reader“, „Reader an“, „zurück“, „neuer Tab“, „neu laden“, „Tabs“, „Favorit“). Groß- und Kleinschreibung, Satzzeichen am Ende und Füllwörter wie „bitte“ werden ignoriert. Alles andere bleibt Suche oder Adresse wie bisher.
 - **Präfixe** für Eindeutigkeit: „suche [nach] X“ und „google X“ suchen immer, „öffne X“ und „geh zu X“ öffnen immer eine Adresse. Wer wirklich nach dem Wort „Reader“ suchen will, sagt „suche Reader“.
@@ -179,7 +179,7 @@ Gesamt ohne iPhone-Steuerung: etwa 2,5 Tage, mit iPhone-Steuerung etwa 5 Tage.
 
 Gebaut nach Abschnitt 5. Dateien: `BrowserCommand.m/.h` (Tabelle), `BrowserCommandParser.m/.h`, `BrowserCommandRouter.m/.h` (Router, Host-Protokoll `BrowserCommandHost`, Glas-Rückmeldung), Host und Einstieg `handleEnteredAddressText:` in `ViewController.m`. Siri (`handleSiriCommandNotification:`) geht jetzt ebenfalls über den Router; die Swift-Seite ist unverändert.
 
-**Bedienung:** Adresse öffnen (zweimal oben oder Klick auf die Adresse), Feld anklicken bzw. Play/Pause, Siri-Taste halten und sprechen. Nach 1,5 s (Diktat) oder mit „Suchen“ wertet die App den Text aus. Erkannte Befehle zeigen unten eine Glas-Kapsel, z. B. „Reader eingeschaltet“. Der Platzhalter über der Tastatur lautet „Suchbegriff, Adresse oder z. B. „Reader““ (auf tvOS zeigt die Vollbild-Tastatur den Platzhalter groß an, den Dialogtext nicht). Im Bedienungsdialog steht eine Zeile „Sprachbefehle“.
+**Bedienung:** Einmal auf die Leiste drücken (oder zweimal oben, Play/Pause halten). Die Systemtastatur öffnet sich direkt unter der Leiste und ist schon fokussiert. Dann die Siri-Taste halten und sprechen, kein weiterer Klick nötig. Nach 1,5 s (Diktat) oder mit „Suchen“ bzw. „Los“ wertet die App den Text aus. Erkannte Befehle zeigen unten eine Glas-Kapsel, z. B. „Reader eingeschaltet“. Der Platzhalter in der Suchzeile lautet „Suchbegriff oder Adresse“. Technik und Grenzen: `docs/ERWEITERUNGEN.md`, Abschnitt 13.1. Im Bedienungsdialog steht eine Zeile „Sprachbefehle“.
 
 | Name | Argument | Beispiele (Diktat) | Aktion |
 |:--|:--|:--|:--|

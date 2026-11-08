@@ -23,6 +23,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Einblenden: Karte wächst unterhalb von barFrame (eigene Koordinaten) aus der Leiste heraus, Seite wird gedimmt.
 - (void)presentBelowBarFrame:(CGRect)barFrame animated:(BOOL)animated;
 
+/// Platz für die Systemtastatur zwischen Leiste und Karte (0 = Karte direkt unter der Leiste). Die Karte rutscht
+/// nach unten bzw. zurück, die Kacheln bleiben Zeigerziele.
+@property (nonatomic, readonly) CGFloat keyboardSpace;
+- (void)setKeyboardSpace:(CGFloat)keyboardSpace animated:(BOOL)animated;
+
 /// Ausblenden (Karte schrumpft in die Leiste zurück), danach removeFromSuperview.
 - (void)dismissAnimated:(BOOL)animated completion:(nullable void (^)(void))completion;
 

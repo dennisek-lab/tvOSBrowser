@@ -30,7 +30,8 @@
 #import "BrowserReaderMode.h"
 #import "BrowserRemoteInputController.h"
 #import "BrowserSessionStore.h"
-#import "BrowserStartViewController.h"
+#import "BrowserAddressInputController.h"
+#import "BrowserMotion.h"
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
 #import "BrowserTabOverviewController.h"
@@ -62,8 +63,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
 @property (nonatomic) BrowserNowPlayingController *nowPlayingController;
 @property (nonatomic) CFTimeInterval lastFullscreenExitAttempt;
-@property (nonatomic, weak) UIAlertController *searchAlert;
-@property (nonatomic) NSUInteger searchAlertLastTextLength;
+/// Offene Systemtastatur der Adressleiste (nil = zu). Gehört zum Bearbeiten-Zustand (addressPanel).
+@property (nonatomic, nullable) BrowserAddressInputController *addressInput;
 @property (nonatomic) BrowserViewModel *viewModel;
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
@@ -87,11 +88,13 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @interface BrowserSelfTestPress : UIPress
 @property (nonatomic) UIPressType selfTestType;
 @property (nonatomic) UIPressPhase selfTestPhase;
+@property (nonatomic) NSTimeInterval selfTestTimestamp;
 @end
 
 @implementation BrowserSelfTestPress
 - (UIPressType)type { return self.selfTestType; }
 - (UIPressPhase)phase { return self.selfTestPhase; }
+- (NSTimeInterval)timestamp { return self.selfTestTimestamp; }
 @end
 
 #import <mach/mach.h>
@@ -376,13 +379,15 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     return;
                 }
                 if ([step hasPrefix:@"dictate:"]) {
-                    [self browserRemoteInputControllerHandlePlayPauseLongPress];
+                    // Wie Diktat: Adresseingabe öffnen (falls zu) und den ganzen Satz auf einmal einsetzen.
                     NSString *spoken = [step substringFromIndex:8];
+                    if (self.addressInput == nil) {
+                        [self beginAddressEditing];
+                    }
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        UITextField *field = self.searchAlert.textFields.firstObject;
-                        NSLog(@"[SelfTest] dictate field=%@ text=%@", field != nil ? @"ok" : @"nil", spoken);
-                        field.text = spoken;
-                        [NSNotificationCenter.defaultCenter postNotificationName:UITextFieldTextDidChangeNotification object:field];
+                        BrowserAddressInputController *input = self.addressInput;
+                        NSLog(@"[SelfTest] dictate field=%@ text=%@", input != nil ? @"ok" : @"nil", spoken);
+                        [input insertDictatedText:spoken];
                     });
                     return;
                 }
@@ -730,6 +735,42 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
 /// Schritte für Stabilitätstests: mem, memwarn, wkprobe, procs, stop, newtab, closetab, back, forward.
 - (BOOL)runStressSelfTestStep:(NSString *)step {
+    if ([step isEqualToString:@"addrtiles"]) {
+        // Fokus wie beim Wischen nach unten aus der Tastatur auf das unsichtbare Feld darunter (echter Fokuswechsel).
+        BrowserAddressInputController *input = self.addressInput;
+        NSLog(@"[SelfTest] addrtiles tastatur=%d", input != nil);
+        [input debugMoveFocusBelowKeyboard];
+        return YES;
+    }
+    if ([step isEqualToString:@"addrstate"]) {
+        id focused = [UIFocusSystem focusSystemForEnvironment:self.presentedViewController ?: self].focusedItem;
+        NSLog(@"[SelfTest] addrstate tabs=%d kompakt=%d karte=%d tastatur=%d presented=%@ text=\"%@\" fokus=%@ zeiger=%@ leisteEdit=%d",
+              self.tabOverviewController.visible, self.topMenuView.compact, self.addressPanel != nil, self.addressInput != nil, NSStringFromClass(self.presentedViewController.class),
+              self.addressInput.text ?: @"", focused != nil ? NSStringFromClass([focused class]) : @"-",
+              NSStringFromCGPoint(self.remoteInputController.cursorView.frame.origin), self.topMenuView.addressEditing);
+        return YES;
+    }
+    if ([step hasPrefix:@"selectdup"]) {
+        // Ein Auswahl-Druck kommt direkt (pressesEnded) und 0,3 s später nochmal über UIApplication sendEvent:
+        // (wie auf dem Gerät, wenn der erste Klick den Hauptthread lange belegt). Darf nur einmal wirken.
+        // selectdup:alt schickt die Kopie ohne Zeitstempel (Verhalten vor der Korrektur).
+        BOOL old = [step isEqualToString:@"selectdup:alt"];
+        BrowserSelfTestPress *press = [BrowserSelfTestPress new];
+        press.selfTestType = UIPressTypeSelect;
+        press.selfTestPhase = UIPressPhaseEnded;
+        press.selfTestTimestamp = CACurrentMediaTime();
+        NSLog(@"[SelfTest] selectdup direkt");
+        [self.remoteInputController handlePressesEnded:[NSSet setWithObject:press] withEvent:nil];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSLog(@"[SelfTest] selectdup Kopie über sendEvent (%@)", old ? @"ohne Zeitstempel" : @"gleicher Zeitstempel");
+            [NSNotificationCenter.defaultCenter postNotificationName:kBrowserGlobalSelectPressEndedNotification object:nil
+                                                            userInfo:old ? nil : @{@"timestamp": @(press.timestamp)}];
+        });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self runStressSelfTestStep:@"addrstate"];
+        });
+        return YES;
+    }
     if ([step isEqualToString:@"mem"]) {
         NSHashTable *closed = BrowserSelfTestClosedWebViews();
         id pool = [[[self.webview valueForKey:@"runtimeWebView"] valueForKey:@"configuration"] valueForKey:@"processPool"];
@@ -950,7 +991,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
 - (void)handleGlobalSelectPressEndedNotification:(NSNotification *)notification {
     (void)notification;
-    [self.remoteInputController handleGlobalSelectPressEndedNotification];
+    NSNumber *timestamp = [notification.userInfo[@"timestamp"] isKindOfClass:NSNumber.class] ? notification.userInfo[@"timestamp"] : nil;
+    [self.remoteInputController handleGlobalSelectPressEndedWithTimestamp:timestamp.doubleValue];
 }
 
 #pragma mark - Helpers
@@ -1032,12 +1074,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
             [self browserShowTabOverview];
             break;
         case BrowserTopBarActionURL:
-            // Klick auf die Adresse: Bearbeiten-Zustand (wie zweimal oben); im Zustand selbst öffnet das Feld die Eingabe.
-            if (self.addressPanel != nil) {
-                [self showAddressDictationInput];
-            } else {
-                [self beginAddressEditing];
-            }
+            // Klick auf die Adresse: Bearbeiten-Zustand mit Tastatur (bzw. nur die Tastatur, wenn der Zustand offen ist).
+            [self beginAddressEditing];
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
@@ -1171,97 +1209,12 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     }];
 }
 
-- (void)searchFieldDidEndOnExit:(UITextField *)textField {
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(submitSearchAlert) object:nil];
-    [self submitSearchAlert];
+/// Eingabe aus der Adressleiste fertig (Diktat oder Tastatur): wie bisher Befehl, Adresse oder Suche.
+- (void)submitAddressInputText:(NSString *)text {
+    [self endAddressEditingAnimated:YES];
+    [self handleEnteredAddressText:text];
 }
 
-- (void)searchFieldDidChange:(NSNotification *)notification {
-    UITextField *textField = notification.object;
-    if (![textField isKindOfClass:UITextField.class] || textField != self.searchAlert.textFields.firstObject) {
-        return;
-    }
-    NSUInteger previousLength = self.searchAlertLastTextLength;
-    self.searchAlertLastTextLength = textField.text.length;
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(submitSearchAlert) object:nil];
-    // Diktat (Siri-Taste halten) fügt den ganzen Satz auf einmal ein. Dann ohne weiteren Druck suchen.
-    if (previousLength == 0 && textField.text.length >= 3) {
-        [self performSelector:@selector(submitSearchAlert) withObject:nil afterDelay:1.5];
-    }
-}
-
-- (void)submitSearchAlert {
-    UIAlertController *alert = self.searchAlert;
-    NSString *text = alert.textFields.firstObject.text ?: @"";
-    if (alert == nil || text.length == 0) {
-        return;
-    }
-    self.searchAlert = nil;
-    [NSNotificationCenter.defaultCenter removeObserver:self name:UITextFieldTextDidChangeNotification object:nil];
-    [alert.textFields.firstObject resignFirstResponder];
-    __weak typeof(self) weakSelf = self;
-    [alert dismissViewControllerAnimated:YES completion:^{
-        [weakSelf handleEnteredAddressText:text];
-    }];
-}
-
-- (void)showInputURLorSearchGoogle {
-    [self showInputURLorSearchGoogleForDictation:NO];
-}
-
-/// Eingabe aus dem Diktierfeld: Standardtastatur (dort bietet tvOS das Diktat über die Siri-Taste an).
-- (void)showAddressDictationInput {
-    [self showInputURLorSearchGoogleForDictation:YES];
-}
-
-- (void)showInputURLorSearchGoogleForDictation:(BOOL)dictation {
-    if (self.presentedViewController != nil) {
-        [self dismissViewControllerAnimated:NO completion:nil];
-    }
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:dictation ? @"Sprechen, um zu diktieren" : @"Suchen oder Adresse eingeben"
-                                                                             message:dictation ? @"Siri-Taste halten und sprechen."
-                                                                                               : nil
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
-    __weak typeof(self) weakSelf = self;
-    // Aktionen des Dialogs halten ihn nur schwach, sonst Zyklus (jeder Such-/Adressdialog bliebe im Speicher).
-    __weak UIAlertController *weakAlert = alertController;
-    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        // Aus dem Diktierfeld: Standardtastatur, die tvOS mit Diktat-Hinweis (Siri-Taste) anbietet.
-        textField.keyboardType = dictation ? UIKeyboardTypeDefault : UIKeyboardTypeWebSearch;
-        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        textField.autocorrectionType = UITextAutocorrectionTypeNo;
-        // Auf tvOS steht der Platzhalter groß über der Tastatur (der Dialogtext nicht): Beispiel für einen Sprachbefehl.
-        textField.placeholder = @"Suchbegriff oder Adresse";
-        textField.returnKeyType = UIReturnKeySearch;
-        [textField addTarget:weakSelf action:@selector(searchFieldDidEndOnExit:) forControlEvents:UIControlEventEditingDidEndOnExit];
-    }];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Los"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        weakSelf.searchAlert = nil;
-        [weakSelf handleEnteredAddressText:weakAlert.textFields.firstObject.text];
-    }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Mit Google suchen"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        weakSelf.searchAlert = nil;
-        NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:weakAlert.textFields.firstObject.text];
-        if (request != nil) {
-            [weakSelf endAddressEditingAnimated:YES];
-            [weakSelf.webview loadRequest:request];
-        }
-    }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
-        weakSelf.searchAlert = nil;
-    }]];
-    self.searchAlert = alertController;
-    self.searchAlertLastTextLength = 0;
-    [NSNotificationCenter.defaultCenter removeObserver:self name:UITextFieldTextDidChangeNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(searchFieldDidChange:) name:UITextFieldTextDidChangeNotification object:nil];
-    [self presentViewController:alertController animated:YES completion:^{
-        [alertController.textFields.firstObject becomeFirstResponder];
-    }];
-}
 
 /// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
 - (void)browserRemoteInputControllerCompactTopBar {
@@ -1351,15 +1304,20 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     return name;
 }
 
-#pragma mark - Adresse bearbeiten (Diktierfeld und Aufklapp-Bereich)
+#pragma mark - Adresse bearbeiten (Systemtastatur, Diktat und Aufklapp-Bereich)
 
-/// Zweimal oben oder Klick auf die Adresse: Leiste ausklappen, Diktierfeld, darunter Favoriten/Oft/Zuletzt.
-/// Die Tastatur öffnet sich erst mit Klick auf das Feld (oder Play/Pause).
+/// Einziger Weg in die Adresseingabe (Klick auf Adresse oder Kapsel, zweimal oben, Play/Pause lang,
+/// Schnellmenü, Fehlerdialog, Sprachbefehl „Adresse“/„Suche“ ohne Begriff): Leiste ausklappen, darunter sofort
+/// die Systemtastatur mit Fokus (Siri-Taste halten = diktieren), darunter die Karte mit Favoriten/Oft/Zuletzt.
 - (void)beginAddressEditing {
-    if (self.addressPanel != nil || self.tabOverviewController.visible) {
+    if (self.tabOverviewController.visible) {
+        [self browserRemoteInputControllerDismissTabOverview];
+    }
+    if (self.addressPanel != nil) {
+        [self showAddressKeyboard];
         return;
     }
-    if (self.presentedViewController != nil) {
+    if (self.presentedViewController != nil && !self.presentedViewController.isBeingDismissed) {
         [self dismissViewControllerAnimated:NO completion:nil];
     }
     [self deactivateTopBarFocusMode];
@@ -1381,19 +1339,94 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [container insertSubview:panel belowSubview:self.topMenuView];
     self.addressPanel = panel;
     [panel reloadData];
+    // Platz für die Tastatur gleich beim Aufklappen lassen, sonst springt die Karte danach nach unten.
+    [panel setKeyboardSpace:BrowserAddressInputController.keyboardAreaHeight animated:NO];
     CGRect bar = [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:panel];
     [panel presentBelowBarFrame:bar animated:YES];
-
     [self.remoteInputController refreshInteractionState];
-    // Fokus auf das Diktierfeld.
-    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
-    [self.remoteInputController movePointerToPoint:CGPointMake(CGRectGetMidX(field), CGRectGetMidY(field))];
 #if DEBUG
     NSLog(@"[Address] Bearbeiten an, Kacheln=%lu", (unsigned long)panel.tileCount);
 #endif
+    [self showAddressKeyboard];
+}
+
+/// Systemtastatur unter der Leiste öffnen (Bearbeiten-Zustand muss offen sein). Doppelte Aufrufe öffnen nichts doppelt.
+- (void)showAddressKeyboard {
+    BrowserAddressPanelView *panel = self.addressPanel;
+    if (panel == nil || self.addressInput != nil) {
+        return;
+    }
+    UIViewController *presented = self.presentedViewController;
+    if (presented != nil) {
+        if (presented.isBeingDismissed) {
+            // Dialog schließt gerade (z. B. Schnellmenü „Adresse oder Suche“): danach öffnen.
+            __weak typeof(self) weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf showAddressKeyboard];
+            });
+            return;
+        }
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    BrowserAddressInputController *input = [BrowserAddressInputController new];
+    input.barFrame = [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:nil];
+    __weak typeof(self) weakSelf = self;
+    __weak BrowserAddressInputController *weakInput = input;
+    input.endHandler = ^(BrowserAddressInputEnd end, NSString *text) {
+        typeof(self) self_ = weakSelf;
+        // Veraltete Eingabe (inzwischen neu geöffnet oder Zustand beendet): nichts tun.
+        if (self_ == nil || self_.addressInput != weakInput) {
+            return;
+        }
+        self_.addressInput = nil;
+        switch (end) {
+            case BrowserAddressInputEndSubmitted:
+                [self_ submitAddressInputText:text ?: @""];
+                break;
+            case BrowserAddressInputEndToTiles:
+                [self_ addressKeyboardDidLeaveToTiles];
+                break;
+            case BrowserAddressInputEndCancelled:
+                [self_ endAddressEditingAnimated:YES];
+                break;
+        }
+    };
+    input.keyboardAreaHeightHandler = ^(CGFloat height) {
+        if (weakSelf.addressInput == weakInput) {
+            [weakSelf.addressPanel setKeyboardSpace:height animated:YES];
+        }
+    };
+    self.addressInput = input;
+    [panel setKeyboardSpace:BrowserAddressInputController.keyboardAreaHeight animated:YES];
+    [self presentViewController:input animated:YES completion:nil];
+}
+
+/// Aus der Tastatur nach unten gewischt: Tastatur zu, Karte rückt unter die Leiste, Zeiger auf die erste Kachel.
+- (void)addressKeyboardDidLeaveToTiles {
+    BrowserAddressPanelView *panel = self.addressPanel;
+    if (panel == nil) {
+        return;
+    }
+    [panel setKeyboardSpace:0.0 animated:YES];
+    [self.remoteInputController refreshInteractionState];
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([BrowserMotion durationForKind:BrowserMotionKindSnap] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) self_ = weakSelf;
+        if (self_.addressPanel != panel || self_.addressInput != nil) {
+            return;
+        }
+        [self_.remoteInputController pointerTargetsDidChange];
+        NSArray<NSValue *> *tiles = [panel pointerTargetRectsInView:self_.view];
+        CGRect target = tiles.count > 0 ? tiles.firstObject.CGRectValue
+                                        : [self_.topMenuView convertRect:self_.topMenuView.addressFieldFrame toView:self_.view];
+        [self_.remoteInputController movePointerToPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
+    });
 }
 
 - (void)endAddressEditingAnimated:(BOOL)animated {
+    BrowserAddressInputController *input = self.addressInput;
+    self.addressInput = nil;
+    [input closeSilentlyAnimated:animated];
     BrowserAddressPanelView *panel = self.addressPanel;
     if (panel == nil) {
         return;
@@ -1408,11 +1441,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 #endif
 }
 
-/// Klick im Bearbeiten-Zustand: Feld öffnet die Eingabe, Kachel die Seite, daneben schließt.
+/// Klick im Bearbeiten-Zustand (Tastatur zu): Feld öffnet die Tastatur wieder, Kachel die Seite, daneben schließt.
 - (void)handleAddressEditingSelectionAtPoint:(CGPoint)point {
     CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
     if (CGRectContainsPoint(CGRectInset(field, -6.0, -6.0), point)) {
-        [self showAddressDictationInput];
+        [self showAddressKeyboard];
         return;
     }
     if ([self.addressPanel handleSelectionAtPoint:point inView:self.view]) {
@@ -1424,19 +1457,6 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [self endAddressEditingAnimated:YES];
 }
 
-/// Frühere Vollbild-Startansicht (BrowserStartViewController); nicht mehr eingebunden, bleibt als Rückfall.
-- (void)showStartView {
-    if (self.presentedViewController != nil) {
-        [self dismissViewControllerAnimated:NO completion:nil];
-    }
-    BrowserStartViewController *startViewController = [BrowserStartViewController new];
-    startViewController.modalPresentationStyle = UIModalPresentationFullScreen;
-    __weak typeof(self) weakSelf = self;
-    startViewController.openURLHandler = ^(NSURL *url) {
-        [weakSelf.webview loadRequest:[NSURLRequest requestWithURL:url]];
-    };
-    [self presentViewController:startViewController animated:YES completion:nil];
-}
 
 - (void)requestURLorSearchInput {
     NSString *host = self.webview.request.URL.host;
@@ -1448,7 +1468,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
-        [weakSelf showInputURLorSearchGoogle];
+        [weakSelf beginAddressEditing];
     }]];
 
     NSURL *currentURL = self.webview.request.URL;
@@ -2331,7 +2351,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         return;
     }
     if (self.addressPanel != nil) {
-        [self showAddressDictationInput];
+        [self showAddressKeyboard];
         return;
     }
     // Läuft ein Video oder steht der Zeiger auf einem, steuert Play/Pause das Video.
@@ -2360,8 +2380,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     if ([self closeDialogForPlayPause]) {
         return;
     }
-    // Direkt in die Suche, bereit fürs Diktat mit der Siri-Taste.
-    [self showInputURLorSearchGoogle];
+    // Direkt in die Adresseingabe, bereit fürs Diktat mit der Siri-Taste.
+    [self beginAddressEditing];
 }
 
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress {
@@ -2541,7 +2561,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 - (void)browserRemoteInputControllerOpenAddressBar {
-    // Zweimal oben: Leiste ausklappen und Adresse bearbeiten, ohne gleich die Tastatur zu öffnen.
+    // Zweimal oben: wie Klick auf die Adresse (Leiste ausklappen, Tastatur offen, Karte darunter).
     [self beginAddressEditing];
 }
 
@@ -2668,7 +2688,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
-            [weakSelf requestURLorSearchInput];
+            [weakSelf beginAddressEditing];
         }]];
     }
     [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
