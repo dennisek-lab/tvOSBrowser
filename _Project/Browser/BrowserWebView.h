@@ -23,6 +23,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, getter=canGoForward) BOOL canGoForward;
 @property (nonatomic, readonly, getter=isLoading) BOOL loading;
 @property (nonatomic) BOOL scalesPageToFit;
+/// Grundzoom, wenn scalesPageToFit aus ist (1.0 = 100 %).
+@property (nonatomic) double pageZoom;
 
 - (instancetype)initWithUserAgent:(NSString * _Nullable)userAgent
       allowsInlineMediaPlayback:(BOOL)allowsInlineMediaPlayback NS_DESIGNATED_INITIALIZER;

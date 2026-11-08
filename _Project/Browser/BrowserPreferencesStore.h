@@ -13,6 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) NSUInteger textFontSize;
 @property (nonatomic) BOOL fullscreenVideoPlaybackEnabled;
 @property (nonatomic) BOOL scalePagesToFit;
+/// Grundzoom für alle Seiten (1.0 = 100 %). Standard 1.5, begrenzt auf 0.5 bis 3.0.
+@property (nonatomic) double pageZoom;
 @property (nonatomic) BOOL dontShowHintsOnLaunch;
 @property (nonatomic, copy) NSString *homePageURLString;
 

@@ -6,6 +6,8 @@ static NSString * const kShowTopNavigationBarDefaultsKey = @"ShowTopNavigationBa
 static NSString * const kTextFontSizeDefaultsKey = @"TextFontSize";
 static NSString * const kEnableFullscreenVideoPlaybackDefaultsKey = @"EnableFullscreenVideoPlayback";
 static NSString * const kScalePagesToFitDefaultsKey = @"ScalePagesToFit";
+static NSString * const kPageZoomDefaultsKey = @"PageZoom";
+static double const kDefaultPageZoom = 1.5;
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
 static NSString * const kHomepageDefaultsKey = @"homepage";
 
@@ -96,6 +98,17 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setScalePagesToFit:(BOOL)scalePagesToFit {
     [[self defaults] setBool:scalePagesToFit forKey:kScalePagesToFitDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (double)pageZoom {
+    id value = [[self defaults] objectForKey:kPageZoomDefaultsKey];
+    double zoom = [value respondsToSelector:@selector(doubleValue)] ? [value doubleValue] : kDefaultPageZoom;
+    return MIN(3.0, MAX(0.5, zoom));
+}
+
+- (void)setPageZoom:(double)pageZoom {
+    [[self defaults] setDouble:MIN(3.0, MAX(0.5, pageZoom)) forKey:kPageZoomDefaultsKey];
     [[self defaults] synchronize];
 }
 

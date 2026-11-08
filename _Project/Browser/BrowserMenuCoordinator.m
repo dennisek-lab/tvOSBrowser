@@ -980,6 +980,26 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Schaltet den Grundzoom reihum durch feste Stufen und merkt ihn sich für alle Tabs.
+- (BrowserAdvancedMenuItem *)pageZoomMenuItem {
+    NSArray<NSNumber *> *steps = @[@1.0, @1.25, @1.5, @1.75, @2.0, @2.5];
+    double current = self.preferencesStore.pageZoom;
+    double next = steps.firstObject.doubleValue;
+    for (NSNumber *step in steps) {
+        if (step.doubleValue > current + 0.01) {
+            next = step.doubleValue;
+            break;
+        }
+    }
+    NSString *title = [NSString stringWithFormat:@"Zoom %.0f %% → %.0f %%", current * 100.0, next * 100.0];
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        self.preferencesStore.pageZoom = next;
+        [[self.host browserWebView] setPageZoom:next];
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)pageScalingMenuItem {
     BOOL scalesPageToFit = [[self.host browserWebView] scalesPageToFit];
     NSString *title = scalesPageToFit ? @"Stop Scaling Pages to Fit" : @"Scale Pages to Fit";
@@ -1063,6 +1083,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Appearance"
                                                items:@[
             [self topNavigationVisibilityMenuItem],
+            [self pageZoomMenuItem],
             [self pageScalingMenuItem],
             increaseFontSizeItem,
             decreaseFontSizeItem,

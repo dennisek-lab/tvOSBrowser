@@ -521,6 +521,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     self.backgroundColor = UIColor.blackColor;
     self.userAgent = userAgent;
     self.scalesPageToFit = NO;
+    _pageZoom = 1.0;
 
     Class configurationClass = NSClassFromString(kBrowserWebViewConfigurationClassName);
     Class webViewClass = NSClassFromString(kBrowserWebViewClassName);
@@ -857,6 +858,11 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     [self applyPageScalingIfNeeded];
 }
 
+- (void)setPageZoom:(double)pageZoom {
+    _pageZoom = pageZoom > 0.0 ? pageZoom : 1.0;
+    [self applyPageScalingIfNeeded];
+}
+
 - (void)applyPageScalingIfNeeded {
     if (self.runtimeWebView == nil) {
         return;
@@ -867,8 +873,9 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
         return;
     }
 
-    CGFloat zoomValue = 1.0;
+    CGFloat zoomValue = self.pageZoom > 0.0 ? self.pageZoom : 1.0;
     if (self.scalesPageToFit) {
+        zoomValue = 1.0;
         CGFloat contentWidth = scrollView.contentSize.width;
         CGFloat boundsWidth = CGRectGetWidth(scrollView.bounds);
         if (contentWidth > 1.0 && boundsWidth > 1.0) {

@@ -211,6 +211,7 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 
     BOOL shouldScalePagesToFit = self.preferencesStore.scalePagesToFit;
     webView.scalesPageToFit = shouldScalePagesToFit;
+    webView.pageZoom = self.preferencesStore.pageZoom;
     webView.contentMode = shouldScalePagesToFit ? UIViewContentModeScaleAspectFit : UIViewContentModeScaleToFill;
     webView.userInteractionEnabled = NO;
     return webView;

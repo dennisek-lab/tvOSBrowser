@@ -46,6 +46,8 @@
 		B002B86D1BAE420500C744AF /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B002B86C1BAE420500C744AF /* ViewController.m */; };
 		B002B8701BAE420500C744AF /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B002B86E1BAE420500C744AF /* Main.storyboard */; };
 		B002B8721BAE420500C744AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B002B8711BAE420500C744AF /* Assets.xcassets */; };
+		B2B7BA7B43737BF473BE9A82 /* BrowserFeasibilityProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */; };
+		2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B44FC74AA71D336038E44239 /* SceneDelegate.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -110,6 +112,10 @@
 		B002B8711BAE420500C744AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B002B8731BAE420500C744AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B0F6B4611BAEBF9900E2F26B /* ../README.mdown */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = ../README.mdown; sourceTree = "<group>"; };
+		44B251750D344D7938E73B4E /* BrowserFeasibilityProbe.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFeasibilityProbe.h; sourceTree = "<group>"; };
+		EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFeasibilityProbe.m; sourceTree = "<group>"; };
+		C2E2A2A5D1EC23516C1DD3B6 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
+		B44FC74AA71D336038E44239 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -240,6 +246,10 @@
 				A1B49A592D684000001D58A1 /* BrowserTopBarView.h */,
 				A1B49A5A2D684000001D58A1 /* BrowserTopBarView.m */,
 				A1B49A642D6A3900001D58A1 /* BrowserWebView.h */,
+				44B251750D344D7938E73B4E /* BrowserFeasibilityProbe.h */,
+				EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */,
+				C2E2A2A5D1EC23516C1DD3B6 /* SceneDelegate.h */,
+				B44FC74AA71D336038E44239 /* SceneDelegate.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -428,6 +438,8 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */,
+				B2B7BA7B43737BF473BE9A82 /* BrowserFeasibilityProbe.m in Sources */,
 				A1B49A612D6A1000001D58A1 /* BrowserWKWebViewProofOfConceptViewController.m in Sources */,
 				A1B49A5F2D69F900001D58A1 /* WebAVPlayerViewController+FullscreenSubviewHack.m in Sources */,
 				A1B49A5D2D69F100001D58A1 /* WebCoreNSURLSessionTaskTransactionMetrics+AddPrivacyStance.m in Sources */,
