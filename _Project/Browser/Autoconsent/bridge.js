@@ -25,6 +25,20 @@
   var standalone = window.autoconsentStandalone;
   if (!handler || !standalone || !standalone.messages) { return; }
   var top = window.top === window;
+  // Consent-or-Pay-Seiten, bei denen Ablehnen in eine Sackgasse führt (Bild: Ablehnen blockiert Tracking, die Seite hält das für
+  // einen Werbeblocker und bleibt weiß/gesperrt). Mit aktiver Bezahlschranken-Zustimmung läuft autoconsent dort nur als
+  // Erkenner (keine Aktion); die Bezahlschranken-Logik unten klickt dann „Akzeptieren“/„Mit Werbung weiter“.
+  var PAY_FIRST_HOSTS = /(^|\.)(bild|autobild|computerbild|sportbild)\.de$/i;
+  var siteHost = location.hostname;
+  try {
+    if (!top) {
+      if (location.ancestorOrigins && location.ancestorOrigins.length) { siteHost = new URL(location.ancestorOrigins[location.ancestorOrigins.length - 1]).hostname; }
+      else if (document.referrer) { siteHost = new URL(document.referrer).hostname; }
+    }
+  } catch (e) {}
+  if (window.__browserAcceptPayWalls === true && PAY_FIRST_HOSTS.test(siteHost) && standalone.instance && standalone.instance.config) {
+    try { standalone.instance.config.autoAction = null; } catch (e) {}
+  }
   var lastLifecycle = '';
   function forward(m) {
     try {
@@ -80,9 +94,10 @@
   var REJECT = /^(reject( all)?( non-essential| optional| non-necessary)?( cookies)?|decline( all| optional)?( cookies)?|deny( all)?|refuse( all)?|(alle |optionale |nicht notwendige )?(cookies )?ablehnen|alles ablehnen|nur (notwendige|erforderliche|essenzielle|essentielle|technisch notwendige)( cookies)?( zulassen| akzeptieren| verwenden)?|only (necessary|essential)( cookies)?|necessary only|essential only|continue without accepting|weiter ohne (zustimmen|zustimmung|akzeptieren)|ohne zustimmung fortfahren)$/i;
   var CONSENT_TEXT = /(cookie|consent|privacy|personal data|tracking|datenschutz|einwilligung|partner)/i;
   var rejected = false;
+  var accepted = false;
   var rejectSkipped = {};
   function rejectScan(reason) {
-    if (rejected || !document.body) { return; }
+    if (rejected || accepted || !document.body) { return; }
     var nodes = document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
@@ -110,10 +125,9 @@
   // --- Bezahlschranken -------------------------------------------------------------------------------------------
   if (window.__browserAcceptPayWalls !== true) { return; }
   // Text, der eine Bezahlschranke ausmacht (Abo-/Pur-Angebot statt Ablehnen).
-  var PAY = /(\babo\b|abonn|\bpur\b|pur-abo|werbefrei|ohne werbung|ohne werbebanner|ohne werbetracking|\bpro\b bestellen|\bplus\b.{0,20}(abo|testen|lesen)|subscribe|subscription|ad-free|€|euro\b)/i;
+  var PAY = /(\babo\b|abonn|\bpur\b|pur-abo|werbefrei|ohne werbung|ohne werbebanner|ohne werbetracking|\bpro\b bestellen|\bplus\b.{0,20}(abo|testen|lesen)|bild\s?plus|subscribe|subscription|ad-free|€|euro\b)/i;
   // Beschriftung des Zustimmen-Knopfs.
   var ACCEPT = /^(akzeptieren( (und|&) weiter(lesen)?)?|alle akzeptieren|zustimmen( (und|&) weiter(lesen)?)?|allen zustimmen|einverstanden|ich stimme zu|ok(ay)?|accept( all)?( and continue)?|agree( and continue)?|i agree|mit werbung (weiter|lesen|nutzen|weiterlesen)|weiter mit werbung|mit werbung und tracking weiter)$/i;
-  var accepted = false;
   var skipped = {};
   // Diagnose: warum ein passender Knopf nicht geklickt wurde (je Grund und Text nur einmal).
   function skip(label, why) {
@@ -164,7 +178,7 @@
     scan('Signal vom Elterndokument');
   });
   function scan(reason) {
-    if (accepted || !document.body) { return; }
+    if (accepted || rejected || !document.body) { return; }
     broadcast();
     var nodes = document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]');
     for (var i = 0; i < nodes.length; i++) {
