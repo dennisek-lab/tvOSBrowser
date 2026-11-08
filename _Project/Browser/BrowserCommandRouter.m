@@ -4,6 +4,7 @@
 //
 
 #import "BrowserCommandRouter.h"
+#import "BrowserMotion.h"
 #import "BrowserCommandParser.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
@@ -22,10 +23,12 @@
     UIVisualEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
-        UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
-        // Leicht dunkel getönt, damit die weiße Schrift auch über hellen Seiten lesbar bleibt.
-        glass.tintColor = [UIColor colorWithWhite:0.0 alpha:0.35];
-        effect = glass;
+        if (BrowserMotion.glassMaterialAvailable) { // im alten Design bleibt es beim dunklen Blur
+            UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+            // Leicht dunkel getönt, damit die weiße Schrift auch über hellen Seiten lesbar bleibt.
+            glass.tintColor = [UIColor colorWithWhite:0.0 alpha:0.35];
+            effect = glass;
+        }
     }
 #endif
     self = [super initWithEffect:effect];

@@ -26,7 +26,7 @@ typedef NS_ENUM(NSUInteger, BrowserCursorKind) {
 + (CGPoint)hotspot;
 
 + (UIImage *)imageForKind:(BrowserCursorKind)kind style:(BrowserCursorStyle)style;
-/// Mit dem Stil aus den Einstellungen.
+/// Mit dem Stil aus den Einstellungen. Im alten Design mit Stil 0 (Standard) die Bitmaps der ursprünglichen Fassung.
 + (UIImage *)imageForKind:(BrowserCursorKind)kind;
 
 @end

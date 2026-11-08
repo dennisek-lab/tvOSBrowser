@@ -49,6 +49,16 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 - (void)setLoadingProgress:(double)progress loading:(BOOL)loading;
 /// Seitenname, dahinter dezent die Domain (nil = keine). Bei verschlüsselter Verbindung (HTTPS) ist der Name grün.
 - (void)setDisplayTitle:(nullable NSString *)title domain:(nullable NSString *)domain secure:(BOOL)secure;
+/// Volle Adresse der Seite. Das alte Design zeigt sie (wie das Original) statt des Seitennamens.
+- (void)setDisplayURLString:(nullable NSString *)URLString;
+
+#pragma mark - Altes Design
+/// YES: Leiste wie in der ursprünglichen Fassung (graue Kapsel, weiße Original-Symbole, volle Adresse, Vollbild- und
+/// Menü-Knopf rechts), ohne Glas. Folgt BrowserMotion.classicDesignEnabled und wechselt von selbst, sobald sich die
+/// Einstellung „ClassicDesign“ ändert (NSUserDefaultsDidChangeNotification).
+@property (nonatomic, readonly, getter=isClassicDesign) BOOL classicDesign;
+/// Design neu aus der Einstellung übernehmen (Symbole, Fläche, Titel, Layout).
+- (void)applyDesign;
 /// Reader-Modus: available = Seite lesbar (sonst Knopf ausgeblendet), active = Reader läuft (Knopf hervorgehoben).
 - (void)setReaderAvailable:(BOOL)available active:(BOOL)active;
 @property (nonatomic, readonly) BOOL readerAvailable;

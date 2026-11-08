@@ -32,6 +32,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 20. [Formen und Eckenradien](#20-formen-und-eckenradien-browsershape)
 21. [Leistung: Messung, Optimierungen, Befunde](#21-leistung-messung-optimierungen-befunde)
 22. [Ersteinrichtung](#22-ersteinrichtung-browsersetupviewcontroller)
+23. [Altes Design](#23-altes-design)
 
 ---
 
@@ -510,6 +511,7 @@ Nicht die Ursache: Hit-Tests per JavaScript während der Bewegung (Ziele kommen 
 - Bearbeiten-Zustand: `setAddressEditing:animated:` (eigener Abschnitt am Ende von `BrowserTopBarView.m`, eigene Subviews `dictationFieldView`/`dictationIconView`/`dictationLabel`). Die Kapsel zeigt mittig Mikrofon `mic.fill` und „Sprechen, um zu diktieren“ (halbtransparent), alle Knöpfe, Name und Kreisel auf Alpha 0. Einziges Zeigerziel ist dann `addressFieldFrame` (Aktion `BrowserTopBarActionURL`); `setCompact:YES` wird solange ignoriert.
 - Kanteneffekt des Systems: `attachToScrollView:`.
 - Zeigerziele: `enumeratePointerTargetsUsingBlock:`; Fokusmodus (tvOS-Fokus statt Zeiger) für die Knöpfe über `BrowserTopBarFocusButton`.
+- Altes Design (graue Kapsel, Originalsymbole, volle Adresse, kein Glas): `applyDesign`, siehe Abschnitt 23.
 
 **Fragile Stellen.** `UIGlassEffect` (neue API, Stil/Verhalten ändert sich mit tvOS); Layoutkonstanten (`kTopBarHeight` 86, `kTopBarVerticalInset` 8) müssen zur Storyboardhöhe 94 passen (Abschnitt 3). Ansonsten öffentliche UIKit-API.
 
@@ -1089,7 +1091,7 @@ swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
 - Prüfen: `xcodebuild … build` darf beim Schritt `CompileAssetCatalog` keine Warnungen zeigen; streng geht es mit `xcrun actool --compile <tmp> --platform appletvos --target-device tv --minimum-deployment-target 17.0 --app-icon "App Icon & Top Shelf Image" --output-partial-info-plist <tmp>/info.plist --warnings --notices _Project/Browser/Assets.xcassets`.
 ## 18. Animationen (`BrowserMotion`)
 
-**Zweck.** Eine Stelle für alle Oberflächen-Animationen. Zwei Stile, umschaltbar unter •••, „Ansicht & Wiedergabe“, „Liquid-Glass-Animationen“ (`liquidGlassAnimationsMenuItem`, Einstellung `BrowserPreferencesStore.liquidGlassAnimationsEnabled`, Schlüssel `LiquidGlassAnimationsEnabled`, Standard an). Bei der Systemeinstellung „Bewegung reduzieren“ (`UIAccessibilityIsReduceMotionEnabled`) gilt immer der schlichte Stil.
+**Zweck.** Eine Stelle für alle Oberflächen-Animationen. Zwei Stile, umschaltbar unter •••, „Ansicht & Wiedergabe“, „Liquid-Glass-Animationen“ (`liquidGlassAnimationsMenuItem`, Einstellung `BrowserPreferencesStore.liquidGlassAnimationsEnabled`, Schlüssel `LiquidGlassAnimationsEnabled`, Standard an). Bei der Systemeinstellung „Bewegung reduzieren“ (`UIAccessibilityIsReduceMotionEnabled`) und im alten Design (Abschnitt 23) gilt immer der schlichte Stil.
 
 **Dateien.** `_Project/Browser/BrowserMotion.h/.m`.
 
@@ -1341,4 +1343,23 @@ Nach „Fertig“ (`ViewController applySetupResultWithHomePageChanged:`): Werbe
 Import aus anderen Browsern gibt es nicht: tvOS gibt Apps keinen Zugriff auf Safari-Daten oder Daten anderer Apps; die Vorschläge im Favoriten-Schritt ersetzen das für den Einstieg.
 
 Selbsttest (DEBUG): `setup` zeigt die Karte, `setup:N` Schritt N, `setupopt:i` betätigt die i-te Auswahl des Schritts, `setupnext` Weiter/Fertig. Log `[Setup]`.
+
+---
+
+## 23. Altes Design
+
+**Zweck.** Oberfläche wie die ursprüngliche Fassung (jvanakker/tvOSBrowser, Stand 2.0.0, Vorlage `screen01.png` bis `screen03.png` im Repo-Wurzelordner) statt Liquid Glass. Umschalten unter •••, „Ansicht & Wiedergabe“, „Design“ (`designMenuItem` in `BrowserMenuCoordinator.m`, Detail „Liquid Glass“ / „Alt“). Einstellung `BrowserPreferencesStore.classicDesignEnabled`, Schlüssel `ClassicDesign`, Standard aus. Abfrage überall über `BrowserMotion.classicDesignEnabled`.
+
+**Was sich ändert.**
+- **Obere Leiste** (`BrowserTopBarView.m`, Abschnitt „Altes Design“, `applyDesign`): graue halbtransparente Kapsel 1760 × 86 pt, 8 pt unter dem Rand. Kein Glas: dunkler `UIBlurEffect` mit grauer Tönung (`glassDimmingView` Weiß 0,54 / Alpha 0,62, ergibt auf weißer Seite Grau 155 wie `screen01.png`), keine Kante, kein Schatten. Symbole sind die weißen Originalbilder aus `Icons/MenuIcons` (`go-back-left-arrow`, `refresh-button`, `right-arrow-forward`, `house-outline`, `multi-tab`, `resize-arrows`, `menu-2`; als Template in Weiß, eingepasst in 52 pt). Links Zurück, Neu laden, Vor, Startseite, Tabs; mittig die volle Adresse in Weiß 0,72 (`setDisplayURLString:`, geliefert von `BrowserTabCoordinator refreshActiveTabUI`); rechts Ladekreisel, Vollbild (`BrowserTopBarActionFullscreen`, Dialog „Obere Leiste ausblenden?“) und Menü. Symbole und Schrift bleiben auf jeder Seitenfarbe weiß.
+- **Weggelassen bzw. schlicht, mit Grund:** Kapsel beim Scrollen (`setCompact:` wird ignoriert, das Original blieb voll; „zweimal unten“ schließt dann nur den Bearbeiten-Zustand), Ladelinie (das Original hatte nur den Kreisel), Kanteneffekt `topEdgeEffect` (ausgeblendet), Seitenname mit grünem HTTPS-Namen (ersetzt durch die volle Adresse). Der Favoriten-Stern macht wieder der Startseite Platz, wie im Original; Favoriten bleiben über ••• „Favoriten“ und Sprachbefehle erreichbar. Reader bleibt, weil er sonst nur per Sprachbefehl erreichbar wäre: Er erscheint links vom Vollbild-Knopf nur auf lesbaren Seiten (dann rückt der Kreisel nach links), auf anderen Seiten sieht die Leiste aus wie das Original.
+- **Glas aus:** `BrowserMotion.glassMaterialAvailable` liefert NO; Adressfeld-Karte, Seitenleiste, Bedienungsdialog (Karte und Knöpfe), Karten der intelligenten Funktionen und Rückmeldungen der Sprachbefehle nehmen ihren dunklen Blur-Rückfall. Systemdialoge (`UIAlertController`) bleiben, wie tvOS sie zeichnet.
+- **Animationen:** `BrowserMotion.liquidGlassEnabled` liefert NO, es gilt der schlichte Stil (Abschnitt 18), unabhängig vom Schalter „Liquid-Glass-Animationen“.
+- **Zeiger:** Mit Zeigerstil 0 (Standard „Dunkel“) nimmt `BrowserCursorRenderer imageForKind:` die 64-pt-Bitmaps des Originals (Assets `Cursor` und `Pointer`, `classicImageForKind:`), versetzt auf die gemeinsame Klickspitze (`+hotspot`; Pfeilspitze bei (1, 1), Fingerspitze bei (10, 2) im Bild). Stil 1 und 2 sowie die Texteinfügemarke bleiben unverändert.
+
+**Umschalten wirkt sofort.** Die Leiste beobachtet `NSUserDefaultsDidChangeNotification` (Seitenleiste, Ersteinrichtung, Selbsttest-Schritt `pref:`) und `UISceneDidActivateNotification` (Änderung aus einem anderen Prozess) und ruft bei echtem Wechsel `applyDesign` auf: Symbole, Fläche, Vordergrund (mit der gemerkten Seitenfarbe), Fokusknöpfe (Vollbild nur im alten Design, „Startseite“ statt „Favorit“), Layout. Seitenleiste, Dialoge und Karten fragen `BrowserMotion` beim nächsten Öffnen, der Zeiger beim nächsten Bildwechsel.
+
+**Woran man merkt, dass es kaputt ist.** Leiste bleibt nach dem Umschalten im alten Look: DEBUG-Zeile `[TopBar] Design alt|Liquid Glass` fehlt. Symbole fehlen: `Icons/MenuIcons/*.png` nicht mehr im Ressourcen-Build (Gruppe „MenuIcons“ im Projekt, Pfad `../../Icons/MenuIcons`); dann greifen die SF Symbols als Rückfall. Im alten Design erscheint Glas: ein neuer Aufrufer prüft `@available(tvOS 26.0, *)` statt `BrowserMotion.glassMaterialAvailable`.
+
+**Test.** Eigener tvOS-Simulator, `SIMCTL_CHILD_POINTER_SELFTEST="pref:ClassicDesign=1;url:https://www.apple.com/apple-tv-4k/;wait;wait"` mit `xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app`, Screenshot per `xcrun simctl io <udid> screenshot` und mit `screen01.png` vergleichen. Zurück: `pref:ClassicDesign=0` (die Leiste ist danach bildgleich mit einem Start im neuen Design). Klicks: `360,50;click` (Startseite), `1712,50;click` (Vollbild-Dialog), `label` zeigt die Adresse. Zeiger sichtbar: Schritt `x,y` als letzten Schritt (nach 4 s Leerlauf blendet der Zeiger aus).
 

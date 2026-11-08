@@ -61,14 +61,19 @@ static BOOL BrowserMotionLogEnabled(void) {
     if (UIAccessibilityIsReduceMotionEnabled()) {
         return NO;
     }
-    return [BrowserPreferencesStore new].liquidGlassAnimationsEnabled;
+    BrowserPreferencesStore *preferences = [BrowserPreferencesStore new];
+    return preferences.liquidGlassAnimationsEnabled && !preferences.classicDesignEnabled;
 }
 
 + (BOOL)glassMaterialAvailable {
     static BOOL available;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ available = NSClassFromString(@"UIGlassEffect") != Nil; });
-    return available;
+    return available && !self.classicDesignEnabled;
+}
+
++ (BOOL)classicDesignEnabled {
+    return [BrowserPreferencesStore new].classicDesignEnabled;
 }
 
 + (NSTimeInterval)durationForKind:(BrowserMotionKind)kind {

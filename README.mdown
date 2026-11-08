@@ -72,7 +72,7 @@ Einstellungen (•••)
 | Diese Seite | Startseite öffnen, Zusammenfassen, Übersetzen, als Startseite setzen, Werbeblocker hier, Cookie-Banner hier ablehnen |
 | Navigation | Tabs, Neuer Tab, Favoriten, Verlauf |
 | Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitel (Webseite), Cloudflare-DNS |
-| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
+| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt: Leiste, Symbole und Zeiger wie im Original, ohne Glas), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
 | Daten | Cache leeren, Cookies löschen |
 | Hilfe | Bedienung, Was ist neu |
 | Erweitert | Browser-Kennung (Desktop/Mobil), Medien-Diagnose, WebKit-Medieneinstellungen |
