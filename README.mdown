@@ -57,7 +57,7 @@ Funktionen
 - **Cookie-Banner:** werden automatisch abgelehnt (autoconsent). Bei „Zustimmen oder bezahlen“-Seiten wird optional zugestimmt.
 - **Video:** Videos lassen sich im nativen Player öffnen (mit Bild-in-Bild, Spulen, Metadaten, Rückschreiben der Position in die Seite), Steuerung auch über das iPhone (Now Playing).
 - **Automatische Untertitel** (lokal mit whisper.cpp, GPU über Metal): im nativen Player und – über einen Ton-Abgriff per Web Audio – auch für Videos direkt in der Webseite.
-- **Intelligente Funktionen** (lokal, NaturalLanguage): Seite zusammenfassen, Übersetzen über Google Translate mit Hinweis bei fremdsprachigen Seiten.
+- **Intelligente Funktionen** (lokal, NaturalLanguage): Seite zusammenfassen, Übersetzen über Google Translate mit Hinweis bei fremdsprachigen Seiten, „Frag die Seite“ („frag, wann wurde … vorgestellt“: passende Stelle wird markiert und angesprungen, Play/Pause springt zur nächsten). Sprachbefehle werden auch sinngemäß erkannt („lade die Seite nochmal“).
 - **Siri:** App-Shortcuts sind eingebaut („Starte den Reader in tvOS Browser“). Ob Siri auf dem Apple TV sie auslöst, ist noch nicht bestätigt; die Sprachbefehle im Diktierfeld funktionieren unabhängig davon.
 - **DNS über Cloudflare** (DoH) für die Webansicht, abschaltbar.
 
