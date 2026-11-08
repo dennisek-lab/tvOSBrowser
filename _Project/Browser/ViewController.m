@@ -21,6 +21,7 @@
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
 #import "BrowserTabOverviewController.h"
+#import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "ViewController.h"
@@ -319,6 +320,22 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     [self.webview evaluateJavaScriptAsync:[step substringFromIndex:3] completion:^(id result) {
                         NSLog(@"[SelfTest] js %@", result);
                     }];
+                    return;
+                }
+                // Nativer Player: öffnen (wie Menü „Im Player öffnen“), Zustand, an Position springen, schließen.
+                if ([step isEqualToString:@"native"]) {
+                    NSLog(@"[SelfTest] native hasVideo=%d", [self.videoPlaybackCoordinator pageHasVideo]);
+                    [self.videoPlaybackCoordinator openPageVideoInNativePlayer];
+                    return;
+                }
+                if ([step isEqualToString:@"nplayer"] || [step hasPrefix:@"nseek:"] || [step isEqualToString:@"nclose"]) {
+                    BrowserNativeVideoPlayerViewController *player = [self.videoPlaybackCoordinator currentNativePlayer];
+                    NSLog(@"[SelfTest] %@ %@", step, player != nil ? [player debugStateLine] : @"kein Player");
+                    if ([step hasPrefix:@"nseek:"]) {
+                        [player.player seekToTime:CMTimeMakeWithSeconds([step substringFromIndex:6].doubleValue, NSEC_PER_SEC)];
+                    } else if ([step isEqualToString:@"nclose"]) {
+                        [player dismissViewControllerAnimated:YES completion:nil];
+                    }
                     return;
                 }
                 if ([step isEqualToString:@"video"]) {
