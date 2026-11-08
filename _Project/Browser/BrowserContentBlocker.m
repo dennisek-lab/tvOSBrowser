@@ -1,4 +1,5 @@
 #import "BrowserContentBlocker.h"
+#import "BrowserFilterListUpdater.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserPerf.h"
 
@@ -26,6 +27,15 @@ static NSString * const kWallMessageName = @"browserAdblockWall";
 @property (nonatomic, strong) NSMutableArray *readyLists;
 @property (nonatomic, copy) NSArray<NSString *> *wantedIdentifiers;
 @property (nonatomic) NSUInteger totalListCount;
+/// Ordner der .json.z des aktuellen Stands (App-Paket oder Library/Caches/FilterLists/…) und dessen Manifest.
+@property (nonatomic, strong, nullable) NSURL *sourceDirectory;
+@property (nonatomic, copy, nullable) NSDictionary *sourceManifest;
+@property (nonatomic) BOOL sourceDownloaded;
+/// Wird bei jedem Wechsel des Listenstands erhöht; Rückmeldungen eines älteren Durchgangs werden verworfen.
+@property (nonatomic) NSUInteger generation;
+/// Läuft gerade ein Durchgang (Nachschlagen/Kompilieren) oder eine Aktualisierung?
+@property (nonatomic) BOOL busy;
+@property (nonatomic, strong) NSMutableArray<dispatch_block_t> *idleBlocks;
 /// Controller (schwach) -> @{exception, signature} des zuletzt angewendeten Zustands
 @property (nonatomic, strong) NSMapTable<id, NSDictionary *> *controllerStates;
 /// Controller (schwach) -> @{active, script} der Sperren-Erkennung
@@ -65,6 +75,7 @@ static NSString * const kWallMessageName = @"browserAdblockWall";
         _wallStates = [NSMapTable weakToStrongObjectsMapTable];
         _wallHandledHosts = [NSMutableSet set];
         _workQueue = dispatch_queue_create("browser.contentblocker.compile", DISPATCH_QUEUE_SERIAL);
+        _idleBlocks = [NSMutableArray array];
     }
     return self;
 }
@@ -280,10 +291,9 @@ static NSString *BrowserAdblockWallSource(void) {
     }
     self.started = YES;
     Class storeClass = NSClassFromString(@"WKContentRuleListStore");
-    NSURL *manifestURL = [NSBundle.mainBundle URLForResource:@"manifest" withExtension:@"json" subdirectory:kBlockerResourceDirectory];
-    NSData *manifestData = manifestURL != nil ? [NSData dataWithContentsOfURL:manifestURL] : nil;
-    NSDictionary *manifest = manifestData != nil ? [NSJSONSerialization JSONObjectWithData:manifestData options:0 error:nil] : nil;
-    NSArray *lists = [manifest[@"lists"] isKindOfClass:NSArray.class] ? manifest[@"lists"] : nil;
+    // Mitgelieferte oder (wenn neuer und vollständig) heruntergeladene Listen, siehe BrowserFilterListUpdater
+    NSDictionary *set = [[BrowserFilterListUpdater sharedUpdater] preferredContentBlockerSet];
+    NSArray *lists = [set[@"manifest"][@"lists"] isKindOfClass:NSArray.class] ? set[@"manifest"][@"lists"] : nil;
     if (storeClass == Nil || lists.count == 0) {
         NSLog(@"[AdBlock] nicht verfügbar (Klasse %@, Regelsätze %lu)", storeClass, (unsigned long)lists.count);
         return;
@@ -297,18 +307,77 @@ static NSString *BrowserAdblockWallSource(void) {
         NSLog(@"[AdBlock] Store nicht erstellbar");
         return;
     }
+    [self startWithSet:set];
+}
+
+/// Beginnt einen Durchgang mit einem Listenstand: nacheinander nachschlagen bzw. kompilieren, fertige Listen sofort
+/// anwenden (beim Start soll der Schutz so früh wie möglich greifen).
+- (void)startWithSet:(NSDictionary *)set {
+    NSDictionary *manifest = set[@"manifest"];
+    NSArray *lists = manifest[@"lists"];
+    self.generation += 1;
+    self.sourceDirectory = set[@"directory"];
+    self.sourceManifest = manifest;
+    self.sourceDownloaded = [set[@"downloaded"] boolValue];
+    NSLog(@"[AdBlock] Listenstand %@ vom %@ (%@)", manifest[@"version"],
+          [BrowserFilterListUpdater displayStringForDate:[self activeListsDate]],
+          self.sourceDownloaded ? @"heruntergeladen" : @"mitgeliefert");
     NSMutableArray<NSString *> *wanted = [NSMutableArray array];
     for (NSDictionary *entry in lists) {
         [wanted addObject:[self identifierForEntry:entry]];
     }
     self.wantedIdentifiers = wanted;
     self.totalListCount = lists.count;
+    [self.readyLists removeAllObjects];
+    [self.pendingEntries removeAllObjects];
     [self.pendingEntries addObjectsFromArray:lists];
+    self.busy = YES;
     [self processNextEntry];
+}
+
+/// Heruntergeladene Listen sind beim Start unbrauchbar: verwerfen und mit den mitgelieferten neu beginnen.
+- (void)fallBackToBundledListsAfterProblem:(NSString *)problem {
+    NSLog(@"[AdBlock] heruntergeladene Listen unbrauchbar (%@), nehme mitgelieferte", problem);
+    BrowserFilterListUpdater *updater = [BrowserFilterListUpdater sharedUpdater];
+    [updater discardDownloadedContentBlocker];
+    NSDictionary *set = [updater bundledContentBlockerSet];
+    if (set == nil) {
+        [self becomeIdle];
+        return;
+    }
+    [self startWithSet:set];
+    [self refreshAllControllersForce:YES];
+}
+
+- (NSTimeInterval)activeGeneratedAt {
+    id value = self.sourceManifest[@"generatedAt"];
+    return [value isKindOfClass:NSNumber.class] ? [value doubleValue] : 0;
+}
+
+- (NSDate *)activeListsDate {
+    NSTimeInterval generatedAt = self.activeGeneratedAt;
+    return generatedAt > 0 ? [NSDate dateWithTimeIntervalSince1970:generatedAt] : nil;
+}
+
+- (NSString *)activeVersion {
+    return [self.sourceManifest[@"version"] description];
+}
+
+- (BOOL)activeListsDownloaded {
+    return self.sourceDownloaded;
 }
 
 - (NSString *)identifierForEntry:(NSDictionary *)entry {
     return [NSString stringWithFormat:@"%@%@-%@", kBlockerIdentifierPrefix, entry[@"name"], entry[@"hash"]];
+}
+
+- (void)becomeIdle {
+    self.busy = NO;
+    NSArray<dispatch_block_t> *blocks = [self.idleBlocks copy];
+    [self.idleBlocks removeAllObjects];
+    for (dispatch_block_t block in blocks) {
+        block();
+    }
 }
 
 /// Arbeitet die Regelsätze nacheinander ab (Speicherbedarf beim Kompilieren), zuerst Nachschlagen im Store.
@@ -316,30 +385,49 @@ static NSString *BrowserAdblockWallSource(void) {
     if (self.pendingEntries.count == 0) {
         BrowserPerfLog(@"Werbeblocker: %lu von %lu Listen bereit", (unsigned long)self.readyLists.count, (unsigned long)self.totalListCount);
         [self removeStaleLists];
+        [self becomeIdle];
         return;
     }
     NSDictionary *entry = self.pendingEntries.firstObject;
     [self.pendingEntries removeObjectAtIndex:0];
+    NSUInteger generation = self.generation;
+    [self lookUpOrCompileEntry:entry directory:self.sourceDirectory completion:^(id list, NSString *problem) {
+        if (generation != self.generation) {
+            return; // Stand wurde inzwischen gewechselt
+        }
+        if (list != nil) {
+            [self listBecameReady:list];
+        } else if (self.sourceDownloaded) {
+            [self fallBackToBundledListsAfterProblem:[NSString stringWithFormat:@"%@: %@", entry[@"name"], problem]];
+            return;
+        }
+        [self processNextEntry];
+    }];
+}
+
+/// Schlägt einen Regelsatz im Store nach (Kennung mit Inhalts-Hash) oder kompiliert ihn aus `directory`.
+/// Completion auf dem Hauptthread: Liste oder Fehlertext.
+- (void)lookUpOrCompileEntry:(NSDictionary *)entry directory:(NSURL *)directory completion:(void (^)(id list, NSString *problem))completion {
     NSString *identifier = [self identifierForEntry:entry];
     NSDate *start = [NSDate date];
-    void (^completion)(id, NSError *) = ^(id list, NSError *error) {
+    void (^lookup)(id, NSError *) = ^(id list, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (list != nil) {
                 NSLog(@"[AdBlock] %@ aus Store (%.0f ms)", entry[@"name"], -[start timeIntervalSinceNow] * 1000.0);
-                [self listBecameReady:list];
-                [self processNextEntry];
+                completion(list, nil);
             } else {
-                [self compileEntry:entry identifier:identifier];
+                [self compileEntry:entry identifier:identifier directory:directory completion:completion];
             }
         });
     };
     ((void (*)(id, SEL, id, id))objc_msgSend)(self.store, NSSelectorFromString(@"lookUpContentRuleListForIdentifier:completionHandler:"),
-                                              identifier, completion);
+                                              identifier, lookup);
 }
 
 /// Lädt und entpackt die Datei abseits des Hauptthreads und lässt WebKit kompilieren.
-- (void)compileEntry:(NSDictionary *)entry identifier:(NSString *)identifier {
-    NSURL *fileURL = [NSBundle.mainBundle URLForResource:entry[@"file"] withExtension:nil subdirectory:kBlockerResourceDirectory];
+- (void)compileEntry:(NSDictionary *)entry identifier:(NSString *)identifier directory:(NSURL *)directory
+          completion:(void (^)(id list, NSString *problem))completion {
+    NSURL *fileURL = directory != nil ? [directory URLByAppendingPathComponent:entry[@"file"]] : nil;
     dispatch_async(self.workQueue, ^{
         NSString *json = nil;
         NSData *packed = fileURL != nil ? [NSData dataWithContentsOfURL:fileURL] : nil;
@@ -350,26 +438,92 @@ static NSString *BrowserAdblockWallSource(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (json == nil) {
                 NSLog(@"[AdBlock] %@ nicht lesbar", entry[@"name"]);
-                [self processNextEntry];
+                completion(nil, @"nicht lesbar");
                 return;
             }
             NSDate *start = [NSDate date];
-            void (^completion)(id, NSError *) = ^(id list, NSError *error) {
+            void (^compiled)(id, NSError *) = ^(id list, NSError *error) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (list != nil) {
                         NSLog(@"[AdBlock] %@ kompiliert (%.1f s, %@ Regeln)", entry[@"name"], -[start timeIntervalSinceNow], entry[@"rules"]);
-                        [self listBecameReady:list];
+                        completion(list, nil);
                     } else {
                         NSLog(@"[AdBlock] %@ Fehler %ld: %@", entry[@"name"], (long)error.code, error.userInfo);
+                        completion(nil, [NSString stringWithFormat:@"WebKit-Fehler %ld", (long)error.code]);
                     }
-                    [self processNextEntry];
                 });
             };
             ((void (*)(id, SEL, id, id, id))objc_msgSend)(self.store,
                 NSSelectorFromString(@"compileContentRuleListForIdentifier:encodedContentRuleList:completionHandler:"),
-                identifier, json, completion);
+                identifier, json, compiled);
         });
     });
+}
+
+#pragma mark Neuer Listenstand (Aktualisierung ohne App-Update)
+
+- (void)installListSetAtDirectory:(NSURL *)directory manifest:(NSDictionary *)manifest
+                       completion:(void (^)(BOOL ok, NSString *error))completion {
+    [self prepare];
+    if (self.store == nil) {
+        completion(NO, @"Werbeblocker nicht verfügbar");
+        return;
+    }
+    if (self.busy) {
+        // erst den laufenden Durchgang abwarten (zwei Kompilierungen gleichzeitig kosten zu viel Speicher)
+        __weak typeof(self) weakSelf = self;
+        [self.idleBlocks addObject:^{
+            [weakSelf installListSetAtDirectory:directory manifest:manifest completion:completion];
+        }];
+        return;
+    }
+    self.busy = YES;
+    NSArray<NSDictionary *> *lists = manifest[@"lists"];
+    NSMutableArray *compiled = [NSMutableArray array];
+    [self compileLists:lists index:0 directory:directory into:compiled completion:^(NSString *problem) {
+        if (problem != nil) {
+            NSLog(@"[AdBlock] neuer Listenstand %@ verworfen: %@", manifest[@"version"], problem);
+            [self removeStaleLists]; // schon kompilierte Teile des verworfenen Stands wieder entfernen
+            [self becomeIdle];
+            completion(NO, problem);
+            return;
+        }
+        // Alles kompiliert: jetzt in einem Schritt umschalten.
+        self.generation += 1;
+        self.sourceDirectory = directory;
+        self.sourceManifest = manifest;
+        self.sourceDownloaded = YES;
+        NSMutableArray<NSString *> *wanted = [NSMutableArray array];
+        for (NSDictionary *entry in lists) {
+            [wanted addObject:[self identifierForEntry:entry]];
+        }
+        self.wantedIdentifiers = wanted;
+        self.totalListCount = lists.count;
+        [self.pendingEntries removeAllObjects];
+        [self.readyLists setArray:compiled];
+        [self refreshAllControllersForce:YES];
+        [self removeStaleLists];
+        NSLog(@"[AdBlock] umgeschaltet auf Listenstand %@ (%lu Regelsätze)", manifest[@"version"], (unsigned long)compiled.count);
+        [self becomeIdle];
+        completion(YES, nil);
+    }];
+}
+
+- (void)compileLists:(NSArray<NSDictionary *> *)lists index:(NSUInteger)index directory:(NSURL *)directory
+                into:(NSMutableArray *)compiled completion:(void (^)(NSString *problem))completion {
+    if (index == lists.count) {
+        completion(nil);
+        return;
+    }
+    NSDictionary *entry = lists[index];
+    [self lookUpOrCompileEntry:entry directory:directory completion:^(id list, NSString *problem) {
+        if (list == nil) {
+            completion([NSString stringWithFormat:@"%@: %@", entry[@"name"], problem ?: @"Fehler"]);
+            return;
+        }
+        [compiled addObject:list];
+        [self compileLists:lists index:index + 1 directory:directory into:compiled completion:completion];
+    }];
 }
 
 /// Entfernt Regelsätze früherer Listenstände aus dem Store.
@@ -397,7 +551,8 @@ static NSString *BrowserAdblockWallSource(void) {
 
 - (NSString *)signatureForException:(BOOL)exception {
     BOOL active = self.isEnabled && !exception && self.readyLists.count > 0;
-    return active ? [NSString stringWithFormat:@"on:%lu", (unsigned long)self.readyLists.count] : @"off";
+    // Der Stand (generation) gehört dazu: nach einem Listenwechsel mit gleicher Anzahl muss trotzdem neu bestückt werden.
+    return active ? [NSString stringWithFormat:@"on:%lu:%lu", (unsigned long)self.generation, (unsigned long)self.readyLists.count] : @"off";
 }
 
 - (void)refreshController:(id)controller exception:(BOOL)exception force:(BOOL)force {

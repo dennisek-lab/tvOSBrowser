@@ -1,5 +1,6 @@
 #import "BrowserScriptletInjector.h"
 #import "BrowserContentBlocker.h"
+#import "BrowserFilterListUpdater.h"
 
 #import <objc/message.h>
 
@@ -25,6 +26,8 @@ static NSString * const kStateSeenKey = @"seen";
 @property (nonatomic, copy, nullable) NSString *libraryVersion;
 @property (nonatomic, copy, nullable) NSString *runtimeTemplate;
 @property (nonatomic, copy, nullable) NSString *extendedCssSource;
+/// Erhöht bei jedem neuen Regelstand, gehört zur Signatur (gleiche Indizes bedeuten dann andere Regeln).
+@property (nonatomic) NSUInteger dataGeneration;
 /// Controller (schwach) -> Zustand (Skript, Signatur, Hosts der Seite, aktiv)
 @property (nonatomic, strong) NSMapTable<id, NSMutableDictionary *> *controllerStates;
 
@@ -58,25 +61,62 @@ static NSString * const kStateSeenKey = @"seen";
     });
 }
 
-/// Auf loadQueue: entpackt scriptlets.json.z und liest Laufzeit-Vorlage und ExtendedCss.
-- (void)loadIfNeeded {
-    if (self.loaded) {
-        return;
-    }
-    self.loaded = YES;
-    NSDate *start = [NSDate date];
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSURL *dataURL = [bundle URLForResource:@"scriptlets.json" withExtension:@"z" subdirectory:kScriptletResourceDirectory];
-    NSURL *runtimeURL = [bundle URLForResource:@"runtime" withExtension:@"js" subdirectory:kScriptletResourceDirectory];
-    NSURL *extendedCssURL = [bundle URLForResource:@"extended-css.min" withExtension:@"js" subdirectory:kScriptletResourceDirectory];
-    NSData *packed = dataURL != nil ? [NSData dataWithContentsOfURL:dataURL] : nil;
++ (NSDictionary *)scriptletDataFromPackedData:(NSData *)packed {
     NSData *data = packed != nil ? [packed decompressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib error:nil] : nil;
     NSDictionary *json = data != nil ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-    NSString *runtime = runtimeURL != nil ? [NSString stringWithContentsOfURL:runtimeURL encoding:NSUTF8StringEncoding error:nil] : nil;
-    if (![json isKindOfClass:NSDictionary.class] || runtime.length == 0 || ![runtime containsString:kScriptletDataPlaceholder]) {
-        NSLog(@"[Scriptlets] nicht verfügbar (Daten %@, Laufzeit %@)", json != nil ? @"ok" : @"fehlt", runtime.length > 0 ? @"ok" : @"fehlt");
-        return;
+    if (![json isKindOfClass:NSDictionary.class] || ![json[@"names"] isKindOfClass:NSArray.class] ||
+        ![json[@"fn"] isKindOfClass:NSArray.class] || [json[@"names"] count] != [json[@"fn"] count] ||
+        ![json[@"rules"] isKindOfClass:NSArray.class] || ![json[@"css"] isKindOfClass:NSArray.class] ||
+        ![json[@"hosts"] isKindOfClass:NSDictionary.class] ||
+        (json[@"except"] != nil && ![json[@"except"] isKindOfClass:NSDictionary.class]) ||
+        (json[@"generic"] != nil && ![json[@"generic"] isKindOfClass:NSDictionary.class])) {
+        return nil;
     }
+    // Stichprobe genügt nicht: ein Index außerhalb der Tabellen würde beim Skriptbau abstürzen, daher alle prüfen.
+    NSUInteger functionCount = [json[@"fn"] count];
+    for (NSArray *rule in json[@"rules"]) {
+        if (![rule isKindOfClass:NSArray.class] || rule.count < 2 || ![rule[0] isKindOfClass:NSNumber.class] ||
+            [rule[0] unsignedIntegerValue] >= functionCount) {
+            return nil;
+        }
+    }
+    NSUInteger ruleCount = [json[@"rules"] count];
+    NSUInteger cssCount = [json[@"css"] count];
+    __block BOOL valid = YES;
+    BOOL (^indexesValid)(id, NSUInteger) = ^BOOL(id list, NSUInteger limit) {
+        if (list == nil) {
+            return YES;
+        }
+        if (![list isKindOfClass:NSArray.class]) {
+            return NO;
+        }
+        for (id n in list) {
+            if (![n isKindOfClass:NSNumber.class] || ([n integerValue] >= 0 && [n unsignedIntegerValue] >= limit)) {
+                return NO;
+            }
+        }
+        return YES;
+    };
+    [json[@"hosts"] enumerateKeysAndObjectsUsingBlock:^(id key, NSDictionary *entry, BOOL *stop) {
+        if (![entry isKindOfClass:NSDictionary.class] || !indexesValid(entry[@"s"], ruleCount) || !indexesValid(entry[@"c"], cssCount)) {
+            valid = NO;
+            *stop = YES;
+        }
+    }];
+    [json[@"except"] enumerateKeysAndObjectsUsingBlock:^(id key, NSDictionary *entry, BOOL *stop) {
+        if (![entry isKindOfClass:NSDictionary.class] || !indexesValid(entry[@"s"], ruleCount) || !indexesValid(entry[@"c"], cssCount)) {
+            valid = NO;
+            *stop = YES;
+        }
+    }];
+    if (!valid || !indexesValid(json[@"generic"][@"s"], ruleCount)) {
+        return nil;
+    }
+    return json;
+}
+
+/// Übernimmt einen geprüften Regelstand in die Eigenschaften.
+- (void)takeScriptletData:(NSDictionary *)json {
     self.functionNames = json[@"names"];
     self.functionCode = json[@"fn"];
     self.rules = json[@"rules"];
@@ -85,11 +125,56 @@ static NSString * const kStateSeenKey = @"seen";
     self.exceptions = json[@"except"];
     self.genericRules = json[@"generic"][@"s"];
     self.libraryVersion = [json[@"library"][@"scriptlets"] description] ?: @"";
+    self.dataGeneration += 1;
+}
+
+/// Auf loadQueue: entpackt scriptlets.json.z (heruntergeladen, wenn neuer, sonst mitgeliefert) und liest
+/// Laufzeit-Vorlage und ExtendedCss.
+- (void)loadIfNeeded {
+    if (self.loaded) {
+        return;
+    }
+    self.loaded = YES;
+    NSDate *start = [NSDate date];
+    NSBundle *bundle = NSBundle.mainBundle;
+    BOOL downloaded = NO;
+    NSURL *dataURL = [[BrowserFilterListUpdater sharedUpdater] preferredScriptletsFileURLDownloaded:&downloaded];
+    NSURL *runtimeURL = [bundle URLForResource:@"runtime" withExtension:@"js" subdirectory:kScriptletResourceDirectory];
+    NSURL *extendedCssURL = [bundle URLForResource:@"extended-css.min" withExtension:@"js" subdirectory:kScriptletResourceDirectory];
+    NSData *packed = dataURL != nil ? [NSData dataWithContentsOfURL:dataURL] : nil;
+    NSDictionary *json = [BrowserScriptletInjector scriptletDataFromPackedData:packed];
+    if (json == nil && downloaded) {
+        NSLog(@"[Scriptlets] heruntergeladene Regeln unbrauchbar, nehme mitgelieferte");
+        [[BrowserFilterListUpdater sharedUpdater] discardDownloadedScriptlets];
+        downloaded = NO;
+        dataURL = [bundle URLForResource:@"scriptlets.json" withExtension:@"z" subdirectory:kScriptletResourceDirectory];
+        json = [BrowserScriptletInjector scriptletDataFromPackedData:dataURL != nil ? [NSData dataWithContentsOfURL:dataURL] : nil];
+    }
+    NSString *runtime = runtimeURL != nil ? [NSString stringWithContentsOfURL:runtimeURL encoding:NSUTF8StringEncoding error:nil] : nil;
+    if (json == nil || runtime.length == 0 || ![runtime containsString:kScriptletDataPlaceholder]) {
+        NSLog(@"[Scriptlets] nicht verfügbar (Daten %@, Laufzeit %@)", json != nil ? @"ok" : @"fehlt", runtime.length > 0 ? @"ok" : @"fehlt");
+        return;
+    }
+    [self takeScriptletData:json];
     self.runtimeTemplate = runtime;
     self.extendedCssSource = extendedCssURL != nil ? [NSString stringWithContentsOfURL:extendedCssURL encoding:NSUTF8StringEncoding error:nil] : nil;
-    NSLog(@"[Scriptlets] geladen: %lu Scriptlets, %lu CSS-Regeln, %lu Hosts, Stand %@ (%.0f ms)",
+    NSLog(@"[Scriptlets] geladen: %lu Scriptlets, %lu CSS-Regeln, %lu Hosts, Stand %@ %@ (%.0f ms)",
           (unsigned long)self.rules.count, (unsigned long)self.cssRules.count, (unsigned long)self.hosts.count,
-          json[@"version"], -[start timeIntervalSinceNow] * 1000.0);
+          json[@"version"], downloaded ? @"heruntergeladen" : @"mitgeliefert", -[start timeIntervalSinceNow] * 1000.0);
+}
+
+- (void)activateScriptletData:(NSDictionary *)data {
+    // Alle Leser (matchesForHost:, Skriptbau) laufen auf dem Hauptthread; geschrieben wird auch hier, nachdem das
+    // erste Laden auf loadQueue sicher abgeschlossen ist. So sieht kein Skriptbau einen halb getauschten Stand.
+    if (![self ensureLoaded]) {
+        NSLog(@"[Scriptlets] neuer Stand ohne Laufzeit nicht nutzbar");
+        return;
+    }
+    dispatch_sync(self.loadQueue, ^{
+        [self takeScriptletData:data];
+    });
+    NSLog(@"[Scriptlets] neuer Stand %@ aktiv: %lu Scriptlets, %lu CSS-Regeln, %lu Hosts (ab der nächsten Navigation)",
+          data[@"version"], (unsigned long)self.rules.count, (unsigned long)self.cssRules.count, (unsigned long)self.hosts.count);
 }
 
 - (BOOL)ensureLoaded {
@@ -249,8 +334,8 @@ static NSString *BrowserScriptletJSON(id object) {
 }
 
 /// Signatur des Zustands, damit bei gleichen Regeln (z. B. Navigation innerhalb von YouTube) nichts getauscht wird.
-static NSString *BrowserScriptletSignature(NSDictionary<NSString *, NSArray<NSIndexSet *> *> *hostMatches) {
-    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+static NSString *BrowserScriptletSignature(NSDictionary<NSString *, NSArray<NSIndexSet *> *> *hostMatches, NSUInteger generation) {
+    NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObject:[NSString stringWithFormat:@"g%lu", (unsigned long)generation]];
     for (NSString *host in [hostMatches.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
         NSArray<NSIndexSet *> *m = hostMatches[host];
         [parts addObject:[NSString stringWithFormat:@"%@:%@|%@", host, m[0], m[1]]];
@@ -302,7 +387,7 @@ static NSString *BrowserScriptletSignature(NSDictionary<NSString *, NSArray<NSIn
 - (void)applyState:(NSMutableDictionary *)state toController:(id)controller {
     NSMutableDictionary<NSString *, NSArray<NSIndexSet *> *> *hostMatches = state[kStateHostsKey];
     BOOL active = [state[kStateActiveKey] boolValue] && hostMatches.count > 0;
-    NSString *signature = active ? BrowserScriptletSignature(hostMatches) : @"off";
+    NSString *signature = active ? BrowserScriptletSignature(hostMatches, self.dataGeneration) : @"off";
     if ([state[kStateSignatureKey] isEqualToString:signature]) {
         return;
     }

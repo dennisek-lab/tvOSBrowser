@@ -89,6 +89,7 @@
 		A8F4F24798AE6D03A09DCC13 /* BrowserSpeechProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */; };
 		B7A1C0DE5E1F000A0B0001B1 /* BrowserPerfProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */; };
 		B7A1C0DE5E1F000A0B0001C1 /* BrowserSetupViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */; };
+		41121CB5A9779EEE09249717 /* BrowserFilterListUpdater.m in Sources */ = {isa = PBXBuildFile; fileRef = 68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -232,6 +233,8 @@
 		B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPerfProbe.m; sourceTree = "<group>"; };
 		B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSetupViewController.m; sourceTree = "<group>"; };
 		B7A1C0DE5E1F00F0A0B00F12 /* BrowserSetupViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSetupViewController.h; sourceTree = "<group>"; };
+		B7148C3B5C77972582F442FC /* BrowserFilterListUpdater.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFilterListUpdater.h; sourceTree = "<group>"; };
+		68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFilterListUpdater.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -434,6 +437,8 @@
 				B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */,
 				B7A1C0DE5E1F00F0A0B00F12 /* BrowserSetupViewController.h */,
 				B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */,
+				B7148C3B5C77972582F442FC /* BrowserFilterListUpdater.h */,
+				68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -655,6 +660,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				41121CB5A9779EEE09249717 /* BrowserFilterListUpdater.m in Sources */,
 				A8F4F24798AE6D03A09DCC13 /* BrowserSpeechProbe.swift in Sources */,
 				B7A1C0DE5E1F000A0B0001B1 /* BrowserPerfProbe.m in Sources */,
 				B7A1C0DE5E1F000A0B0001C1 /* BrowserSetupViewController.m in Sources */,
