@@ -549,11 +549,11 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                                         message:@"You can still open the side menu by double-tapping the Play/Pause button."
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Obere Leiste ausblenden?"
+                                                                                         message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."
                                                                                   preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Hide Bar"
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Ausblenden"
                                                                     style:UIAlertActionStyleDestructive
                                                                   handler:^(__unused UIAlertAction *action) {
                     [self browserHideTopNav];
@@ -1697,12 +1697,12 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         return;
     }
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Could Not Load Webpage"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Seite konnte nicht geladen werden"
                                                                              message:error.localizedDescription
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     if (tab.requestURL.length > 1) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Google This Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Bei Google suchen"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForFailedRequestURLString:tab.requestURL];
@@ -1712,20 +1712,20 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         }]];
     }
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Reload Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             weakSelf.tabCoordinator.previousURL = @"";
             [weakSelf.webview reload];
         }]];
     } else {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Enter a URL or Search"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf requestURLorSearchInput];
         }]];
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 

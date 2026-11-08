@@ -552,26 +552,26 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     if (sources.count > 0) {
         sourceSummary = [sources componentsJoinedByString:@"\n"];
     } else if (videoInfo.count > 0) {
-        sourceSummary = @"No direct media URL was exposed by the page.";
+        sourceSummary = @"Die Seite nennt keine direkte Video-Adresse.";
     } else {
-        sourceSummary = @"No video element was detected under the cursor.";
+        sourceSummary = @"Unter dem Zeiger wurde kein Video gefunden.";
     }
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Native Video Unavailable"
-                                                                             message:[NSString stringWithFormat:@"This page is not exposing a direct video URL that AVPlayer can open.\n\nDetected sources:\n%@", sourceSummary]
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Nativer Player nicht verfügbar"
+                                                                             message:[NSString stringWithFormat:@"Diese Seite liefert keine Video-Adresse, die der native Player öffnen kann.\n\nGefundene Quellen:\n%@", sourceSummary]
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPresentViewController:alertController];
 }
 
 - (void)presentYouTubeExtractionError:(NSError *)error fallbackVideoInfo:(NSDictionary *)videoInfo {
-    NSString *message = error.localizedDescription ?: @"Could not extract a better YouTube playback URL.";
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"YouTube Extraction Failed"
+    NSString *message = error.localizedDescription ?: @"Die YouTube-Wiedergabeadresse konnte nicht gelesen werden.";
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"YouTube-Video nicht lesbar"
                                                                              message:message
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     NSString *fallbackURLString = [videoInfo[@"src"] isKindOfClass:[NSString class]] ? videoInfo[@"src"] : @"";
     if ([self isNativePlayableVideoURLString:fallbackURLString]) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Play Current URL"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Aktuelle Adresse abspielen"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURL *fallbackURL = [NSURL URLWithString:fallbackURLString];

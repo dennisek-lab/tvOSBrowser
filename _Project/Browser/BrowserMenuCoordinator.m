@@ -522,7 +522,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)browserCancelAction {
-    return [self browserActionWithTitle:nil style:UIAlertActionStyleCancel handler:nil];
+    return [self browserActionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil];
 }
 
 - (BOOL)stringHasVisibleContent:(NSString *)string {
@@ -564,8 +564,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentDeleteFavoriteMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Delete a Favorite"
-                                                                       message:@"Select a Favorite to Delete"];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit löschen"
+                                                                       message:@"Welchen Favoriten möchtest du löschen?"];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -593,19 +593,19 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSString *pageTitle = [[self.host browserWebView] title];
     NSURLRequest *request = [[self.host browserWebView] request];
     NSString *currentURL = request.URL.absoluteString ?: @"";
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Name New Favorite"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit benennen"
                                                                        message:currentURL];
     __weak typeof(self) weakSelf = self;
     
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeDefault;
-        textField.placeholder = @"Name New Favorite";
+        textField.placeholder = @"Name des Favoriten";
         textField.text = pageTitle;
         textField.textColor = MenuTextColor();
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
     
-    [alertController addAction:[self browserActionWithTitle:@"Save"
+    [alertController addAction:[self browserActionWithTitle:@"Sichern"
                                                       style:UIAlertActionStyleDestructive
                                                     handler:^(__unused UIAlertAction *action) {
         UITextField *titleTextField = alertController.textFields.firstObject;
@@ -628,7 +628,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentFavoritesMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorites" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favoriten" message:@""];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -647,14 +647,14 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
     
     if (favorites.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Delete a Favorite"
+        [alertController addAction:[self browserActionWithTitle:@"Favorit löschen"
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [weakSelf presentDeleteFavoriteMenu];
         }]];
     }
     
-    [alertController addAction:[self browserActionWithTitle:@"Add Current Page to Favorites"
+    [alertController addAction:[self browserActionWithTitle:@"Diese Seite zu Favoriten hinzufügen"
                                                       style:UIAlertActionStyleDefault
                                                     handler:^(__unused UIAlertAction *action) {
         [weakSelf presentAddFavoritePrompt];
@@ -665,11 +665,11 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (void)presentHistoryMenu {
     NSArray *historyEntries = [[NSUserDefaults standardUserDefaults] arrayForKey:@"HISTORY"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"History" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Verlauf" message:@""];
     __weak typeof(self) weakSelf = self;
     
     if (historyEntries.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Clear History"
+        [alertController addAction:[self browserActionWithTitle:@"Verlauf löschen"
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"HISTORY"];
@@ -829,7 +829,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSDictionary *diagnostics = [self mediaDiagnosticsDictionary];
     if (diagnostics == nil) {
         UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
-                                                                           message:@"The page did not return diagnostics data."];
+                                                                           message:@"Die Seite hat keine Diagnosedaten geliefert."];
         [alertController addAction:[self browserCancelAction]];
         [self.host browserPresentViewController:alertController];
         return;
@@ -888,7 +888,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
     NSLog(@"%@ %@", kBrowserMediaDiagnosticsLogPrefix, message);
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Media Diagnostics"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -897,17 +897,17 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (void)presentWebKitRuntimeMediaPreferences {
     NSString *report = [[self.host browserWebView] runtimeMediaPreferenceReport];
     if (![self stringHasVisibleContent:report]) {
-        report = @"No runtime WebKit media preference information was returned.";
+        report = @"Es wurden keine WebKit-Medieneinstellungen geliefert.";
     }
 
     NSLog(@"%@ %@", kBrowserWebKitMediaPrefsLogPrefix, report);
 
     NSString *message = report;
     if (message.length > 1800) {
-        message = [[message substringToIndex:1800] stringByAppendingString:@"\n\nFull report logged to console."];
+        message = [[message substringToIndex:1800] stringByAppendingString:@"\n\nDer vollständige Bericht steht in der Konsole."];
     }
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"WebKit Media Prefs"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"WebKit-Medieneinstellungen"
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -920,7 +920,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         if (self.host.browserTopMenuShowing) {
             UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Obere Leiste ausblenden?"
                                                                                message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."];
-            [alertController addAction:[self browserActionWithTitle:@"Cancel"
+            [alertController addAction:[self browserActionWithTitle:@"Abbrechen"
                                                               style:UIAlertActionStyleCancel
                                                             handler:nil]];
             [alertController addAction:[self browserActionWithTitle:@"Ausblenden"
@@ -963,7 +963,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)wkWebViewProofOfConceptAction {
-    return [self browserActionWithTitle:@"Open WKWebView PoC"
+    return [self browserActionWithTitle:@"WKWebView-Test öffnen"
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         Class proofOfConceptControllerClass = NSClassFromString(@"BrowserWKWebViewProofOfConceptViewController");
@@ -972,8 +972,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             viewController = [proofOfConceptControllerClass new];
             viewController.modalPresentationStyle = UIModalPresentationFullScreen;
         } else {
-            viewController = [UIAlertController alertControllerWithTitle:@"WKWebView PoC Missing"
-                                                                 message:@"The proof-of-concept controller was not compiled into this build."
+            viewController = [UIAlertController alertControllerWithTitle:@"WKWebView-Test fehlt"
+                                                                 message:@"Der Test-Controller ist in diesem Build nicht enthalten."
                                                           preferredStyle:UIAlertControllerStyleAlert];
             [(UIAlertController *)viewController addAction:[self browserCancelAction]];
         }
@@ -1147,7 +1147,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (UIAlertAction *)playVideoUnderCursorAction {
-    return [self browserActionWithTitle:@"Play Active Video"
+    return [self browserActionWithTitle:@"Aktives Video abspielen"
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1205,7 +1205,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         self.host.browserTextFontSize = 100;
         [self.host browserUpdateTextFontSize];
     }];
-    BrowserAdvancedMenuItem *mediaDiagnosticsItem = [self advancedMenuItemWithTitle:@"Media Diagnostics"
+    BrowserAdvancedMenuItem *mediaDiagnosticsItem = [self advancedMenuItemWithTitle:@"Medien-Diagnose"
                                                                                style:UIAlertActionStyleDefault
                                                                              handler:^{
         [self presentMediaDiagnostics];

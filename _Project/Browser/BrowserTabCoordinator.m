@@ -571,10 +571,10 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
 }
 
 - (void)showMaxTabsAlert {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Maximum Tabs Reached"
-                                                                             message:@"This build keeps up to five tabs open at once."
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Zu viele Tabs"
+                                                                             message:@"Es können höchstens fünf Tabs gleichzeitig offen sein."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Dismiss"
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Schließen"
                                                         style:UIAlertActionStyleCancel
                                                       handler:nil]];
     [self.host browserTabCoordinatorPresentViewController:alertController];
