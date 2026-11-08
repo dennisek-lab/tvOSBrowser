@@ -1303,5 +1303,7 @@ Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `Br
 - Speicher: App 39–46 MB, Seitenprozess 130–590 MB je nach Seite.
 - Schatten ohne `shadowPath` (Bedienungsdialog, Menüschalter, Tab-Karten, Untertitel): nur in Dialogen sichtbar, nicht im Leerlauf oder beim Lesen; Seitenwechsel-Schnappschuss nur einmal je Navigation (`afterScreenUpdates:NO`).
 
+**Sonde am Gerät** (`BrowserPerfProbe.m`, nur DEBUG): mit `DEVICECTL_CHILD_PERF_LOG=1` schreibt die App „[Perf] Start bis aktiv … ms“ und alle 5 s „[Perf] t=…s Speicher … MB CPU … %“ (eigener Prozess, ohne Seitenprozesse). Seitenprozesse zählen: `xcrun devicectl device info processes --device <UDID> | grep -c WebKit.WebContent`. Instruments „App Launch“ hängt am Apple TV beim Start, deshalb diese Sonde. Ergebnisse: `docs/BERICHT-STABILITAET-LEISTUNG.md`.
+
 **Am Gerät messen.** Start mehrfach mit `DEVICECTL_CHILD_POINTER_SELFTEST=wait` und die `[Perf]`-Zeilen vergleichen; `DEVICECTL_CHILD_PERF_STALLS=1` für Blockaden beim Laden; Glow-Kosten mit Instruments (Core Animation/Energie) mit und ohne eingerastetes Ziel; Schriftgrößen-Durchlauf mit dem `js:`-Schritt auf großen Seiten.
 
