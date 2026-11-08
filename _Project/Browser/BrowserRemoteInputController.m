@@ -1,3 +1,4 @@
+#import <GameController/GameController.h>
 #import "BrowserRemoteInputController.h"
 
 static UIImage *BrowserDefaultCursor(void) {
@@ -72,6 +73,15 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic) CGPoint gestureStartPoint;
 @property (nonatomic) CGRect gestureStartTarget;
 
+// Clickpad direkt über GameController (Rohpositionen ohne Fokus-Glättung).
+@property (nonatomic) BOOL padTouching;
+@property (nonatomic) CGPoint padLastValue;
+@property (nonatomic) CFTimeInterval padLastTimestamp;
+@property (nonatomic) CFTimeInterval padLastSampleTime;
+@property (nonatomic) NSUInteger debugPadSamples;
+@property (nonatomic) NSUInteger debugTouchSamples;
+@property (nonatomic) CFTimeInterval debugRateWindowStart;
+
 @end
 
 @implementation BrowserRemoteInputController
@@ -88,6 +98,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
         CGRect screen = [UIScreen mainScreen].bounds;
         _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
+        [self observeGameControllers];
         _cursorView = [[UIImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
         _cursorView.image = BrowserDefaultCursor();
         _cursorView.userInteractionEnabled = NO;
@@ -752,7 +763,6 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
         return NO;
     }
-    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
     if (!self.cursorModeEnabled) {
         return NO;
     }
@@ -776,14 +786,28 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     NSTimeInterval dt = MAX(timestamp - self.lastTouchTimestamp, 1.0 / 240.0);
     self.lastTouchLocation = location;
     self.lastTouchTimestamp = timestamp;
-
-    if (self.pressInProgress || self.revealOnlyTouch) {
+#if DEBUG
+    self.debugTouchSamples += 1;
+#endif
+    // Liefert das Clickpad gerade Rohwerte über GameController, bewegen nur diese den Zeiger.
+    if (CACurrentMediaTime() - self.padLastSampleTime < 0.25) {
         return YES;
+    }
+    [self applyPointerDelta:CGPointMake(dx, dy) interval:dt];
+    return YES;
+}
+
+/// Gemeinsamer Bewegungskern für UIKit-Berührungen und GameController-Rohwerte.
+- (void)applyPointerDelta:(CGPoint)delta interval:(NSTimeInterval)dt {
+    CGFloat dx = delta.x, dy = delta.y;
+    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
+    if (self.pressInProgress || self.revealOnlyTouch) {
+        return;
     }
     [self scheduleIdleHide];
 
     if (!tabOverviewVisible && [self trackRotationWithDelta:CGPointMake(dx, dy)]) {
-        return YES;
+        return;
     }
 
     CGFloat gain = [self gainForSpeed:hypot(dx, dy) / dt];
@@ -806,14 +830,95 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
             ? BrowserPointerCursor()
             : BrowserDefaultCursor();
         [self setCursorImageVisible:YES];
-        return YES;
+        return;
     }
 
     if (!CGPointEqualToPoint(overflow, CGPointZero)) {
-        [self applyManualScrollDelta:CGPointMake(overflow.x * 2.0, overflow.y * 2.0)];
+        // Sanft: Überhang 1:1, damit es am Seitenrand nicht davonschießt.
+        [self applyManualScrollDelta:CGPointMake(overflow.x * 0.9, overflow.y * 0.9)];
     }
     [self updatePointerAnimated:YES];
-    return YES;
+    return;
+}
+
+#pragma mark - Clickpad über GameController
+
+- (void)observeGameControllers {
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(gameControllerDidConnect:)
+                                               name:GCControllerDidConnectNotification object:nil];
+    for (GCController *controller in GCController.controllers) {
+        [self attachToGameController:controller];
+    }
+}
+
+- (void)gameControllerDidConnect:(NSNotification *)notification {
+    [self attachToGameController:notification.object];
+}
+
+- (void)attachToGameController:(GCController *)controller {
+    GCMicroGamepad *pad = controller.microGamepad;
+    if (pad == nil) {
+        return;
+    }
+    pad.reportsAbsoluteDpadValues = YES;
+    pad.allowsRotation = NO;
+    __weak typeof(self) weakSelf = self;
+    pad.dpad.valueChangedHandler = ^(__unused GCControllerDirectionPad *dpad, float xValue, float yValue) {
+        [weakSelf handlePadValue:CGPointMake(xValue, yValue)];
+    };
+    NSLog(@"[Input] Clickpad über GameController: %@", controller.vendorName ?: @"Fernbedienung");
+}
+
+/// Ein Clickpad-Weg von Rand zu Rand (2 Einheiten) entspricht so vielen Punkten, vor der Beschleunigung.
+static const CGFloat kPadPointsPerUnit = 640.0;
+
+- (void)handlePadValue:(CGPoint)value {
+    CFTimeInterval now = CACurrentMediaTime();
+    BOOL touching = !(value.x == 0.0f && value.y == 0.0f);
+    if (!touching) {
+        if (self.padTouching) {
+            self.padTouching = NO;
+            [self handleTouchesEnded];
+        }
+        return;
+    }
+    self.padLastSampleTime = now;
+#if DEBUG
+    self.debugPadSamples += 1;
+    if (now - self.debugRateWindowStart > 2.0) {
+        if (self.debugRateWindowStart > 0) {
+            NSLog(@"[Input] Raten: GameController %.0f/s, UIKit-Berührungen %.0f/s",
+                  self.debugPadSamples / (now - self.debugRateWindowStart), self.debugTouchSamples / (now - self.debugRateWindowStart));
+        }
+        self.debugRateWindowStart = now;
+        self.debugPadSamples = 0;
+        self.debugTouchSamples = 0;
+    }
+#endif
+    if (!self.padTouching) {
+        self.padTouching = YES;
+        self.padLastValue = value;
+        self.padLastTimestamp = now;
+        if ([self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
+            [self.host browserRemoteInputControllerPresentedViewController] != nil) {
+            return;
+        }
+        [self resetRotation];
+        self.gestureStartPoint = self.freePoint;
+        self.gestureStartTarget = self.snappedTarget;
+        self.revealOnlyTouch = [self revealCursorIfIdle];
+        return;
+    }
+    CGPoint delta = CGPointMake((value.x - self.padLastValue.x) * kPadPointsPerUnit,
+                                -(value.y - self.padLastValue.y) * kPadPointsPerUnit);
+    NSTimeInterval dt = MAX(now - self.padLastTimestamp, 1.0 / 240.0);
+    self.padLastValue = value;
+    self.padLastTimestamp = now;
+    if ([self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
+        [self.host browserRemoteInputControllerPresentedViewController] != nil) {
+        return;
+    }
+    [self applyPointerDelta:delta interval:dt];
 }
 
 #pragma mark - Kreisgeste (Clickpad-Ring)
