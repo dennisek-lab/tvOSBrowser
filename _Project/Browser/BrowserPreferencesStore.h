@@ -27,6 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;
 /// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
+/// Untertitel für Videos in der Webseite (Tonabgriff per Web Audio, Weg B). Standard: aus.
+@property (nonatomic) BOOL webSubtitlesEnabled;
 
 - (void)ensureUserAgentConsistency;
 

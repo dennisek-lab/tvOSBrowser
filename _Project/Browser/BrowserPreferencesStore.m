@@ -16,6 +16,7 @@ static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHo
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
+static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -194,6 +195,15 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerExceptionHosts:(NSArray<NSString *> *)cookieBannerExceptionHosts {
     [[self defaults] setObject:cookieBannerExceptionHosts ?: @[] forKey:kCookieBannerExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)webSubtitlesEnabled {
+    return [[self defaults] boolForKey:kWebSubtitlesEnabledDefaultsKey];
+}
+
+- (void)setWebSubtitlesEnabled:(BOOL)webSubtitlesEnabled {
+    [[self defaults] setBool:webSubtitlesEnabled forKey:kWebSubtitlesEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

@@ -23,6 +23,8 @@
 #import "BrowserTabOverviewController.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
+#import "BrowserSpeechRecognizerStub.h"
+#import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
@@ -49,6 +51,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
 @property (nonatomic) CGFloat lastPageScrollOffset;
 @property (nonatomic) CGFloat pageScrollTravel;
+/// Untertitel für Videos in der Webseite (Weg B), angelegt beim ersten Einschalten.
+@property (nonatomic, nullable) BrowserWebSubtitleController *webSubtitleController;
 
 @end
 
@@ -135,6 +139,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self showHintsAlert];
     }
     self.displayedHintsOnLaunch = YES;
+    [self startWebSubtitlesIfEnabled];
 #if DEBUG
     [self runPointerSelfTestIfRequested];
 #endif
@@ -321,6 +326,41 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     [self.webview evaluateJavaScriptAsync:[step substringFromIndex:3] completion:^(id result) {
                         NSLog(@"[SelfTest] js %@", result);
                     }];
+                    return;
+                }
+                if ([step isEqualToString:@"websubs"] || [step hasPrefix:@"websubs:"]) {
+                    // Untertitel-Abgriff (Weg B) fürs aktuelle Video: websubs, websubs:sp,force (ScriptProcessor, ohne
+                    // Herkunftsprüfung), websubs:slow (Stub mit whisper-ähnlichem Takt), websubs:status, websubs:off
+                    NSArray<NSString *> *options = step.length > 8 ? [[step substringFromIndex:8] componentsSeparatedByString:@","] : @[];
+                    if ([options containsObject:@"status"]) {
+                        BrowserWebSubtitleController *controller = self.webSubtitleController;
+                        [controller.capture fetchScriptStatus:^(NSString *json) {
+                            NSLog(@"[SelfTest] websubs %@ skript=%@", controller.statisticsSummary ?: @"aus", json);
+                        }];
+                        return;
+                    }
+                    if ([options containsObject:@"off"]) {
+                        [self.webSubtitleController stop];
+                        NSLog(@"[SelfTest] websubs aus");
+                        return;
+                    }
+                    if (self.webSubtitleController == nil) {
+                        self.webSubtitleController = [BrowserWebSubtitleController new];
+                    }
+                    if ([options containsObject:@"slow"]) {
+                        // Wie whisper: Abschnitt 3 s, Überlappung 0,5 s, 1,2 s Rechenzeit.
+                        BrowserSpeechRecognizerStub *stub = [BrowserSpeechRecognizerStub new];
+                        stub.simulatedProcessingTime = 1.2;
+                        [self.webSubtitleController stop];
+                        self.webSubtitleController.recognizer = stub;
+                        self.webSubtitleController.windowDuration = 3.0;
+                        self.webSubtitleController.overlapDuration = 0.5;
+                    }
+                    self.webSubtitleController.capture.forceScriptProcessor = [options containsObject:@"sp"];
+                    self.webSubtitleController.capture.ignoreCrossOriginCheck = [options containsObject:@"force"];
+                    [self.webSubtitleController stop];
+                    [self.webSubtitleController startForWebView:self.webview userInitiated:YES];
+                    NSLog(@"[SelfTest] websubs start %@", [options componentsJoinedByString:@","]);
                     return;
                 }
                 if ([step isEqualToString:@"video"]) {
@@ -985,6 +1025,35 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
     [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
     [self applyPageColorOfWebView:current];
+    [self startWebSubtitlesIfEnabled];
+}
+
+/// Untertitel (Weg B) im aktiven Tab starten, falls eingeschaltet (App-Start, Tabwechsel). Mehrfachaufruf harmlos.
+- (void)startWebSubtitlesIfEnabled {
+    if (!self.preferencesStore.webSubtitlesEnabled || self.webview == nil) {
+        return;
+    }
+    if (self.webSubtitleController == nil) {
+        self.webSubtitleController = [BrowserWebSubtitleController new];
+    }
+    if (!self.webSubtitleController.running || self.webSubtitleController.webView != self.webview) {
+        [self.webSubtitleController startForWebView:self.webview userInitiated:NO];
+    }
+}
+
+/// Schalter „Untertitel“ (Weg B): Einstellung speichern und den Abgriff im aktiven Tab starten bzw. beenden.
+- (void)browserSetWebSubtitlesEnabled:(BOOL)enabled {
+    self.preferencesStore.webSubtitlesEnabled = enabled;
+    if (!enabled) {
+        [self.webSubtitleController stop];
+        return;
+    }
+    if (self.webSubtitleController == nil) {
+        self.webSubtitleController = [BrowserWebSubtitleController new];
+    }
+    if (self.webview != nil) {
+        [self.webSubtitleController startForWebView:self.webview userInitiated:YES];
+    }
 }
 
 - (void)browserHideTopNav {

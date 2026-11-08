@@ -60,3 +60,6 @@ _Project/Availability.h
 ## Autoconsent-Download (tools/vendor-download)
 tools/vendor-download/
 build-ac/
+
+## Eigene Simulator-Builds der Agenten (-derivedDataPath ../build-sim-…)
+build-sim-*/
