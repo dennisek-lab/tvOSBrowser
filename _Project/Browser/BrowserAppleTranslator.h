@@ -93,6 +93,9 @@ typedef NS_ENUM(NSInteger, BrowserAppleTranslatorError) {
 #if DEBUG
 /// Zustand aus der Seite für das Log (Absätze, Warteschlange, übersetzt, Fehler).
 - (void)debugStateWithCompletion:(void (^)(NSString *state))completion;
+- (void)debugBisect;
+/// Selbsttest: auch Einzelteile mit Bereichen anfragen (alter Weg, der translationd auf github.com/login abstürzen ließ).
+extern BOOL BrowserLTDebugForceRanges;
 #endif
 
 @end

@@ -1140,6 +1140,17 @@ static const NSTimeInterval kAnswerDuration = 25.0;
         }];
         return YES;
     }
+    if ([step isEqualToString:@"translate:forceranges"]) {
+        BrowserLTDebugForceRanges = YES;
+        NSLog(@"[SelfTest] translate:forceranges");
+        return YES;
+    }
+    if ([step isEqualToString:@"translate:bisect"]) {
+        static BrowserPageTranslation *bisect; // hält die Sitzung bis zum Ende
+        bisect = [[BrowserPageTranslation alloc] initWithWebView:webView sourceLanguage:@"en" targetLanguage:BrowserIntelligence.systemLanguageCode];
+        [bisect debugBisect];
+        return YES;
+    }
     if ([step isEqualToString:@"translate:hint"]) {
         NSString *host = [BrowserIntelligence normalizedHostForURL:webView.request.URL] ?: @"example.com";
         NSLog(@"[SelfTest] translate:hint %@", host);

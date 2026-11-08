@@ -29,6 +29,12 @@ static BOOL BrowserLTLoadFramework(void) {
 
 NSString * const BrowserAppleTranslatorErrorDomain = @"BrowserAppleTranslatorErrorDomain";
 
+#if DEBUG
+BOOL BrowserLTDebugForceRanges = NO;
+#else
+static const BOOL BrowserLTDebugForceRanges = NO;
+#endif
+
 static NSError *BrowserLTError(BrowserAppleTranslatorError code, NSString *description) {
     return [NSError errorWithDomain:BrowserAppleTranslatorErrorDomain code:code userInfo:@{NSLocalizedDescriptionKey: description}];
 }
@@ -265,6 +271,42 @@ static NSLocale *BrowserLTBestLocale(NSArray<NSLocale *> *locales, NSString *cod
         completion(nil, NO, BrowserLTError(BrowserAppleTranslatorErrorUnavailable, @"Apples Übersetzung nicht verfügbar"));
         return;
     }
+    NSMutableIndexSet *letterIndexes = [NSMutableIndexSet indexSet];
+    [parts enumerateObjectsUsingBlock:^(NSString *part, NSUInteger index, __unused BOOL *stop) {
+        if (BrowserLTHasLetter(part)) {
+            [letterIndexes addIndex:index];
+        }
+    }];
+    if (letterIndexes.count == 0) {
+        completion(parts, YES, nil); // nichts zu übersetzen (Leerraum, Zahlen, Satzzeichen)
+        return;
+    }
+    if (letterIndexes.count == 1 && !BrowserLTDebugForceRanges) {
+        // Nur ein Teil mit Text: ohne Bereiche als reiner Text anfragen. Bereiche um ein einzelnes kurzes Wort
+        // (z. B. [" ", "or", " "] auf github.com/login) bringen translationd beim Abgleich zum Absturz
+        // (-[_LTTranslationResult updateAlignmentWithSourceSpan:targetSpan:] -> substringWithRange: außerhalb).
+        NSUInteger index = letterIndexes.firstIndex;
+        NSString *part = parts[index];
+        NSCharacterSet *space = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+        NSString *core = [part stringByTrimmingCharactersInSet:space];
+        NSRange coreRange = [part rangeOfString:core];
+        NSString *lead = [part substringToIndex:coreRange.location];
+        NSString *trail = [part substringFromIndex:NSMaxRange(coreRange)];
+        if (core.length <= 2) {
+            completion(parts, YES, nil); // allein stehende Kürzel ohne Zusammenhang („or“ wurde zu „Oregon“)
+            return;
+        }
+        [self translateText:core source:source target:target completion:^(NSString *text, NSError *error) {
+            if (text == nil) {
+                completion(nil, NO, error);
+                return;
+            }
+            NSMutableArray<NSString *> *translated = [parts mutableCopy];
+            translated[index] = [NSString stringWithFormat:@"%@%@%@", lead, text, trail];
+            completion(translated, YES, nil);
+        }];
+        return;
+    }
     SEL rangeInit = NSSelectorFromString(@"initWithIdentifier:text:shouldTranslate:");
     NSMutableArray *ranges = [NSMutableArray arrayWithCapacity:parts.count];
     [parts enumerateObjectsUsingBlock:^(NSString *part, NSUInteger index, __unused BOOL *stop) {
@@ -330,6 +372,35 @@ static NSLocale *BrowserLTBestLocale(NSArray<NSLocale *> *locales, NSString *cod
         ((void (*)(id, SEL, id, BOOL))objc_msgSend)(translator, translate, request, YES);
     } @catch (NSException *exception) {
         completion(nil, NO, BrowserLTError(BrowserAppleTranslatorErrorUnavailable, exception.reason ?: @"Ausnahme"));
+    }
+}
+
+/// Ein Stück Text ohne Bereiche übersetzen.
+- (void)translateText:(NSString *)text source:(NSLocale *)source target:(NSLocale *)target
+           completion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion {
+    Class requestClass = NSClassFromString(@"_LTParagraphTranslationRequest");
+    SEL translate = NSSelectorFromString(@"translate:useDedicatedTextMachPort:");
+    id translator = self.translator;
+    if (requestClass == Nil || translator == nil || ![translator respondsToSelector:translate]) {
+        completion(nil, BrowserLTError(BrowserAppleTranslatorErrorUnavailable, @"Apples Übersetzung nicht verfügbar"));
+        return;
+    }
+    id request = ((id (*)(id, SEL, id, id))objc_msgSend)([requestClass alloc], NSSelectorFromString(@"initWithSourceLocale:targetLocale:"), source, target);
+    @try {
+        [request setValue:text forKey:@"text"];
+        [request setValue:^(id result, NSError *error) {
+            NSArray *candidates = [result respondsToSelector:NSSelectorFromString(@"translations")] ? [result valueForKey:@"translations"] : nil;
+            NSString *full = [candidates.firstObject valueForKey:@"formattedString"];
+            if (![full isKindOfClass:NSString.class]) {
+                completion(nil, [error isKindOfClass:NSError.class] ? error
+                           : BrowserLTError(BrowserAppleTranslatorErrorUnavailable, @"Keine Übersetzung erhalten"));
+                return;
+            }
+            completion(full, nil);
+        } forKey:@"completionHandler"];
+        ((void (*)(id, SEL, id, BOOL))objc_msgSend)(translator, translate, request, YES);
+    } @catch (NSException *exception) {
+        completion(nil, BrowserLTError(BrowserAppleTranslatorErrorUnavailable, exception.reason ?: @"Ausnahme"));
     }
 }
 
@@ -893,7 +964,38 @@ static NSString *BrowserPageTranslationScript(void) {
         [self applyResults:results count:count error:lastError fallbacks:fallbacks elapsed:CFAbsoluteTimeGetCurrent() - start generation:generation];
     };
     BrowserAppleTranslator *translator = BrowserAppleTranslator.sharedTranslator;
-    [paragraphs enumerateObjectsUsingBlock:^(NSDictionary *paragraph, NSUInteger index, __unused BOOL *stop) {
+    // Stürzt translationd bei einem Absatz ab, scheitern alle gleichzeitig laufenden Anfragen mit 4097.
+    // Diese Absätze danach einzeln nacheinander wiederholen; so scheitert nur der Auslöser.
+    NSMutableArray<NSNumber *> *retries = [NSMutableArray array];
+    __block void (^translateOne)(NSUInteger index, BOOL isRetry, void (^done)(void));
+    void (^completeOne)(void) = ^{
+        if (--pending > 0) {
+            return;
+        }
+        if (retries.count == 0) {
+            finish();
+            return;
+        }
+        NSLog(@"[AppleTranslate] Dienst-Verbindung abgebrochen, wiederhole %lu Absätze einzeln", (unsigned long)retries.count);
+        NSArray<NSNumber *> *queue = [retries copy];
+        [retries removeAllObjects];
+        __block NSUInteger position = 0;
+        __block void (^next)(void);
+        void (^step)(void) = ^{
+            if (finished || position >= queue.count) {
+                next = nil;
+                finish();
+                return;
+            }
+            NSUInteger index = queue[position++].unsignedIntegerValue;
+            void (^nextBlock)(void) = next;
+            translateOne(index, YES, ^{ nextBlock(); });
+        };
+        next = step;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);
+    };
+    translateOne = ^(NSUInteger index, BOOL isRetry, void (^done)(void)) {
+        NSDictionary *paragraph = paragraphs[index];
         NSString *identifier = results[index][@"i"];
         NSMutableArray<NSString *> *ids = [NSMutableArray array];
         NSMutableArray<NSString *> *texts = [NSMutableArray array];
@@ -905,9 +1007,7 @@ static NSString *BrowserPageTranslationScript(void) {
             }
         }
         if (identifier.length == 0 || texts.count == 0) {
-            if (--pending == 0) {
-                finish();
-            }
+            done();
             return;
         }
         [translator translateParts:texts source:self.sourceLocale target:self.targetLocale
@@ -923,15 +1023,22 @@ static NSString *BrowserPageTranslationScript(void) {
                     }];
                     results[index] = @{@"i": identifier, @"t": pairs};
                     fallbacks += usedAlignment ? 0 : 1;
+                } else if (!isRetry && [error.domain isEqualToString:NSCocoaErrorDomain]
+                           && (error.code == NSXPCConnectionInterrupted || error.code == NSXPCConnectionInvalid)) {
+                    [retries addObject:@(index)];
                 } else {
                     lastError = error;
+                    if (isRetry) {
+                        NSLog(@"[AppleTranslate] Absatz scheitert auch einzeln (%@ %ld)", error.domain, (long)error.code);
+                    }
                 }
-                if (--pending == 0) {
-                    finish();
-                }
+                done();
             });
         }];
-    }];
+    };
+    for (NSUInteger index = 0; index < count; index++) {
+        translateOne(index, NO, completeOne);
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBatchTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (finished) {
             return;
@@ -1002,6 +1109,57 @@ static NSString *BrowserPageTranslationScript(void) {
         completion([NSString stringWithFormat:@"aktiv=%d quelle=%@ übersetzt=%lu fehler=%lu ohneBereiche=%lu seite=%@", self.active,
                     self.sourceLanguage ?: @"?", (unsigned long)self.translatedParagraphs, (unsigned long)self.failedParagraphs,
                     (unsigned long)self.fallbackParagraphs, result ?: @"-"]);
+    }];
+}
+
+/// Absätze der Seite einzeln nacheinander übersetzen und melden, welcher scheitert (Dienst-Abstürze eingrenzen).
+- (void)debugBisect {
+    [BrowserAppleTranslator.sharedTranslator prepareWithCompletion:^(BOOL available) {
+        if (!available || ![self resolveLocales]) {
+            NSLog(@"[Bisect] nicht verfügbar");
+            return;
+        }
+        NSString *script = [BrowserPageTranslationScript() stringByAppendingString:@"\n;window.__btr.start({spaces: true});"];
+        [self evaluate:script completion:^(__unused id started, __unused NSError *startError) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self evaluate:@"window.__btr.take(400, 1000000)" completion:^(id result, NSError *error) {
+                    if (![result isKindOfClass:NSArray.class]) {
+                        NSLog(@"[Bisect] kein Ergebnis: %@", error.userInfo[@"WKJavaScriptExceptionMessage"] ?: error);
+                        return;
+                    }
+                    NSLog(@"[Bisect] %lu Absätze", (unsigned long)[result count]);
+                    [self debugBisectParagraphs:result index:0 failures:0];
+                }];
+            });
+        }];
+    }];
+}
+
+- (void)debugBisectParagraphs:(NSArray *)paragraphs index:(NSUInteger)index failures:(NSUInteger)failures {
+    if (index >= paragraphs.count) {
+        NSLog(@"[Bisect] fertig, %lu Fehler", (unsigned long)failures);
+        [self evaluate:@"window.__btr ? window.__btr.restore() : 0" completion:^(__unused id r, __unused NSError *e) {}];
+        return;
+    }
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    for (NSArray *part in paragraphs[index][@"p"]) {
+        [texts addObject:part[1]];
+    }
+    [BrowserAppleTranslator.sharedTranslator translateParts:texts source:self.sourceLocale target:self.targetLocale
+                                                 completion:^(NSArray<NSString *> *translated, BOOL used, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSData *json = [NSJSONSerialization dataWithJSONObject:texts options:0 error:nil];
+            NSString *quoted = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+            if (translated == nil) {
+                NSLog(@"[Bisect] #%lu FEHLER %@ %ld: %@", (unsigned long)index, error.domain, (long)error.code, quoted);
+            } else {
+                NSLog(@"[Bisect] #%lu ok%@ %@", (unsigned long)index, used ? @"" : @" (ohne Bereiche)", quoted);
+            }
+            NSTimeInterval delay = translated == nil ? 2.0 : 0.0; // nach einem Absturz startet der Dienst neu
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self debugBisectParagraphs:paragraphs index:index + 1 failures:failures + (translated == nil ? 1 : 0)];
+            });
+        });
     }];
 }
 #endif
