@@ -120,7 +120,8 @@ static BOOL BrowserInputProbeEnabled(void) {
                     return;
                 }
             }
-            NSLog(@"[Probe] Mitteilung %@ (%@)", note.name, note.object ? NSStringFromClass([note.object class]) : @"-");
+            NSLog(@"[Probe] Mitteilung %@ (%@) %@", note.name, note.object ? NSStringFromClass([note.object class]) : @"-",
+                  note.userInfo.count > 0 ? note.userInfo.description : @"");
         }];
         NSLog(@"[Probe] Eingabe-Sonde aktiv");
     });
@@ -160,7 +161,36 @@ static BOOL BrowserInputProbeEnabled(void) {
         SEL allPressesSel = NSSelectorFromString(@"allPresses");
         if ([event respondsToSelector:allPressesSel]) {
             for (UIPress *press in ((id (*)(id, SEL))objc_msgSend)(event, allPressesSel)) {
-                [raw addObject:[NSString stringWithFormat:@"type=%ld phase=%ld key=%@", (long)press.type, (long)press.phase, press.key.charactersIgnoringModifiers ?: @"-"]];
+                NSMutableArray<NSString *> *ivars = [NSMutableArray array];
+                for (Class cls = press.class; cls != nil && cls != NSObject.class; cls = class_getSuperclass(cls)) {
+                    unsigned int count = 0;
+                    Ivar *list = class_copyIvarList(cls, &count);
+                    for (unsigned int i = 0; i < count; i++) {
+                        const char *enc = ivar_getTypeEncoding(list[i]);
+                        NSString *name = @(ivar_getName(list[i]));
+                        ptrdiff_t off = ivar_getOffset(list[i]);
+                        const uint8_t *base = (__bridge void *)press;
+                        NSString *value = @"?";
+                        if (enc[0] == '@') {
+                            id obj = object_getIvar(press, list[i]);
+                            value = obj ? [NSString stringWithFormat:@"%@<%@>", NSStringFromClass([obj class]), [[obj description] substringToIndex:MIN((NSUInteger)60, [obj description].length)]] : @"nil";
+                        } else if (enc[0] == 'q' || enc[0] == 'Q') {
+                            value = [NSString stringWithFormat:@"%lld", *(long long *)(base + off)];
+                        } else if (enc[0] == 'i' || enc[0] == 'I') {
+                            value = [NSString stringWithFormat:@"%d", *(int *)(base + off)];
+                        } else if (enc[0] == 'd') {
+                            value = [NSString stringWithFormat:@"%.4f", *(double *)(base + off)];
+                        } else if (enc[0] == 'B' || enc[0] == 'c') {
+                            value = [NSString stringWithFormat:@"%d", *(char *)(base + off)];
+                        } else if (enc[0] == '{') {
+                            value = [NSString stringWithFormat:@"struct%s", enc];
+                        }
+                        [ivars addObject:[NSString stringWithFormat:@"%@=%@", name, value]];
+                    }
+                    free(list);
+                }
+                [raw addObject:[NSString stringWithFormat:@"type=%ld phase=%ld t=%.3f force=%.2f %@", (long)press.type, (long)press.phase,
+                                press.timestamp, press.force, [ivars componentsJoinedByString:@" "]]];
             }
         }
         NSLog(@"[Probe] Ereignis %@ type=%ld subtype=%ld %@", NSStringFromClass(event.class), (long)event.type, (long)event.subtype,

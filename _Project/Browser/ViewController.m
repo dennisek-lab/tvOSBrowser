@@ -2656,6 +2656,27 @@ static NSString *BrowserDisplayHost(NSString *host) {
     [self beginAddressEditing];
 }
 
+- (void)browserRemoteInputControllerHandleSiriDoublePress {
+    // Siri-Taste zweimal: zum Pop-up springen, solange die Einblendung steht; sonst übersetzen bzw. die Übersetzung
+    // beenden (Nutzerwunsch 8. November 2026).
+    if (self.presentedViewController != nil || self.addressPanel != nil) {
+        NSLog(@"[Keys] Siri zweimal: Dialog offen, keine Aktion");
+        return;
+    }
+    if (self.popupNotice.visible) {
+        NSLog(@"[Keys] Siri zweimal: Sprung zum Pop-up");
+        [self jumpToPopupTab];
+        return;
+    }
+    if ([self.intelligenceController currentPageIsTranslated]) {
+        NSLog(@"[Keys] Siri zweimal: Übersetzung beenden");
+        [self.intelligenceController showOriginalOfCurrentPage];
+        return;
+    }
+    NSLog(@"[Keys] Siri zweimal: übersetzen");
+    [self.intelligenceController translateCurrentPage];
+}
+
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress {
     if ([self closeDialogForPlayPause]) {
         return;
