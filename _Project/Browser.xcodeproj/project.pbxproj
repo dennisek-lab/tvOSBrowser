@@ -58,6 +58,8 @@
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
 		56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */; };
 		40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */ = {isa = PBXBuildFile; fileRef = 8652E9B7A8FD897D903A8958 /* Autoconsent */; };
+		BC7377FCB96ADE6D0703EE8F /* Reader in Resources */ = {isa = PBXBuildFile; fileRef = 02AB7C306633303A188E18EE /* Reader */; };
+		F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */ = {isa = PBXBuildFile; fileRef = EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -144,6 +146,9 @@
 		5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserGuideViewController.h; sourceTree = "<group>"; };
 		AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserGuideViewController.m; sourceTree = "<group>"; };
 		8652E9B7A8FD897D903A8958 /* Autoconsent */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Autoconsent; sourceTree = "<group>"; };
+		02AB7C306633303A188E18EE /* Reader */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Reader; sourceTree = "<group>"; };
+		083704A0266ED4493FABF426 /* BrowserReaderMode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserReaderMode.h; sourceTree = "<group>"; };
+		EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserReaderMode.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -294,6 +299,8 @@
 				E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */,
 				5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */,
 				AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */,
+				083704A0266ED4493FABF426 /* BrowserReaderMode.h */,
+				EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -362,6 +369,7 @@
 				B002B8661BAE420500C744AF /* main.m */,
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				02AB7C306633303A188E18EE /* Reader */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
@@ -433,6 +441,7 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
@@ -486,6 +495,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,

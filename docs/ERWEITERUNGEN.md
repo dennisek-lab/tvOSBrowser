@@ -18,7 +18,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 6. [Werbeblocker](#6-werbeblocker-browsercontentblocker)
 7. [Klickziele, Seitenfarbe, Glow-Farbe](#7-klickziele-seitenfarbe-glow-farbe-browserclicktargettracker)
 8. [Fernbedienung](#8-fernbedienung-browserremoteinputcontroller)
-9. [Obere Leiste](#9-obere-leiste-browsertopbarview)
+9. [Obere Leiste](#9-obere-leiste-browsertopbarview) (mit 9.1 [Reader-Modus](#91-reader-modus-browserreadermode))
 10. [Video: Hooks, nativer Player, Asset-Loader, YouTube](#10-video)
 11. [DNS-Proxy (Cloudflare)](#11-dns-proxy-browserdnsproxy)
 12. [Weitere Eingriffe in Systemklassen](#12-weitere-eingriffe-in-systemklassen)
@@ -380,6 +380,28 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 
 **Aktualisieren.** Kein externer Teil.
 
+### 9.1 Reader-Modus (`BrowserReaderMode`)
+
+**Zweck.** Knopf links neben dem •••-Symbol (SF Symbol `doc.plaintext`, Rückfall `text.page`). Zeigt den Hauptartikel der Seite groß und ruhig (Sofaabstand): Systemserife (`ui-serif`, New York), ca. 36 pt Fließtext, Zeile ca. 1280 pt breit (rund 70 Zeichen), mittig; Titel, Autor, Datum, Domain, Lesezeit; Bilder höchstens spaltenbreit; hell/dunkel per `prefers-color-scheme` (folgt der Systemeinstellung, die Leistenfarbe folgt über den Klickziel-Tracker der Seitenfarbe).
+
+**Dateien.** `_Project/Browser/BrowserReaderMode.m/.h` (Brücke), Ordner `_Project/Browser/Reader/` (Ordnerreferenz, per `tools/add_resource.py Reader`): `Readability.js` und `Readability-readerable.js` (Mozilla, Apache-2.0, **unverändert**, Version 0.6.0 aus npm `@mozilla/readability`, siehe `THIRD_PARTY_NOTICES.md`), `LICENSE.md`, `reader.js` (eigener Teil: Overlay und Stil). Leiste: `BrowserTopBarView` (`BrowserTopBarActionReader` am Ende der Enum, `setReaderAvailable:active:`, `readerImageView`, `readerFocusButton`). Steuerung: `ViewController.m` (Abschnitt „Reader-Modus“: `toggleReaderMode`, `updateReaderAvailability`, `scheduleReaderAvailabilityChecks`).
+
+**Datenfluss.**
+1. `BrowserReaderMode` liest die drei Skriptdateien einmal und setzt sie zu `(function(module){ … })(undefined);` zusammen (`module` verdeckt, damit die Dateien nichts an ein seiteneigenes `module` hängen). Jeder Aufruf (`check`, `toggle`, `exit`) installiert bei Bedarf `window.__browserReader` im Seitenkontext (`evaluateJavaScriptAsync:`) und ruft die Methode auf. Rückgabe `a` (aktiv), `y` (lesbar), `n` (nicht lesbar). Zusätzlich `window.__browserReaderViewWidth` (Breite der Ansicht in Punkten), daraus rechnet `reader.js` Punkte in CSS-Pixel um (die App-WebView hat `innerWidth` 1280 bei 1920 pt, Faktor 2/3).
+2. **Erkennung:** nach `webViewDidFinishLoad` nach 0,4 s und nochmals nach 2,5 s (Seiten, die ihren Text per Skript aufbauen) `isProbablyReaderable(document, {minContentLength: 400, minScore: 20})`. Bei `webViewDidStartLoad` und Tabwechsel wird der Zustand zurückgesetzt (Knopf weg, Reader aus). Nicht lesbar: Knopf unsichtbar (`alpha` 0, kein Zeigerziel, kein Fokusknopf); sein Platz bleibt in der Leiste reserviert, damit Ladekreisel und Seitenname nicht springen. Ladekreisel sitzt links vom Reader-Platz, Reader-Platz direkt links vom Menü. Im Kompaktmodus ist der Knopf wie die anderen Symbole ausgeblendet.
+3. **Einschalten:** `new Readability(document.cloneNode(true), {charThreshold: 200}).parse()`, dann Overlay `<div id="__reader">` ans Ende des Body, `<style id="__reader_style">` in den Kopf, `html.__rd` setzen. Per CSS (`!important`) sind alle übrigen Kinder des Body ausgeblendet und `html`/`body` auf normales Scrollen gezwungen. Der Inhalt wird nach dem Einsetzen bereinigt (`style`-Attribute, weil Readability sie behält und die Textgröße-Funktion der App sie mit `!important` setzt; `on…`-Attribute, `javascript:`-Adressen, Skripte). Danach `scrollTo(0,0)` und `__browserTargets.report()`.
+4. **Ausschalten:** Overlay und Stil entfernen, Klasse weg, gemerkter Scrollstand wiederherstellen. Auslöser: erneuter Knopfdruck oder Menütaste (`browserRemoteInputControllerHandleMenuPress` prüft `topMenuView.readerActive` **vor** „Seite zurück“) oder Navigation (neue Seite = Reader zu Ende).
+
+**Warum Overlay statt `loadHTMLString:baseURL:`.** (a) Beim Ausschalten kommt die Originalseite sofort zurück, mit Scrollstand, Formularen, laufenden Skripten, ohne Neuladen und ohne Verlauf zu verbiegen (`loadHTMLString` legt einen Verlaufseintrag an; „Zurück“ würde die Seite neu laden). (b) Die Extraktion läuft auf dem fertig gerenderten DOM (auch per Skript gebauter Inhalt, Cookie-Overlays sind bereits weg). (c) Dieselbe Herkunft: relative Bild- und Link-Adressen, Cookies und Bildschutz (Referer) funktionieren wie auf der Seite. (d) Alle Nutzerskripte (Klickziel-Tracker, Video-Hooks, Cookie-Ablehner) laufen unverändert weiter, weil es dasselbe Dokument bleibt: Links im Reader sind normale `<a>`-Elemente im Haupt-DOM und werden vom Tracker (document-end, `querySelectorAll`) gemeldet; nach dem Umschalten stößt die App `refreshClickTargets` an. Ein eigenes Reader-Dokument per `loadHTMLString` bräuchte dagegen eine neue Navigation, Tracker und Cookie-Ablehner liefen neu, das Original käme nur über Neuladen zurück. Bewusst **kein** Shadow DOM, weil der Tracker Shadow DOM nicht durchsucht und Links dort nicht einrasten würden; stattdessen `all: initial` auf dem Container, Selektoren mit `#__reader`-Präfix und `!important` für `::first-letter`/`::first-line`/`::before`/`::after` (Seitenstile wie Initialen). 
+
+**Private/fragile Stellen.** Kein privates API. Anfällig: (a) das Ausblenden per `html.__rd > body > *:not(#__reader)` bei Seiten, die Inhalt außerhalb des Body oder nach dem Einschalten neu einfügen (dann erscheint er unter/über dem Reader), (b) Seitenstile, die den Container trotz `all: initial` verändern (selten), (c) Readability kann bei Nicht-Artikeln `null` liefern: dann bleibt die Seite unverändert und der Knopf verschwindet (`toggle` gibt `n` zurück), (d) lange Seiten: `parse()` läuft synchron im Seitenthread (Sekundenbruchteile bis wenige Sekunden), (e) `loadHTMLString`-Alternative wäre der Rückfall, falls Apple Skriptausführung im Seitenkontext einschränkt.
+
+**Woran man merkt, dass es kaputt ist.** Knopf erscheint nie: `[Reader] check -> n` bzw. `e:…` in der Konsole (DEBUG), `js:typeof window.__browserReader`; `Datei fehlt: Reader/…js` heißt Ordner nicht im Paket. Reader zeigt Seite doppelt oder halb: Seitenstil schlägt durch. Links im Reader rasten nicht ein: `window.__browserTargets` prüfen (Abschnitt 4).
+
+**Test.** `POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;js:1;js:1;reader;js:1;next;next;click"` (Schritt `reader` schaltet um und loggt `reader vorher/nachher verfügbar=… aktiv=…`; `[Reader] check/toggle -> a|y|n`). Geprüft mit heise.de-Artikel, theguardian.com-Artikel, de.wikipedia.org (Screenshots in `docs/reader-screens/`).
+
+**Aktualisieren.** Readability: neue Version aus npm holen (`npm view @mozilla/readability version`, Tarball), die beiden Dateien und `LICENSE.md` unverändert ersetzen, Version in `THIRD_PARTY_NOTICES.md` und hier ändern. Stil: nur `css()` in `reader.js`.
+
 ---
 
 ## 10. Video
@@ -534,6 +556,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |
 | `menu` | Menütaste (`HandleMenuPress`) | `menu handled=0|1` |
 | `guide` | Bedienungsdialog anzeigen | Screenshot |
+| `reader` | Reader-Modus umschalten (Knopf der Leiste) | `reader vorher verfügbar=… aktiv=…`, nach 1,5 s `reader nachher …` |
 | `clearall` | alle Website-Daten löschen (`resetWebsiteDataWithCompletion:`) | `clearall fertig` |
 | `clearsite:<host>` | nur Einträge löschen, deren `displayName` den Host enthält (z. B. gespeicherte Cookie-Einwilligung) | `clearsite <host>: N Einträge gelöscht` |
 | `zoom` | Zoom-Zustand (`zoomScale`, `min/max`, `_viewScale`, `contentSize`, `bounds`, `pageZoom`) | `zoom zoomScale=… viewScale=…` |
@@ -571,6 +594,7 @@ POINTER_SELFTEST="gestures"
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
+| `[Reader] check/toggle/exit -> a|y|n|e:…` | `BrowserReaderMode` | ja |
 | `[SelfTest]` | `ViewController` | ja |
 | `[Probe]` | `BrowserFeasibilityProbe` | nein (nur bei gesetzter Umgebungsvariable) |
 | `[FullscreenHack]` | `WebAVPlayerViewController+FullscreenSubviewHack.m` | Hack aus |

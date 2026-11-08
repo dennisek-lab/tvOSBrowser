@@ -8,3 +8,11 @@
 - Beigelegt: `_Project/Browser/Autoconsent/autoconsent.standalone.js` (`dist/autoconsent.standalone.js` aus dem npm-Paket,
   unverändert, enthält die kompakten Regeln `rules/compact-rules.json`). Der MPL-Quellcode steht im oben genannten Repository.
 - `_Project/Browser/Autoconsent/bridge.js` ist eine eigene, kleine Datei der App und kein Teil von autoconsent.
+
+## @mozilla/readability 0.6.0
+
+- Zweck: Reader-Modus (Erkennung lesbarer Seiten mit `isProbablyReaderable`, Extraktion des Artikels).
+- Quelle: https://github.com/mozilla/readability (npm: https://www.npmjs.com/package/@mozilla/readability)
+- Lizenz: Apache License 2.0, Text in `_Project/Browser/Reader/LICENSE.md`
+- Beigelegt: `_Project/Browser/Reader/Readability.js` und `Readability-readerable.js` (aus dem npm-Paket, unverändert).
+- `_Project/Browser/Reader/reader.js` ist eine eigene, kleine Datei der App und kein Teil von Readability.

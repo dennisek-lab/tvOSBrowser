@@ -51,6 +51,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic) UIImageView *tabsImageView;
 @property (nonatomic) UIImageView *fullscreenImageView;
 @property (nonatomic) UIImageView *menuImageView;
+@property (nonatomic) UIImageView *readerImageView;
+@property (nonatomic) UIView *readerHighlightView;
+@property (nonatomic) BrowserTopBarFocusButton *readerFocusButton;
+@property (nonatomic, readwrite) BOOL readerAvailable;
+@property (nonatomic, readwrite) BOOL readerActive;
 @property (nonatomic) UILabel *URLLabel;
 @property (nonatomic) UIActivityIndicatorView *loadingSpinner;
 @property (nonatomic) UIView *focusGlowView;
@@ -165,6 +170,18 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _tabsImageView = [self newIconViewWithSymbol:@"square.on.square" fallbackImageNamed:@"multi-tab"];
     _fullscreenImageView = [self newIconViewWithSymbol:@"arrow.up.left.and.arrow.down.right" fallbackImageNamed:@"resize-arrows"];
     _menuImageView = [self newIconViewWithSymbol:@"ellipsis.circle" fallbackImageNamed:@"menu-2"];
+    _readerImageView = [self newIconViewWithSymbol:@"doc.plaintext" fallbackImageNamed:@"menu-2"];
+    if ([UIImage systemImageNamed:@"doc.plaintext"] == nil) {
+        _readerImageView.image = [[UIImage systemImageNamed:@"text.page"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] ?: _readerImageView.image;
+    }
+    _readerImageView.alpha = 0.0;
+    // Hervorhebung hinter dem Symbol, solange der Reader läuft.
+    _readerHighlightView = [[UIView alloc] initWithFrame:CGRectZero];
+    _readerHighlightView.userInteractionEnabled = NO;
+    _readerHighlightView.backgroundColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.9];
+    _readerHighlightView.layer.cornerCurve = kCACornerCurveContinuous;
+    _readerHighlightView.alpha = 0.0;
+    [self.chromeEffectView.contentView addSubview:_readerHighlightView];
 
     _URLLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _URLLabel.text = @"tvOS Browser";
@@ -188,7 +205,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         _homeImageView,
         _tabsImageView,
         _fullscreenImageView,
-        _menuImageView
+        _menuImageView,
+        _readerImageView
     ];
     for (UIImageView *imageView in iconViews) {
         [self.chromeEffectView.contentView addSubview:imageView];
@@ -202,6 +220,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Enter URL or Search"];
     _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Top Navigation Visibility"];
     _menuFocusButton = [self newFocusButtonForAction:BrowserTopBarActionMenu accessibilityLabel:@"Menu"];
+    _readerFocusButton = [self newFocusButtonForAction:BrowserTopBarActionReader accessibilityLabel:@"Reader"];
     _focusButtons = @[
         _backFocusButton,
         _refreshFocusButton,
@@ -210,7 +229,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         _tabsFocusButton,
         _URLFocusButton,
         _fullscreenFocusButton,
-        _menuFocusButton
+        _menuFocusButton,
+        _readerFocusButton
     ];
     for (BrowserTopBarFocusButton *button in _focusButtons) {
         [self.chromeEffectView.contentView addSubview:button];
@@ -252,16 +272,36 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 #endif
     UIColor *foreground = light ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
     for (UIImageView *imageView in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
-                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
+                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView, self.readerImageView]) {
         imageView.tintColor = foreground;
     }
     self.pageForegroundColor = foreground;
+    [self applyReaderStyle];
     [self applyFavoriteStyle];
     self.loadingSpinner.color = foreground;
     self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
     self.lightPage = light;
     [self applyContrastStyle];
     [self renderTitle];
+}
+
+/// Reader-Knopf: nur sichtbar, wenn die Seite lesbar ist; im Reader weiß auf blauer Hervorhebung.
+- (void)setReaderAvailable:(BOOL)available active:(BOOL)active {
+    available = available || active;
+    if (self.readerAvailable == available && self.readerActive == active) {
+        return;
+    }
+    self.readerAvailable = available;
+    self.readerActive = active;
+    [self applyReaderStyle];
+    [self setNeedsLayout];
+}
+
+- (void)applyReaderStyle {
+    self.readerImageView.tintColor = self.readerActive ? UIColor.whiteColor : (self.pageForegroundColor ?: UIColor.whiteColor);
+    BOOL visible = self.readerAvailable && !self.compact;
+    self.readerImageView.alpha = visible ? 0.95 : 0.0;
+    self.readerHighlightView.alpha = (visible && self.readerActive) ? 1.0 : 0.0;
 }
 
 - (BrowserTopBarFocusButton *)newFocusButtonForAction:(BrowserTopBarAction)action
@@ -518,8 +558,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
     // Der Knopf zum Ausblenden der Leiste entfällt: Beim Scrollen wird sie ohnehin zur Kapsel.
     self.fullscreenImageView.hidden = YES;
+    // Reader-Knopf direkt links neben dem Menü; sein Platz bleibt immer reserviert, damit Ladekreisel und
+    // Seitenname nicht springen, wenn die Lesbarkeit erst nach dem Laden feststeht.
+    self.readerImageView.frame = self.fullscreenImageView.frame;
+    self.readerHighlightView.frame = CGRectInset(self.readerImageView.frame, -6.0, -2.0);
+    self.readerHighlightView.layer.cornerRadius = 16.0;
     CGFloat spinnerSide = 34.0;
-    rightX = CGRectGetMinX(self.menuImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
+    rightX = CGRectGetMinX(self.readerImageView.frame) - kTopBarSpinnerSpacing - spinnerSide;
     self.loadingSpinner.frame = CGRectMake(rightX,
                                            floor((CGRectGetHeight(chromeFrame) - spinnerSide) / 2.0),
                                            spinnerSide,
@@ -534,6 +579,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
                                      self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
         imageView.alpha = iconAlpha;
     }
+    [self applyReaderStyle];
     if (self.compact) {
         // Nur der Seitenname, verkleinert und mittig; der Ladekreisel rechts in der Kapsel.
         CGFloat compactSpinner = 28.0;
@@ -574,6 +620,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.URLFocusButton.frame = [self uniformFocusFrameForRect:self.URLTargetFrame horizontalInset:0.0];
     self.fullscreenFocusButton.frame = [self focusFrameForIconView:self.fullscreenImageView];
     self.menuFocusButton.frame = [self focusFrameForMenuIconView:self.menuImageView];
+    self.readerFocusButton.frame = [self focusFrameForIconView:self.readerImageView];
+    [self updateReaderFocusButtonAvailability];
 
     if (!self.focusModeActive) {
         [self resetFocusVisualState];
@@ -605,6 +653,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         @[self.URLLabel, @(BrowserTopBarActionURL)],
         @[self.fullscreenImageView, @(BrowserTopBarActionFullscreen)],
         @[self.menuImageView, @(BrowserTopBarActionMenu)],
+        @[self.readerImageView, @(BrowserTopBarActionReader)],
     ];
     for (NSArray *item in items) {
         UIView *view = item[0];
@@ -708,7 +757,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self setCompact:NO animated:YES];
     }
     for (BrowserTopBarFocusButton *button in self.focusButtons) {
-        BOOL available = focusModeActive && button != self.fullscreenFocusButton;
+        BOOL available = focusModeActive && button != self.fullscreenFocusButton &&
+            (button != self.readerFocusButton || self.readerAvailable);
         button.hidden = !available;
         button.enabled = available;
     }
@@ -719,6 +769,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     } else {
         [self setNeedsLayout];
     }
+}
+
+/// Der Reader-Knopf nimmt am Fokus nur teil, wenn er sichtbar ist.
+- (void)updateReaderFocusButtonAvailability {
+    BOOL available = self.focusModeActive && self.readerAvailable && !self.compact;
+    self.readerFocusButton.hidden = !available;
+    self.readerFocusButton.enabled = available;
 }
 
 - (UIView *)preferredFocusItem {
