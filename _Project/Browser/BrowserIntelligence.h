@@ -23,7 +23,33 @@ typedef NS_ENUM(NSInteger, BrowserIntelligenceError) {
     BrowserIntelligenceErrorNoPage = 1,
     BrowserIntelligenceErrorNoText,
     BrowserIntelligenceErrorTooShort,
+    BrowserIntelligenceErrorQuestionTooShort,
 };
+
+/// Ergebnis des Ähnlichkeitsabgleichs Diktat ↔ Befehlstabelle (nach BrowserCommandParser).
+@interface BrowserCommandMatch : NSObject
+/// Bester Befehl (Name und Argument wie in BrowserCommand), auch wenn er nicht ausgeführt wird.
+@property (nonatomic, copy, nullable) NSString *name;
+@property (nonatomic, copy, nullable) NSString *argument;
+/// Ähnlichste Beispielphrase.
+@property (nonatomic, copy, nullable) NSString *example;
+/// Begriffe: IDF-gewichteter Kosinus zur besten Phrase (0…1) und Abstand zum besten anderen Befehl.
+@property (nonatomic) double lexicalScore;
+@property (nonatomic) double lexicalMargin;
+/// Satz-Embedding: Kosinus und Abstand zum besten anderen Befehl, -1 ohne Embedding für die Sprache.
+@property (nonatomic) double semanticScore;
+@property (nonatomic) double semanticMargin;
+/// Befehl laut Embedding (kann vom lexikalisch besten abweichen).
+@property (nonatomic, copy, nullable) NSString *semanticName;
+/// Inhaltswörter, die in keiner Phrase der Tabelle vorkommen („zukunft“ in „zurück zur Zukunft“).
+@property (nonatomic, copy) NSArray<NSString *> *unknownWords;
+@property (nonatomic) NSUInteger contentWordCount;
+/// YES: oberhalb der Schwelle, Befehl ausführen. NO: Suche bleibt.
+@property (nonatomic) BOOL accepted;
+/// Kurzer Grund ("Begriffe", "Embedding", "knapp darunter", "unbekannte Wörter", "zu kurz" …).
+@property (nonatomic, copy) NSString *reason;
+- (NSString *)logDescription;
+@end
 
 /// Ergebnis der Prüfung, ob die Seite übersetzt werden sollte (Hinweis „Übersetzen?“).
 @interface BrowserPageLanguageInfo : NSObject
@@ -63,6 +89,29 @@ typedef NS_ENUM(NSInteger, BrowserIntelligenceError) {
 
 /// Anzahl der Sätze für einen Text mit candidateCount Kandidaten (4 bis 6).
 + (NSUInteger)summaryLengthForCandidateCount:(NSUInteger)candidateCount;
+
+#pragma mark Sprachbefehle (Ähnlichkeit)
+
+/// Zweite Stufe nach BrowserCommandParser: vergleicht den Text mit den Beispielphrasen der Befehlstabelle
+/// (Satz-Embedding, Rückfall IDF-gewichtete Begriffe). match.accepted nur oberhalb vorsichtiger Schwellen;
+/// match nil, wenn der Text gar nicht in Frage kommt (Adresse, ein Wort, sehr lang). Completion auf dem Hauptthread.
+- (void)matchCommandForText:(NSString *)text completion:(void (^)(BrowserCommandMatch * _Nullable match))completion;
+
+#pragma mark Frag die Seite
+
+/// Holt den Seitentext (bis 30.000 Zeichen) und sucht die Sätze, die die Frage am ehesten beantworten (bis zu 3).
+- (void)askQuestion:(NSString *)question
+          inWebView:(BrowserWebView *)webView
+         completion:(void (^)(BrowserAIAnswer * _Nullable answer, NSDictionary<NSString *, id> * _Nullable info,
+                              NSError * _Nullable error))completion;
+
+/// Markiert den Satz in der Seite (Glas-/Leucht-Hervorhebung, nach 10 s ausgeblendet) und scrollt hin.
+/// result: found (NSNumber), how ("genau", "klein", "anfang+ende", "anfang", "ende"), spans, y; nil ohne Antwort.
+- (void)highlightPassage:(NSString *)passage
+               inWebView:(BrowserWebView *)webView
+              completion:(nullable void (^)(NSDictionary<NSString *, id> * _Nullable result))completion;
+/// Entfernt die Hervorhebung (sanft ausblenden).
+- (void)clearPassageHighlightInWebView:(nullable BrowserWebView *)webView;
 
 #pragma mark Sprache und Übersetzen
 

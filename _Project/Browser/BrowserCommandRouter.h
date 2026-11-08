@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserCommandSummarize;
 /// Seite über translate.goog öffnen. NO, wenn nicht möglich (Rückmeldung kommt vom Controller).
 - (BOOL)browserCommandTranslate;
+/// „Frag die Seite“: passendste Stelle suchen und hervorheben; Antwort-Karte bzw. Hinweis kommt vom Controller.
+- (void)browserCommandAskPage:(NSString *)question;
 
 @end
 
@@ -73,6 +75,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Führt den Befehl aus. NO bei unbekanntem Befehl oder wenn er gerade nicht möglich ist.
 - (BOOL)performCommandNamed:(NSString *)name argument:(nullable NSString *)argument source:(BrowserCommandSource)source;
+/// Wie oben; note wird an die Rückmeldung gehängt (z. B. „sinngemäß erkannt“ beim Ähnlichkeitsabgleich).
+- (BOOL)performCommandNamed:(NSString *)name argument:(nullable NSString *)argument source:(BrowserCommandSource)source
+               feedbackNote:(nullable NSString *)note;
 
 /// Kurze Rückmeldung einblenden (auch für andere Stellen nutzbar).
 - (void)showFeedback:(NSString *)text symbolName:(nullable NSString *)symbolName success:(BOOL)success;

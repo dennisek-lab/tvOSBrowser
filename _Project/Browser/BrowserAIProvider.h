@@ -30,6 +30,37 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) NSUInteger inputLength;
 @end
 
+/// Eine Fundstelle für „Frag die Seite“ (ein Satz aus dem Seitentext).
+@interface BrowserAIPassage : NSObject
+@property (nonatomic, copy) NSString *text;
+/// Laufende Nummer des Satzes im Text.
+@property (nonatomic) NSUInteger index;
+/// Gesamtwert (0…1, zum Sortieren).
+@property (nonatomic) double score;
+/// Anteil der Fragebegriffe (IDF-gewichtet), die im Satz oder knapp daneben stehen (0…1).
+@property (nonatomic) double lexicalScore;
+/// Kosinus Frage ↔ Satz im Satz-Embedding, -1 ohne Embedding.
+@property (nonatomic) double semanticScore;
+/// Satz passt zur Frageart (Datum bei „wann“, Zahl bei „wie viel“, Ort bei „wo“, Name bei „wer“).
+@property (nonatomic) BOOL typeMatch;
+@end
+
+/// Ergebnis von „Frag die Seite“: Fundstellen, beste zuerst (leer, wenn nichts passt).
+@interface BrowserAIAnswer : NSObject
+@property (nonatomic, copy) NSString *question;
+@property (nonatomic, copy) NSArray<BrowserAIPassage *> *passages;
+/// Fragebegriffe (Lemmata, Zahlen) für das Log.
+@property (nonatomic, copy) NSArray<NSString *> *questionTerms;
+/// "datum", "zahl", "ort", "person" oder "allgemein".
+@property (nonatomic, copy) NSString *questionType;
+@property (nonatomic, copy, nullable) NSString *language;
+@property (nonatomic, copy, nullable) NSString *questionLanguage;
+@property (nonatomic, copy) NSString *method;
+@property (nonatomic) NSTimeInterval duration;
+@property (nonatomic) NSUInteger candidateCount;
+@property (nonatomic) NSUInteger inputLength;
+@end
+
 @protocol BrowserAIProvider <NSObject>
 
 /// Kurzname für die Anzeige ("lokal").
@@ -50,6 +81,22 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Mehrzeilige Beschreibung für den Selbsttest (Modelle, Sprachen, Größen).
 - (NSString *)diagnosticsDescription;
+
+@optional
+
+/// „Frag die Seite“: die Sätze des Texts, die die Frage am ehesten beantworten (höchstens maxResults, beste zuerst).
+/// Leeres passages-Feld, wenn nichts passt; error nur bei zu kurzer Frage oder zu wenig Text. Completion auf dem Hauptthread.
+- (void)findPassagesForQuestion:(NSString *)question
+                         inText:(NSString *)text
+                     maxResults:(NSUInteger)maxResults
+                     completion:(void (^)(BrowserAIAnswer * _Nullable answer, NSError * _Nullable error))completion;
+
+/// Kosinus des Satz-Embeddings zwischen text und jedem Beispiel (gleiche Reihenfolge). nil, wenn die Sprache des Texts
+/// kein Satz-Embedding hat. cacheKey: Vektoren der Beispiele zwischenspeichern (z. B. "commands"). Completion auf dem Hauptthread.
+- (void)sentenceSimilaritiesOfText:(NSString *)text
+                        toExamples:(NSArray<NSString *> *)examples
+                          cacheKey:(nullable NSString *)cacheKey
+                        completion:(void (^)(NSArray<NSNumber *> * _Nullable similarities, NSString * _Nullable language))completion;
 
 @end
 

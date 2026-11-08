@@ -132,6 +132,9 @@ Name = Schlüssel in der Befehlstabelle (auch für Selbsttest, Siri und iPhone).
 | `scroll-top` / `scroll-down` | „nach oben“, „runter“ | Scrollen | – | über JS einfach |
 | `menu` | „Menü“ | Erweitertes Menü | – | ja, `showAdvancedMenu` |
 | `help` | „Hilfe“ | Bedienungsdialog | – | ja, `browserShowHints` |
+| `ask` | „frag wann wurde … vorgestellt“, „frage wer …“, „ask when …“ | Frag die Seite: passende Stelle markieren und zeigen | Frage | ja, `docs/ERWEITERUNGEN.md` Abschnitt 19.2 |
+
+Sätze, die der Parser nicht kennt, prüft danach ein vorsichtiger Abgleich mit den Phrasen der Tabelle („geh eine Seite zurück“ → `back`, „lade die Seite nochmal“ → `reload`); ein unbekanntes Wort macht daraus immer eine Suche (`docs/ERWEITERUNGEN.md` Abschnitt 19.1).
 
 ---
 

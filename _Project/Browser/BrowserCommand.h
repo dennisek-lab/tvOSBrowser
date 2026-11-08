@@ -47,6 +47,10 @@ typedef NS_ENUM(NSInteger, BrowserCommandArgument) {
 @property (nonatomic, readonly, copy) NSDictionary<NSString *, NSString *> *phrases;
 /// Präfixe für Befehle mit Textargument ("suche nach", "google"); normalisiert, längste zuerst.
 @property (nonatomic, readonly, copy) NSArray<NSString *> *prefixes;
+/// Beispielphrasen für den Ähnlichkeitsabgleich (BrowserIntelligence matchCommandForText:), Argument → Phrasen.
+/// Anders als phrases nicht alle Kombinationen, sondern jede Alternative einmal (linear statt Kreuzprodukt),
+/// damit das Satz-Embedding nur einige Dutzend Vektoren je Befehl rechnen muss.
+@property (nonatomic, readonly, copy) NSDictionary<NSString *, NSArray<NSString *> *> *examplePhrases;
 
 /// Alle Befehle in fester Reihenfolge.
 + (NSArray<BrowserCommand *> *)allCommands;

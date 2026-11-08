@@ -426,6 +426,170 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
 
 @end
 
+#pragma mark - Antwort-Karte „Frag die Seite“
+
+/// Glas-Karte unten mittig: Frage (klein), gefundener Satz in Reader-Schrift (bis 4 Zeilen), Fußzeile mit Stelle
+/// und Bedienung. Der Satz ist gleichzeitig in der Seite hervorgehoben (BrowserIntelligence highlightPassage:).
+@interface BrowserAnswerCardView : UIVisualEffectView
+@property (nonatomic, strong) UIView *tintView;
+@property (nonatomic, strong) UIView *bodyView;
+@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UILabel *questionLabel;
+@property (nonatomic, strong) UILabel *sentenceLabel;
+@property (nonatomic, strong) UILabel *footerLabel;
+@property (nonatomic) BOOL dismissing;
+@end
+
+@implementation BrowserAnswerCardView
+
+static const CGFloat kAnswerPaddingX = 48.0;
+static const CGFloat kAnswerPaddingY = 34.0;
+
+- (instancetype)init {
+    self = [super initWithEffect:nil];
+    if (self) {
+        self.userInteractionEnabled = NO;
+        self.clipsToBounds = YES;
+        self.layer.cornerRadius = 44.0;
+        self.layer.cornerCurve = kCACornerCurveContinuous;
+        self.layer.borderWidth = 1.0;
+        self.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.16].CGColor;
+        self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        _tintView = [UIView new];
+        _tintView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.42];
+        _tintView.alpha = 0.0;
+        [self.contentView addSubview:_tintView];
+        _bodyView = [UIView new];
+        [self.contentView addSubview:_bodyView];
+        UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:28.0 weight:UIImageSymbolWeightSemibold];
+        _iconView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"text.magnifyingglass" withConfiguration:config] ?:
+                     [UIImage systemImageNamed:@"magnifyingglass" withConfiguration:config]];
+        _iconView.tintColor = UIColor.whiteColor;
+        _iconView.contentMode = UIViewContentModeCenter;
+        [_bodyView addSubview:_iconView];
+        _questionLabel = [UILabel new];
+        _questionLabel.font = [UIFont systemFontOfSize:24.0 weight:UIFontWeightSemibold];
+        _questionLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.7];
+        _questionLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        [_bodyView addSubview:_questionLabel];
+        _sentenceLabel = [UILabel new];
+        _sentenceLabel.numberOfLines = 4;
+        _sentenceLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        _sentenceLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.96];
+        [_bodyView addSubview:_sentenceLabel];
+        _footerLabel = [UILabel new];
+        _footerLabel.font = [UIFont systemFontOfSize:20.0 weight:UIFontWeightRegular];
+        _footerLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.5];
+        _footerLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        [_bodyView addSubview:_footerLabel];
+    }
+    return self;
+}
+
+- (void)setQuestion:(NSString *)question sentence:(NSString *)sentence footer:(NSString *)footer {
+    self.questionLabel.text = question;
+    NSMutableParagraphStyle *style = [NSMutableParagraphStyle new];
+    style.lineSpacing = 6.0;
+    style.lineBreakMode = NSLineBreakByTruncatingTail;
+    self.sentenceLabel.attributedText = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"„%@“", sentence]
+                                                                        attributes:@{NSFontAttributeName: BrowserIntelligenceSerifFont(30.0, UIFontWeightRegular),
+                                                                                     NSParagraphStyleAttributeName: style}];
+    self.footerLabel.text = footer;
+}
+
+- (CGFloat)textWidthForWidth:(CGFloat)width {
+    return width - 2 * kAnswerPaddingX - 56.0;
+}
+
+- (CGFloat)heightForWidth:(CGFloat)width {
+    CGFloat sentence = ceil([self.sentenceLabel sizeThatFits:CGSizeMake([self textWidthForWidth:width], CGFLOAT_MAX)].height);
+    return kAnswerPaddingY + 32.0 + 14.0 + sentence + 16.0 + 26.0 + kAnswerPaddingY;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGRect bounds = self.bounds;
+    self.tintView.frame = bounds;
+    self.bodyView.frame = bounds;
+    CGFloat width = CGRectGetWidth(bounds);
+    CGFloat x = kAnswerPaddingX + 56.0;
+    CGFloat textWidth = [self textWidthForWidth:width];
+    self.iconView.frame = CGRectMake(kAnswerPaddingX, kAnswerPaddingY, 40.0, 32.0);
+    self.questionLabel.frame = CGRectMake(x, kAnswerPaddingY, textWidth, 32.0);
+    CGFloat sentenceHeight = ceil([self.sentenceLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)].height);
+    self.sentenceLabel.frame = CGRectMake(x, kAnswerPaddingY + 32.0 + 14.0, textWidth, sentenceHeight);
+    self.footerLabel.frame = CGRectMake(x, CGRectGetHeight(bounds) - kAnswerPaddingY - 26.0, textWidth, 26.0);
+}
+
+- (CGRect)frameInContainer:(UIView *)container {
+    CGRect bounds = container.bounds;
+    CGFloat width = MIN(1500.0, CGRectGetWidth(bounds) - 240.0);
+    CGFloat height = [self heightForWidth:width];
+    return CGRectMake(floor((CGRectGetWidth(bounds) - width) / 2.0), CGRectGetHeight(bounds) - height - 70.0, width, height);
+}
+
+- (void)presentInView:(UIView *)container {
+    self.frame = [self frameInContainer:container];
+    [container addSubview:self];
+    [self layoutIfNeeded];
+    BOOL liquid = BrowserMotion.liquidGlassEnabled;
+    if (liquid) {
+        self.transform = CGAffineTransformMakeScale(0.92, 0.92);
+    }
+    self.bodyView.alpha = 0.0;
+    [BrowserMotion glassAppear:self effect:BrowserIntelligenceGlassEffect() kind:BrowserMotionKindAppear alongside:^{
+        self.tintView.alpha = 1.0;
+        self.transform = CGAffineTransformIdentity;
+    } completion:nil];
+    [BrowserMotion animateKind:BrowserMotionKindFade delay:0.08 options:0 animations:^{
+        self.bodyView.alpha = 1.0;
+    } completion:nil];
+}
+
+/// Nächste Fundstelle: Inhalt blendet über, Glasfläche federt auf die neue Höhe.
+- (void)transitionToQuestion:(NSString *)question sentence:(NSString *)sentence footer:(NSString *)footer {
+    UIView *container = self.superview;
+    if (container == nil) {
+        [self setQuestion:question sentence:sentence footer:footer];
+        return;
+    }
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.bodyView.alpha = 0.0;
+    } completion:^(__unused BOOL finished) {
+        [self setQuestion:question sentence:sentence footer:footer];
+        CGRect target = [self frameInContainer:container];
+        [BrowserMotion animateKind:BrowserMotionKindStandard delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            self.frame = target;
+            [self layoutIfNeeded];
+        } completion:nil];
+        [BrowserMotion animateKind:BrowserMotionKindFade delay:0.06 options:0 animations:^{
+            self.bodyView.alpha = 1.0;
+        } completion:nil];
+    }];
+}
+
+- (void)dismissWithCompletion:(void (^)(void))completion {
+    if (self.dismissing) {
+        return;
+    }
+    self.dismissing = YES;
+    BOOL liquid = BrowserMotion.liquidGlassEnabled;
+    [BrowserMotion glassDisappear:self kind:BrowserMotionKindDisappear alongside:^{
+        self.tintView.alpha = 0.0;
+        self.bodyView.alpha = 0.0;
+        if (liquid) {
+            self.transform = CGAffineTransformMakeScale(0.94, 0.94);
+        }
+    } completion:^(__unused BOOL finished) {
+        [self removeFromSuperview];
+        if (completion != nil) {
+            completion();
+        }
+    }];
+}
+
+@end
+
 #pragma mark - Controller
 
 @interface BrowserIntelligenceController ()
@@ -437,6 +601,12 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
 @property (nonatomic, copy, nullable) NSString *hintHost;
 @property (nonatomic) NSUInteger summaryGeneration;
 @property (nonatomic) NSUInteger hintGeneration;
+@property (nonatomic, weak) BrowserAnswerCardView *answerView;
+@property (nonatomic, strong, nullable) BrowserAIAnswer *answer;
+@property (nonatomic) NSUInteger answerIndex;
+@property (nonatomic) NSUInteger answerGeneration;
+@property (nonatomic) NSUInteger answerTimeoutToken;
+@property (nonatomic) NSTimeInterval answerElapsed;
 /// Hosts, denen der Hinweis in dieser Sitzung schon angeboten wurde (nicht bei jeder Unterseite erneut).
 @property (nonatomic, strong) NSMutableSet<NSString *> *offeredHosts;
 @end
@@ -480,6 +650,7 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
         return;
     }
     [self dismissTranslationHint];
+    [self dismissAnswerClearingHighlight:YES];
     [self.cardView dismissWithCompletion:nil];
     BrowserSummaryCardView *card = [[BrowserSummaryCardView alloc] initWithFrame:container.bounds];
     NSString *host = [BrowserIntelligence normalizedHostForURL:webView.request.URL] ?: @"";
@@ -578,7 +749,7 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
 
 - (void)showTranslationHintForHost:(NSString *)host language:(NSString *)language {
     UIView *container = self.containerProvider ? self.containerProvider() : nil;
-    if (container == nil || self.summaryVisible) {
+    if (container == nil || self.summaryVisible || self.answerVisible) {
         return;
     }
     [self.hintView dismissWithCompletion:nil];
@@ -603,16 +774,150 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
     self.hintHost = nil;
 }
 
+#pragma mark Frag die Seite
+
+static const NSTimeInterval kAnswerDuration = 25.0;
+
+- (BOOL)answerVisible {
+    return self.answerView != nil && !self.answerView.dismissing;
+}
+
+- (void)askCurrentPage:(NSString *)question {
+    BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    NSString *trimmed = [question stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (webView == nil || webView.request.URL == nil) {
+        [self feedback:@"Keine Seite geladen" symbol:@"text.magnifyingglass" success:NO];
+        return;
+    }
+    if (trimmed.length == 0) {
+        [self feedback:@"Was soll ich die Seite fragen?" symbol:@"text.magnifyingglass" success:NO];
+        return;
+    }
+    [self dismissTranslationHint];
+    [self dismissSummary];
+    [self dismissAnswerClearingHighlight:YES];
+    NSUInteger generation = ++self.answerGeneration;
+    NSURL *url = webView.request.URL;
+    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+    __weak typeof(self) weakSelf = self;
+    [BrowserIntelligence.sharedIntelligence askQuestion:trimmed inWebView:webView completion:^(BrowserAIAnswer *answer, __unused NSDictionary *info, NSError *error) {
+        typeof(self) self_ = weakSelf;
+        if (self_ == nil || self_.answerGeneration != generation || ![webView.request.URL isEqual:url]) {
+            return; // neue Seite oder neue Frage
+        }
+        if (answer.passages.count == 0) {
+            NSString *message = error.code == BrowserIntelligenceErrorQuestionTooShort ? @"Frage zu kurz"
+                : (error.code == BrowserIntelligenceErrorNoText || error.code == BrowserIntelligenceErrorTooShort
+                   ? @"Kein Text auf der Seite" : @"Keine passende Stelle gefunden");
+            NSLog(@"[AI] frag: %@", message);
+            [self_ feedback:message symbol:@"text.magnifyingglass" success:NO];
+            return;
+        }
+        self_.answer = answer;
+        self_.answerIndex = 0;
+        self_.answerElapsed = CFAbsoluteTimeGetCurrent() - start;
+        [self_ showAnswerPassageAtIndex:0 inWebView:webView];
+    }];
+}
+
+- (NSString *)answerFooterForIndex:(NSUInteger)index found:(BOOL)found {
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    NSUInteger count = self.answer.passages.count;
+    [parts addObject:count > 1 ? [NSString stringWithFormat:@"Stelle %lu von %lu", (unsigned long)index + 1, (unsigned long)count] : @"Eine Stelle"];
+    if (!found) {
+        [parts addObject:@"in der Seite nicht markiert"];
+    }
+    if (count > 1) {
+        [parts addObject:@"Play/Pause: nächste"];
+    }
+    [parts addObject:@"Zurück-Taste schließt"];
+    NSTimeInterval total = self.answerElapsed;
+    [parts addObject:[NSString stringWithFormat:@"Lokal · %@", total < 0.1 ? @"unter 0,1 s"
+                      : [[NSString stringWithFormat:@"%.1f s", total] stringByReplacingOccurrencesOfString:@"." withString:@","]]];
+    return [parts componentsJoinedByString:@"  ·  "];
+}
+
+- (void)showAnswerPassageAtIndex:(NSUInteger)index inWebView:(BrowserWebView *)webView {
+    BrowserAIAnswer *answer = self.answer;
+    if (index >= answer.passages.count) {
+        return;
+    }
+    BrowserAIPassage *passage = answer.passages[index];
+    NSUInteger generation = self.answerGeneration;
+    __weak typeof(self) weakSelf = self;
+    [BrowserIntelligence.sharedIntelligence highlightPassage:passage.text inWebView:webView completion:^(NSDictionary *result) {
+        typeof(self) self_ = weakSelf;
+        if (self_ == nil || self_.answerGeneration != generation) {
+            return;
+        }
+        BOOL found = [result[@"found"] boolValue];
+        NSString *question = [NSString stringWithFormat:@"Frage: %@", answer.question];
+        NSString *footer = [self_ answerFooterForIndex:index found:found];
+        NSLog(@"[AI] Antwort %lu/%lu markiert=%d (%@): %@", (unsigned long)index + 1, (unsigned long)answer.passages.count, found,
+              result[@"how"] ?: result[@"why"] ?: @"-", passage.text);
+        if (self_.answerVisible) {
+            [self_.answerView transitionToQuestion:question sentence:passage.text footer:footer];
+        } else {
+            UIView *container = self_.containerProvider ? self_.containerProvider() : nil;
+            if (container == nil) {
+                return;
+            }
+            BrowserAnswerCardView *card = [BrowserAnswerCardView new];
+            [card setQuestion:question sentence:passage.text footer:footer];
+            [card presentInView:container];
+            self_.answerView = card;
+        }
+        [self_ scheduleAnswerTimeout];
+    }];
+}
+
+- (void)scheduleAnswerTimeout {
+    NSUInteger token = ++self.answerTimeoutToken;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kAnswerDuration * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self.answerTimeoutToken == token) {
+            [self dismissAnswerClearingHighlight:NO]; // Hervorhebung blendet die Seite selbst aus
+        }
+    });
+}
+
+- (void)showNextAnswerPassage {
+    BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    NSUInteger count = self.answer.passages.count;
+    if (webView == nil || count == 0) {
+        return;
+    }
+    if (count == 1) {
+        [self showAnswerPassageAtIndex:0 inWebView:webView]; // erneut hinscrollen und aufleuchten
+        return;
+    }
+    self.answerIndex = (self.answerIndex + 1) % count;
+    [self showAnswerPassageAtIndex:self.answerIndex inWebView:webView];
+}
+
+- (void)dismissAnswerClearingHighlight:(BOOL)clearHighlight {
+    self.answerGeneration++;
+    self.answerTimeoutToken++;
+    if (self.answerView != nil) {
+        [self.answerView dismissWithCompletion:nil];
+        if (clearHighlight) {
+            [BrowserIntelligence.sharedIntelligence clearPassageHighlightInWebView:self.webViewProvider ? self.webViewProvider() : nil];
+        }
+    }
+    self.answer = nil;
+}
+
 #pragma mark Seitenereignisse
 
 - (void)pageDidStartLoadInWebView:(__unused BrowserWebView *)webView {
     [self dismissSummary];
     [self dismissTranslationHint];
+    [self dismissAnswerClearingHighlight:NO]; // neue Seite: die Markierung geht mit dem alten Dokument
 }
 
 - (void)activeWebViewDidChange {
     [self dismissSummary];
     [self dismissTranslationHint];
+    [self dismissAnswerClearingHighlight:NO];
 }
 
 - (void)pageDidFinishLoadInWebView:(BrowserWebView *)webView {
@@ -643,6 +948,10 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
 #pragma mark Tasten
 
 - (BOOL)handleMenuPress {
+    if (self.answerVisible) {
+        [self dismissAnswerClearingHighlight:YES];
+        return YES;
+    }
     if (self.summaryVisible) {
         [self dismissSummary];
         return YES;
@@ -661,6 +970,10 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
 }
 
 - (BOOL)handlePlayPausePress {
+    if (self.answerVisible) {
+        [self showNextAnswerPassage];
+        return YES;
+    }
     if (!self.translationHintVisible) {
         return NO;
     }
@@ -701,6 +1014,17 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
         NSString *host = [BrowserIntelligence normalizedHostForURL:webView.request.URL] ?: @"example.com";
         NSLog(@"[SelfTest] translate:hint %@", host);
         [self showTranslationHintForHost:host language:@"en"];
+        return YES;
+    }
+    if ([step isEqualToString:@"ask:next"]) {
+        NSLog(@"[SelfTest] ask:next sichtbar=%d", self.answerVisible);
+        [self showNextAnswerPassage];
+        return YES;
+    }
+    if ([step hasPrefix:@"ask:"]) {
+        NSString *question = [step substringFromIndex:4];
+        NSLog(@"[SelfTest] ask %@ (%@)", question, webView.request.URL.absoluteString ?: @"-");
+        [self askCurrentPage:question];
         return YES;
     }
     if ([step isEqualToString:@"translate:reset"]) {
