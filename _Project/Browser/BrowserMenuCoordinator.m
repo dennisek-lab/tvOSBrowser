@@ -1045,6 +1045,16 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)autoOpenNativePlayerMenuItem {
+    BOOL enabled = self.preferencesStore.autoOpenVideosInNativePlayer;
+    NSString *title = enabled ? @"Videos automatisch im Player öffnen: Ein" : @"Videos automatisch im Player öffnen: Aus";
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        self.preferencesStore.autoOpenVideosInNativePlayer = !enabled;
+    }];
+}
+
 - (NSArray<BrowserAdvancedMenuSection *> *)advancedMenuSections {
     BrowserAdvancedMenuItem *increaseFontSizeItem = [self advancedMenuItemWithTitle:@"Increase Font Size"
                                                                                style:UIAlertActionStyleDefault
@@ -1106,6 +1116,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Video Playback"
                                                items:@[
+            [self autoOpenNativePlayerMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Compatibility"

@@ -634,6 +634,14 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     return shifted;
 }
 
+- (void)setVideoEventHandler:(void (^)(NSDictionary *))videoEventHandler {
+    self.clickTargetTracker.videoEventHandler = videoEventHandler;
+}
+
+- (void (^)(NSDictionary *))videoEventHandler {
+    return self.clickTargetTracker.videoEventHandler;
+}
+
 - (NSArray<NSValue *> *)clickTargetRects {
     return [self rectsShiftedByTopInset:[self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }

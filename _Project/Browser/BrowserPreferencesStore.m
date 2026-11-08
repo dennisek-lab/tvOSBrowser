@@ -6,6 +6,7 @@ static NSString * const kShowTopNavigationBarDefaultsKey = @"ShowTopNavigationBa
 static NSString * const kTextFontSizeDefaultsKey = @"TextFontSize";
 static NSString * const kEnableFullscreenVideoPlaybackDefaultsKey = @"EnableFullscreenVideoPlayback";
 static NSString * const kScalePagesToFitDefaultsKey = @"ScalePagesToFit";
+static NSString * const kAutoOpenNativePlayerDefaultsKey = @"AutoOpenVideosInNativePlayer";
 static NSString * const kPageZoomDefaultsKey = @"PageZoom";
 static double const kDefaultPageZoom = 1.5;
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
@@ -98,6 +99,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setScalePagesToFit:(BOOL)scalePagesToFit {
     [[self defaults] setBool:scalePagesToFit forKey:kScalePagesToFitDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)autoOpenVideosInNativePlayer {
+    NSNumber *value = [[self defaults] objectForKey:kAutoOpenNativePlayerDefaultsKey];
+    return value != nil ? value.boolValue : YES;
+}
+
+- (void)setAutoOpenVideosInNativePlayer:(BOOL)autoOpenVideosInNativePlayer {
+    [[self defaults] setBool:autoOpenVideosInNativePlayer forKey:kAutoOpenNativePlayerDefaultsKey];
     [[self defaults] synchronize];
 }
 

@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 
 static NSString * const kBrowserTargetsMessageName = @"browserTargets";
+static NSString * const kBrowserVideoMessageName = @"browserVideo";
 
 /// Läuft vor den Seitenskripten: merkt sich die Media-Session-Handler der Seite (z. B. „nächster Titel“),
 /// damit die Systembefehle sie auslösen können.
@@ -15,6 +16,57 @@ static NSString *BrowserMediaSessionHookScript(void) {
         "var orig=ms.setActionHandler.bind(ms);"
         "ms.setActionHandler=function(a,h){ window.__browserMediaHandlers[a]=h||null; try { return orig(a,h); } catch(e) {} };"
     "} catch(e) {}"
+    "})();";
+}
+
+/// Läuft vor den Seitenskripten: merkt sich HLS-/DASH-Manifeste (für MSE-Videos mit blob:-Adresse),
+/// fängt Vollbildwünsche für Videos ab und meldet den Start sichtbarer Videos an die App.
+/// Meldungen gehen an den Rückkanal `browserVideo`: {type:'fullscreen'|'playing', bid:Nummer}.
+static NSString *BrowserVideoHookScript(void) {
+    return @"(function(){"
+    "if (window.__browserVideoHook) { return; }"
+    "window.__browserVideoHook=1;"
+    "var man=window.__browserManifests={hls:'',dash:'',all:[]};"
+    "var nextId=1;"
+    "function post(m){ try { webkit.messageHandlers.browserVideo.postMessage(m); } catch(e) {} }"
+    "function note(u){"
+        "try {"
+            "if (!u) { return; }"
+            "var a=new URL(String((u&&u.url)||u),location.href).href;"
+            "var p=a.split('#')[0].split('?')[0].toLowerCase();"
+            "if (/\\.m3u8$/.test(p)) {"
+                "if (man.all.indexOf(a)<0) { man.all.push(a); if (man.all.length>20) { man.all.shift(); } }"
+                // Hauptplaylist (alle Qualitäten) bevorzugen; Teil-Playlists tragen meist chunk/media/index_N im Namen.
+                "var variant=/(chunk|media_|segment|audio|video_|_\\d{3,4}p?|\\d{3,4}p)[^\\/]*$/.test(p);"
+                "if (!variant || !man.hls) { man.hls=a; }"
+            "} else if (/\\.mpd$/.test(p)) { man.dash=a; }"
+        "} catch(e) {}"
+    "}"
+    "try { var of=window.fetch; if (of) { window.fetch=function(i){ note(i); return of.apply(this,arguments); }; } } catch(e) {}"
+    "try { var oo=XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open=function(m,u){ note(u); return oo.apply(this,arguments); }; } catch(e) {}"
+    "function bid(v){ if (!v.__bid) { v.__bid=nextId++; } return v.__bid; }"
+    "window.__browserVideoById=function(id){ var vs=document.querySelectorAll('video'); for (var i=0;i<vs.length;i++){ if (vs[i].__bid===id) { return vs[i]; } } return null; };"
+    "function videoOf(el){ if (!el) { return null; } if (el.tagName==='VIDEO') { return el; } if (el===document.documentElement||el===document.body||!el.querySelector) { return null; } return el.querySelector('video'); }"
+    "function intercept(el){ var v=videoOf(el); if (!v) { return false; } v.__bnoauto=true; post({type:'fullscreen',bid:bid(v)}); return true; }"
+    "try {"
+        "['webkitEnterFullscreen','webkitEnterFullScreen'].forEach(function(n){"
+            "var o=HTMLVideoElement.prototype[n]; if (!o) { return; }"
+            "HTMLVideoElement.prototype[n]=function(){ if (intercept(this)) { return; } return o.apply(this,arguments); };"
+        "});"
+        "['requestFullscreen','webkitRequestFullscreen','webkitRequestFullScreen'].forEach(function(n){"
+            "var o=Element.prototype[n]; if (!o) { return; }"
+            "Element.prototype[n]=function(){ if (intercept(this)) { return Promise.resolve(); } return o.apply(this,arguments); };"
+        "});"
+    "} catch(e) {}"
+    "document.addEventListener('webkitbeginfullscreen',function(e){ if (e.target && e.target.tagName==='VIDEO') { try { e.target.webkitExitFullscreen(); } catch(x) {} intercept(e.target); } },true);"
+    "document.addEventListener('playing',function(e){"
+        "var v=e.target; if (!v || v.tagName!=='VIDEO' || v.__bnoauto) { return; }"
+        "if (v.clientWidth<320 || v.clientHeight<180) { return; }"
+        // Stumme Endlosschleifen und Vorschauen nicht übernehmen.
+        "if (v.muted && (v.loop || v.autoplay)) { return; }"
+        "v.__bnoauto=true;"
+        "post({type:'playing',bid:bid(v)});"
+    "},true);"
     "})();";
 }
 
@@ -119,6 +171,11 @@ static NSString *BrowserClickTargetScript(void) {
 @property (nonatomic, weak) BrowserClickTargetTracker *tracker;
 @end
 
+/// Wie oben, für den Rückkanal `browserVideo` (Vollbildwunsch, Videostart).
+@interface BrowserVideoMessageProxy : NSObject
+@property (nonatomic, weak) BrowserClickTargetTracker *tracker;
+@end
+
 @interface BrowserClickTargetTracker ()
 @property (nonatomic, copy) NSArray<NSArray<NSNumber *> *> *rawTargets;
 @property (nonatomic, copy) NSArray<NSArray<NSNumber *> *> *rawVideos;
@@ -131,6 +188,7 @@ static NSString *BrowserClickTargetScript(void) {
 @property (nonatomic) CGFloat cssViewportWidth;
 @property (nonatomic) CGPoint contentOffsetAtReport;
 - (void)handleMessageBody:(id)body;
+- (void)handleVideoMessageBody:(id)body;
 @end
 
 @implementation BrowserClickTargetMessageProxy
@@ -138,6 +196,14 @@ static NSString *BrowserClickTargetScript(void) {
     (void)controller;
     id body = [message respondsToSelector:@selector(body)] ? ((id (*)(id, SEL))objc_msgSend)(message, @selector(body)) : nil;
     [self.tracker handleMessageBody:body];
+}
+@end
+
+@implementation BrowserVideoMessageProxy
+- (void)userContentController:(id)controller didReceiveScriptMessage:(id)message {
+    (void)controller;
+    id body = [message respondsToSelector:@selector(body)] ? ((id (*)(id, SEL))objc_msgSend)(message, @selector(body)) : nil;
+    [self.tracker handleVideoMessageBody:body];
 }
 @end
 
@@ -215,6 +281,17 @@ static NSString *BrowserClickTargetScript(void) {
     if (script != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, script);
     }
+    if (protocol != NULL && !class_conformsToProtocol(BrowserVideoMessageProxy.class, protocol)) {
+        class_addProtocol(BrowserVideoMessageProxy.class, protocol);
+    }
+    BrowserVideoMessageProxy *videoProxy = [BrowserVideoMessageProxy new];
+    videoProxy.tracker = self;
+    ((void (*)(id, SEL, id, id))objc_msgSend)(controller, addHandler, videoProxy, kBrowserVideoMessageName);
+    id videoHook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    videoHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(videoHook, scriptInit, BrowserVideoHookScript(), 0, YES);
+    if (videoHook != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, videoHook);
+    }
     id hook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
     // injectionTime 0 = WKUserScriptInjectionTimeAtDocumentStart.
     hook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(hook, scriptInit, BrowserMediaSessionHookScript(), 0, YES);
@@ -258,6 +335,13 @@ static NSString *BrowserClickTargetScript(void) {
     if (self.targetsDidChange != nil) {
         self.targetsDidChange();
     }
+}
+
+- (void)handleVideoMessageBody:(id)body {
+    if (![body isKindOfClass:NSDictionary.class] || self.videoEventHandler == nil) {
+        return;
+    }
+    self.videoEventHandler(body);
 }
 
 - (void)reset {

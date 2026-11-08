@@ -38,6 +38,9 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *requestHeaders;
 @property (nonatomic, copy) NSArray<NSHTTPCookie *> *requestCookies;
 @property (nonatomic, strong) BrowserNativeVideoAssetLoader *assetLoader;
+@property (nonatomic) BOOL didApplyInitialTime;
+@property (nonatomic) BOOL didReportDismiss;
+@property (nonatomic) BOOL didReportFailure;
 
 @end
 
@@ -140,6 +143,13 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     NSLog(@"%@ viewWillDisappear", kBrowserNativePlayerInputLogPrefix);
     [self log:@"viewWillDisappear pause"];
     [NSNotificationCenter.defaultCenter postNotificationName:BrowserNativePlayerWillDisappearNotification object:self];
+    if ((self.isBeingDismissed || self.presentingViewController == nil) && !self.didReportDismiss) {
+        self.didReportDismiss = YES;
+        NSTimeInterval time = CMTimeGetSeconds(self.player.currentTime);
+        if (self.dismissHandler != nil) {
+            self.dismissHandler(isfinite(time) && time >= 0.0 ? time : 0.0);
+        }
+    }
     [self.player pause];
 }
 
@@ -227,9 +237,20 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
                  CMTimeGetSeconds(self.player.currentItem.duration),
                  self.player.currentItem.isPlaybackLikelyToKeepUp,
                  self.player.currentItem.isPlaybackBufferEmpty];
+                if (!self.didApplyInitialTime && self.initialPlaybackTime > 1.0) {
+                    self.didApplyInitialTime = YES;
+                    CMTime start = CMTimeMakeWithSeconds(self.initialPlaybackTime, NSEC_PER_SEC);
+                    [self.player seekToTime:start toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+                }
                 break;
             case AVPlayerItemStatusFailed:
                 [self log:@"item status=failed error=%@", self.player.currentItem.error];
+                if (!self.didReportFailure) {
+                    self.didReportFailure = YES;
+                    if (self.failureHandler != nil) {
+                        self.failureHandler(self.player.currentItem.error);
+                    }
+                }
                 break;
         }
         return;

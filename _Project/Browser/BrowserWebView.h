@@ -27,6 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nullable, nonatomic, copy) void (^clickTargetsDidChange)(void);
 /// Meldet jede Scrollbewegung: Abstand vom Seitenanfang in Punkten (0 = ganz oben, unter der Leiste).
 @property (nullable, nonatomic, copy) void (^scrollOffsetDidChange)(CGFloat offsetFromTop);
+/// Videoereignisse der Seite (Vollbildwunsch, Videostart), siehe BrowserClickTargetTracker.videoEventHandler.
+@property (nullable, nonatomic, copy) void (^videoEventHandler)(NSDictionary * _Nonnull event);
 /// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
