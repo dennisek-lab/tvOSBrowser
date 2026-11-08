@@ -19,6 +19,7 @@ xcuserdata/
 ## Build output
 _Project/build/
 build/
+build.log
 _Project/DerivedData/
 DerivedData/
 .clang-module-cache/
