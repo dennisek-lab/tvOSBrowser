@@ -425,7 +425,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
             [self showInputURLorSearchGoogle];
         }
     } else if ([command isEqualToString:@"reader"]) {
-        NSLog(@"[Siri] reader: noch keine Funktion (Reader-Knopf folgt)");
+        [self performTopBarAction:BrowserTopBarActionReader];
     } else {
         NSLog(@"[Siri] unbekannter Befehl %@", command);
     }
