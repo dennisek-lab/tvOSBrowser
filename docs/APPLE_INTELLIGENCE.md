@@ -166,7 +166,7 @@ import FoundationModels
 
 ## 6. Vorschlag für PLAN.md (Phase 6)
 
-Nicht in `PLAN.md` eingetragen. Vorschlag zum Übernehmen:
+In `PLAN.md` als Phase 6 übernommen (8. November 2026):
 
 ```markdown
 ## Phase 6: Intelligente Funktionen (Konzept)
