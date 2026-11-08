@@ -274,6 +274,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     NSLog(@"[SelfTest] menu handled=%d", handled);
                     return;
                 }
+                if ([step isEqualToString:@"advmenu"]) {
+                    [self showAdvancedMenu];
+                    return;
+                }
                 if ([step isEqualToString:@"guide"]) {
                     [self showHintsAlert];
                     return;

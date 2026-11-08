@@ -21,6 +21,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
 @interface BrowserAdvancedMenuItem : NSObject
 
 @property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *detail;
 @property (nonatomic) UIAlertActionStyle style;
 @property (nonatomic, copy) BrowserAdvancedMenuItemHandler handler;
 
@@ -316,17 +317,31 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     return (NSInteger)self.sections[(NSUInteger)section].items.count;
 }
 
-- (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section < 0 || section >= (NSInteger)self.sections.count) {
-        return nil;
-    }
-    return self.sections[(NSUInteger)section].title;
+- (UIView *)tableView:(__unused UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    UIView *header = [UIView new];
+    UILabel *label = [UILabel new];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.text = [self.sections[(NSUInteger)section].title uppercaseString];
+    label.font = [UIFont systemFontOfSize:22.0 weight:UIFontWeightSemibold];
+    label.textColor = UIColor.secondaryLabelColor;
+    [header addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [label.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24.0],
+        [label.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24.0],
+        [label.bottomAnchor constraintEqualToAnchor:header.bottomAnchor constant:-6.0],
+    ]];
+    return header;
+}
+
+- (CGFloat)tableView:(__unused UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return section == 0 ? 52.0 : 76.0;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     static NSString * const kCellIdentifier = @"BrowserAdvancedMenuCell";
     static NSInteger const kMenuTitleLabelTag = 9191;
     static NSInteger const kMenuFocusBackgroundTag = 9292;
+    static NSInteger const kMenuDetailLabelTag = 9393;
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kCellIdentifier];
     if (cell == nil) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kCellIdentifier];
@@ -357,6 +372,20 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
         titleLabel.numberOfLines = 1;
         [cell.contentView addSubview:titleLabel];
 
+        UILabel *detailLabel = [UILabel new];
+        detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        detailLabel.tag = kMenuDetailLabelTag;
+        detailLabel.font = [UIFont systemFontOfSize:27.0 weight:UIFontWeightMedium];
+        detailLabel.textAlignment = NSTextAlignmentRight;
+        detailLabel.textColor = UIColor.secondaryLabelColor;
+        detailLabel.numberOfLines = 1;
+        detailLabel.adjustsFontSizeToFitWidth = YES;
+        detailLabel.minimumScaleFactor = 0.7;
+        [detailLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
+        [detailLabel setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [cell.contentView addSubview:detailLabel];
+        [titleLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+
         [NSLayoutConstraint activateConstraints:@[
             [focusBackgroundView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:0.0],
             [focusBackgroundView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:0.0],
@@ -364,8 +393,11 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
             [focusBackgroundView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-2.0],
 
             [titleLabel.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:24.0],
-            [titleLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-24.0],
+            [titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:detailLabel.leadingAnchor constant:-12.0],
             [titleLabel.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [detailLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-24.0],
+            [detailLabel.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [detailLabel.widthAnchor constraintLessThanOrEqualToAnchor:cell.contentView.widthAnchor multiplier:0.5],
         ]];
     }
 
@@ -374,6 +406,10 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     UILabel *titleLabel = (UILabel *)[cell.contentView viewWithTag:kMenuTitleLabelTag];
     UIView *focusBackgroundView = [cell.contentView viewWithTag:kMenuFocusBackgroundTag];
     titleLabel.text = item.title;
+    UILabel *detailLabel = (UILabel *)[cell.contentView viewWithTag:kMenuDetailLabelTag];
+    detailLabel.text = item.detail;
+    BOOL isOn = [item.detail isEqualToString:@"An"];
+    detailLabel.textColor = isOn ? [UIColor colorWithRed:0.35 green:0.85 blue:0.5 alpha:1.0] : UIColor.secondaryLabelColor;
     UIColor *titleColor = nil;
     if (item.style == UIAlertActionStyleDestructive) {
         titleColor = UIColor.redColor;
@@ -475,6 +511,14 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
                                                   style:(UIAlertActionStyle)style
                                                 handler:(BrowserAdvancedMenuItemHandler)handler {
     return [BrowserAdvancedMenuItem itemWithTitle:title style:style handler:handler];
+}
+
+- (BrowserAdvancedMenuItem *)advancedMenuItemWithTitle:(NSString *)title
+                                                 detail:(NSString *)detail
+                                                handler:(BrowserAdvancedMenuItemHandler)handler {
+    BrowserAdvancedMenuItem *item = [BrowserAdvancedMenuItem itemWithTitle:title style:UIAlertActionStyleDefault handler:handler];
+    item.detail = detail ?: @"";
+    return item;
 }
 
 - (UIAlertAction *)browserCancelAction {
@@ -784,7 +828,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (void)presentMediaDiagnostics {
     NSDictionary *diagnostics = [self mediaDiagnosticsDictionary];
     if (diagnostics == nil) {
-        UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Media Diagnostics"
+        UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
                                                                            message:@"The page did not return diagnostics data."];
         [alertController addAction:[self browserCancelAction]];
         [self.host browserPresentViewController:alertController];
@@ -870,17 +914,16 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)topNavigationVisibilityMenuItem {
-    NSString *title = self.host.browserTopMenuShowing ? @"Hide Top Navigation bar" : @"Show Top Navigation bar";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Obere Leiste"
+                                    detail:self.host.browserTopMenuShowing ? @"An" : @"Aus"
                                    handler:^{
         if (self.host.browserTopMenuShowing) {
-            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                               message:@"You can still open the side menu by double-tapping the Play/Pause button."];
+            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Obere Leiste ausblenden?"
+                                                                               message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."];
             [alertController addAction:[self browserActionWithTitle:@"Cancel"
                                                               style:UIAlertActionStyleCancel
                                                             handler:nil]];
-            [alertController addAction:[self browserActionWithTitle:@"Hide Bar"
+            [alertController addAction:[self browserActionWithTitle:@"Ausblenden"
                                                               style:UIAlertActionStyleDestructive
                                                             handler:^(__unused UIAlertAction *action) {
                 [self.host browserHideTopNav];
@@ -893,7 +936,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)homePageMenuItem {
-    return [self advancedMenuItemWithTitle:@"Go To Home Page"
+    return [self advancedMenuItemWithTitle:@"Startseite öffnen"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserLoadHomePage];
@@ -901,7 +944,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)setCurrentPageAsHomePageMenuItem {
-    return [self advancedMenuItemWithTitle:@"Set Current Page As Home Page"
+    return [self advancedMenuItemWithTitle:@"Diese Seite als Startseite"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         NSURLRequest *request = [[self.host browserWebView] request];
@@ -912,7 +955,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)usageGuideMenuItem {
-    return [self advancedMenuItemWithTitle:@"Usage Guide"
+    return [self advancedMenuItemWithTitle:@"Bedienung"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserShowHints];
@@ -939,7 +982,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)showTabsMenuItem {
-    return [self advancedMenuItemWithTitle:@"Show Tabs"
+    return [self advancedMenuItemWithTitle:@"Tabs anzeigen"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserShowTabOverview];
@@ -947,7 +990,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)newTabMenuItem {
-    return [self advancedMenuItemWithTitle:@"Open New Tab"
+    return [self advancedMenuItemWithTitle:@"Neuer Tab"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserCreateNewTabLoadingHomePage:YES];
@@ -955,7 +998,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)favoritesMenuItem {
-    return [self advancedMenuItemWithTitle:@"Favorites"
+    return [self advancedMenuItemWithTitle:@"Favoriten"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self presentFavoritesMenu];
@@ -963,7 +1006,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (BrowserAdvancedMenuItem *)historyMenuItem {
-    return [self advancedMenuItemWithTitle:@"History"
+    return [self advancedMenuItemWithTitle:@"Verlauf"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self presentHistoryMenu];
@@ -972,12 +1015,12 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)userAgentModeMenuItem {
     BOOL mobileModeEnabled = self.preferencesStore.mobileModeEnabled;
-    NSString *title = mobileModeEnabled ? @"Switch To Desktop User Agent" : @"Switch To Mobile User Agent";
+    NSString *detail = mobileModeEnabled ? @"Mobil" : @"Desktop";
     NSString *userAgent = mobileModeEnabled ? BrowserPreferencesStore.desktopUserAgent : BrowserPreferencesStore.mobileUserAgent;
     BOOL mobileMode = !mobileModeEnabled;
     
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Browser-Kennung"
+                                    detail:detail
                                    handler:^{
         [self applyUserAgent:userAgent mobileMode:mobileMode];
     }];
@@ -985,9 +1028,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)cloudflareDNSMenuItem {
     BOOL enabled = BrowserDNSProxy.isEnabled;
-    NSString *title = enabled ? @"DNS über Cloudflare ausschalten" : @"DNS über Cloudflare einschalten";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Cloudflare-DNS"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         BrowserDNSProxy.enabled = !enabled;
         BrowserDNSProxy *proxy = [BrowserDNSProxy sharedProxy];
@@ -999,9 +1041,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)adBlockMenuItem {
     BOOL enabled = self.preferencesStore.adBlockEnabled;
-    NSString *title = enabled ? @"Werbeblocker ausschalten" : @"Werbeblocker einschalten";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Werbeblocker"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         self.preferencesStore.adBlockEnabled = !enabled;
         [[BrowserContentBlocker sharedBlocker] preferencesDidChange];
@@ -1014,10 +1055,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSURL *url = [[self.host browserWebView] request].URL;
     NSString *host = [BrowserContentBlocker exceptionKeyForURL:url];
     BOOL excepted = [[BrowserContentBlocker sharedBlocker] isExceptionForURL:url];
-    NSString *title = host == nil ? @"Werbeblocker für diese Seite aus" :
-        [NSString stringWithFormat:excepted ? @"Werbeblocker für %@ wieder an" : @"Werbeblocker für %@ aus", host];
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Werbeblocker hier"
+                                    detail:host == nil ? @"–" : (excepted ? @"Aus" : @"An")
                                    handler:^{
         if (host == nil) {
             return;
@@ -1029,9 +1068,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)cookieBannerMenuItem {
     BOOL enabled = self.preferencesStore.cookieBannerBlockEnabled;
-    NSString *title = enabled ? @"Cookie-Banner ablehnen: Ein" : @"Cookie-Banner ablehnen: Aus";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Cookie-Banner ablehnen"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         self.preferencesStore.cookieBannerBlockEnabled = !enabled;
         [[BrowserCookieConsentBlocker sharedBlocker] preferencesDidChange];
@@ -1042,9 +1080,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 /// Bezahlschranken („Mit Werbung lesen oder Abo“) lassen sich nicht ablehnen: auf Wunsch zustimmen, damit nie ein Banner stehen bleibt.
 - (BrowserAdvancedMenuItem *)cookiePayWallMenuItem {
     BOOL enabled = self.preferencesStore.cookieBannerAcceptPayWalls;
-    NSString *title = enabled ? @"Bezahlschranken zustimmen: Ein" : @"Bezahlschranken zustimmen: Aus";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Bezahlschranken zustimmen"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         self.preferencesStore.cookieBannerAcceptPayWalls = !enabled;
         [[BrowserCookieConsentBlocker sharedBlocker] preferencesDidChange];
@@ -1057,10 +1094,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     NSURL *url = [[self.host browserWebView] request].URL;
     NSString *host = [BrowserCookieConsentBlocker exceptionKeyForURL:url];
     BOOL excepted = [[BrowserCookieConsentBlocker sharedBlocker] isExceptionForURL:url];
-    NSString *title = host == nil ? @"Cookie-Banner für diese Seite zulassen" :
-        [NSString stringWithFormat:excepted ? @"Cookie-Banner für %@ wieder ablehnen" : @"Cookie-Banner für %@ zulassen", host];
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Cookie-Banner hier ablehnen"
+                                    detail:host == nil ? @"–" : (excepted ? @"Aus" : @"An")
                                    handler:^{
         if (host == nil) {
             return;
@@ -1082,9 +1117,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             break;
         }
     }
-    NSString *title = [NSString stringWithFormat:@"Zoom %.0f %% → %.0f %%", current * 100.0, next * 100.0];
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Seitenzoom"
+                                    detail:[NSString stringWithFormat:@"%.0f %% → %.0f %%", current * 100.0, next * 100.0]
                                    handler:^{
         self.preferencesStore.pageZoom = next;
         [[self.host browserWebView] setPageZoom:next];
@@ -1093,9 +1127,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)pageScalingMenuItem {
     BOOL scalesPageToFit = [[self.host browserWebView] scalesPageToFit];
-    NSString *title = scalesPageToFit ? @"Stop Scaling Pages to Fit" : @"Scale Pages to Fit";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Seite an Breite anpassen"
+                                    detail:scalesPageToFit ? @"An" : @"Aus"
                                    handler:^{
         [self setPageScalingEnabled:!scalesPageToFit];
     }];
@@ -1113,9 +1146,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)fullscreenVideoPlaybackToggleMenuItem {
     BOOL enabled = self.host.browserFullscreenVideoPlaybackEnabled;
-    NSString *title = enabled ? @"Disable Full Screen player" : @"Enable Full Screen player";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Vollbild-Player"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         self.host.browserFullscreenVideoPlaybackEnabled = !enabled;
     }];
@@ -1123,9 +1155,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
 - (BrowserAdvancedMenuItem *)autoOpenNativePlayerMenuItem {
     BOOL enabled = self.preferencesStore.autoOpenVideosInNativePlayer;
-    NSString *title = enabled ? @"Videos automatisch im Player öffnen: Ein" : @"Videos automatisch im Player öffnen: Aus";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
+    return [self advancedMenuItemWithTitle:@"Native Player automatisch"
+                                    detail:enabled ? @"An" : @"Aus"
                                    handler:^{
         self.preferencesStore.autoOpenVideosInNativePlayer = !enabled;
     }];
@@ -1135,29 +1166,27 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (NSArray<BrowserAdvancedMenuItem *> *)extensionMenuItems {
     return @[
         [self adBlockMenuItem],
-        [self adBlockSiteMenuItem],
         [self cookieBannerMenuItem],
         [self cookiePayWallMenuItem],
-        [self cookieBannerSiteMenuItem],
         [self autoOpenNativePlayerMenuItem],
         [self cloudflareDNSMenuItem],
     ];
 }
 
 - (NSArray<BrowserAdvancedMenuSection *> *)advancedMenuSections {
-    BrowserAdvancedMenuItem *increaseFontSizeItem = [self advancedMenuItemWithTitle:@"Increase Font Size"
+    BrowserAdvancedMenuItem *increaseFontSizeItem = [self advancedMenuItemWithTitle:@"Schrift größer"
                                                                                style:UIAlertActionStyleDefault
                                                                              handler:^{
         self.host.browserTextFontSize += 5;
         [self.host browserUpdateTextFontSize];
     }];
-    BrowserAdvancedMenuItem *decreaseFontSizeItem = [self advancedMenuItemWithTitle:@"Decrease Font Size"
+    BrowserAdvancedMenuItem *decreaseFontSizeItem = [self advancedMenuItemWithTitle:@"Schrift kleiner"
                                                                                style:UIAlertActionStyleDefault
                                                                              handler:^{
         self.host.browserTextFontSize -= 5;
         [self.host browserUpdateTextFontSize];
     }];
-    BrowserAdvancedMenuItem *resetFontSizeItem = [self advancedMenuItemWithTitle:@"Reset Font Size"
+    BrowserAdvancedMenuItem *resetFontSizeItem = [self advancedMenuItemWithTitle:@"Schriftgröße zurücksetzen"
                                                                             style:UIAlertActionStyleDefault
                                                                           handler:^{
         self.host.browserTextFontSize = 100;
@@ -1168,65 +1197,70 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
                                                                              handler:^{
         [self presentMediaDiagnostics];
     }];
-    BrowserAdvancedMenuItem *webkitMediaPrefsItem = [self advancedMenuItemWithTitle:@"Inspect WebKit Media Prefs"
+    BrowserAdvancedMenuItem *webkitMediaPrefsItem = [self advancedMenuItemWithTitle:@"WebKit-Medieneinstellungen"
                                                                                 style:UIAlertActionStyleDefault
                                                                               handler:^{
         [self presentWebKitRuntimeMediaPreferences];
     }];
-    BrowserAdvancedMenuItem *clearCacheItem = [self advancedMenuItemWithTitle:@"Clear Cache"
+    BrowserAdvancedMenuItem *clearCacheItem = [self advancedMenuItemWithTitle:@"Cache leeren"
                                                                          style:UIAlertActionStyleDestructive
                                                                        handler:^{
         [self clearCacheAndReload];
     }];
-    BrowserAdvancedMenuItem *clearCookiesItem = [self advancedMenuItemWithTitle:@"Clear Cookies"
+    BrowserAdvancedMenuItem *clearCookiesItem = [self advancedMenuItemWithTitle:@"Cookies löschen"
                                                                            style:UIAlertActionStyleDestructive
                                                                          handler:^{
         [self clearCookiesAndReload];
     }];
 
+    BrowserAdvancedMenuItem *reloadItem = [self advancedMenuItemWithTitle:@"Neu laden"
+                                                                     style:UIAlertActionStyleDefault
+                                                                   handler:^{
+        [[self.host browserWebView] reload];
+    }];
+
     return @[
-        // Alle Erweiterungen gesammelt oben: Werbeblocker, Cookie-Ablehner, Player-Übergabe, DNS.
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Erweiterungen"
-                                               items:[self extensionMenuItems]],
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Diese Seite"
+                                               items:@[
+            reloadItem,
+            [self pageZoomMenuItem],
+            [self adBlockSiteMenuItem],
+            [self cookieBannerSiteMenuItem],
+            [self setCurrentPageAsHomePageMenuItem],
+        ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Navigation"
                                                items:@[
             [self homePageMenuItem],
-            [self setCurrentPageAsHomePageMenuItem],
             [self favoritesMenuItem],
             [self historyMenuItem],
             [self showTabsMenuItem],
             [self newTabMenuItem],
         ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Appearance"
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Erweiterungen"
+                                               items:[self extensionMenuItems]],
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Ansicht & Wiedergabe"
                                                items:@[
             [self topNavigationVisibilityMenuItem],
-            [self pageZoomMenuItem],
+            [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
+            [self userAgentModeMenuItem],
             increaseFontSizeItem,
             decreaseFontSizeItem,
             resetFontSizeItem,
         ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Video Playback"
-                                               items:@[
-            [self fullscreenVideoPlaybackToggleMenuItem],
-        ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Compatibility"
-                                               items:@[
-            [self userAgentModeMenuItem],
-        ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Diagnostics"
-                                               items:@[
-            mediaDiagnosticsItem,
-            webkitMediaPrefsItem,
-        ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Maintenance"
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Daten"
                                                items:@[
             clearCacheItem,
             clearCookiesItem,
         ]],
-        [BrowserAdvancedMenuSection sectionWithTitle:@"Help"
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Hilfe"
                                                items:@[
             [self usageGuideMenuItem],
+        ]],
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Erweitert"
+                                               items:@[
+            mediaDiagnosticsItem,
+            webkitMediaPrefsItem,
         ]],
     ];
 }
