@@ -626,10 +626,12 @@ static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
 
 /// Abstand der Hervorhebung bei Knöpfen mit eigener Fläche oder eigener Rundung: liegt eng an, Glow direkt am Knopf.
 static const CGFloat kMagneticTightPadding = 2.5;
-/// Eckenradius für Seitenziele ohne eigene Rundung (Textlinks, Symbole, Treffer, Karten): iOS-typisch mit
-/// kontinuierlicher Kurve (Squircle: cornerCurve continuous auf Hervorhebung und Fläche, UIBezierPath im Glow),
-/// keine Pille als Vorgabe (Nutzerwunsch 8. November 2026).
-static const CGFloat kMagneticDefaultCornerRadius = 12.0;
+/// Seitenziele ohne eigene Rundung (Textlinks, Symbole, Treffer, Karten) wie Bedienelemente seit iOS 26 (Liquid
+/// Glass): einzeilige Ziele bis kMagneticCapsuleMaxHeight als Kapsel, höhere (mehrzeilige Treffer, Karten) mit großer
+/// kontinuierlicher Rundung (cornerCurve continuous auf Hervorhebung und Fläche, UIBezierPath im Glow); deren
+/// Halbkreise würden sonst Favicon und Titelanfang anschneiden. Nutzerwunsch 8. November 2026.
+static const CGFloat kMagneticCapsuleMaxHeight = 80.0;
+static const CGFloat kMagneticDefaultCornerRadius = 22.0;
 /// Eckige Flächen (Radius 0, z. B. Bilder, eckige Knöpfe): Abstand plus so viel Rundung, dass die spitze Ecke des
 /// Elements nicht in den Glow ragt; die Hervorhebung bleibt erkennbar eckig.
 static const CGFloat kMagneticSquareExtraRadius = 4.0;
@@ -1257,7 +1259,7 @@ enum { kHistoryCount = 32 };
     } else if (shapeKnown && surface && !textTarget) {
         radius = MIN(padding + kMagneticSquareExtraRadius, halfSide);
     } else if (shapeKnown) {
-        radius = MIN(kMagneticDefaultCornerRadius, halfSide);
+        radius = height <= kMagneticCapsuleMaxHeight ? halfSide : MIN(kMagneticDefaultCornerRadius, halfSide);
     }
 #if DEBUG
     static CGRect loggedTarget;
