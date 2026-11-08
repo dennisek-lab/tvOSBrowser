@@ -46,6 +46,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Bezahlschranken zustimmen": @"eurosign.circle",
             @"Native Player automatisch": @"play.rectangle",
             @"Automatische Untertitel": @"captions.bubble",
+            @"Untertitelsprache": @"character.bubble",
             @"Untertitel (Webseite)": @"text.bubble",
             @"Cloudflare-DNS": @"network",
             @"Obere Leiste": @"rectangle.topthird.inset.filled",
