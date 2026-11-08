@@ -67,6 +67,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, readwrite, getter=isCompact) BOOL compact;
 @property (nonatomic) BOOL lightPage;
 @property (nonatomic, strong, nullable) id scrollEdgeInteraction;
+@property (nonatomic) UIView *glassDimmingView;
+@property (nonatomic, copy, nullable) NSString *displayTitle;
+@property (nonatomic, copy, nullable) NSString *displayDomain;
+@property (nonatomic) BOOL displaySecure;
 
 @end
 
@@ -125,6 +129,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.focusGlowView.layer.shadowOpacity = 0.0;
     self.focusGlowView.layer.shadowRadius = 18.0;
     [self.chromeContainerView insertSubview:self.focusGlowView belowSubview:self.chromeEffectView];
+
+    // Klares Glas lässt die Farben der Seite durchscheinen; eine leichte Abdunkelung bzw. Aufhellung hält Schrift lesbar (HIG).
+    self.glassDimmingView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.glassDimmingView.userInteractionEnabled = NO;
+    [self.chromeEffectView.contentView addSubview:self.glassDimmingView];
 
     self.focusHighlightView = [[UIView alloc] initWithFrame:CGRectZero];
     self.focusHighlightView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.18];
@@ -223,11 +232,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
                                      self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
         imageView.tintColor = foreground;
     }
-    self.URLLabel.textColor = [foreground colorWithAlphaComponent:0.75];
     self.loadingSpinner.color = foreground;
     self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
     self.lightPage = light;
     [self applyContrastStyle];
+    [self renderTitle];
 }
 
 - (BrowserTopBarFocusButton *)newFocusButtonForAction:(BrowserTopBarAction)action
@@ -253,8 +262,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
         self.effect = nil;
-        // Reguläres Glas ohne Tönung: Das System weichzeichnet und regelt die Helligkeit für die Lesbarkeit selbst.
-        UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+        UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleClear];
         glassEffect.interactive = YES;
         self.chromeEffectView.effect = glassEffect;
         self.chromeEffectView.alpha = 1.0;
@@ -273,6 +281,32 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.chromeContainerView.layer.shadowOpacity = light ? 0.24 : 0.35;
     self.chromeEffectView.layer.borderColor = (light ? [UIColor colorWithWhite:0.0 alpha:0.14]
                                                      : [UIColor colorWithWhite:1.0 alpha:0.16]).CGColor;
+    self.glassDimmingView.backgroundColor = light ? [UIColor colorWithWhite:1.0 alpha:0.42] : [UIColor colorWithWhite:0.0 alpha:0.35];
+}
+
+- (void)setDisplayTitle:(NSString *)title domain:(NSString *)domain secure:(BOOL)secure {
+    self.displayTitle = title;
+    self.displayDomain = domain;
+    self.displaySecure = secure;
+    [self renderTitle];
+}
+
+- (void)renderTitle {
+    UIColor *foreground = self.lightPage ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
+    UIColor *green = self.lightPage ? [UIColor colorWithRed:0.05 green:0.52 blue:0.20 alpha:1.0]
+                                    : [UIColor colorWithRed:0.36 green:0.82 blue:0.48 alpha:1.0];
+    NSString *title = self.displayTitle ?: @"";
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title attributes:@{
+        NSForegroundColorAttributeName: self.displaySecure ? green : [foreground colorWithAlphaComponent:0.9],
+        NSFontAttributeName: self.URLLabel.font,
+    }];
+    if (self.displayDomain.length > 0) {
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  ·  " stringByAppendingString:self.displayDomain] attributes:@{
+            NSForegroundColorAttributeName: [foreground colorWithAlphaComponent:0.5],
+            NSFontAttributeName: self.URLLabel.font,
+        }]];
+    }
+    self.URLLabel.attributedText = text;
 }
 
 - (void)attachToScrollView:(UIScrollView *)scrollView {
@@ -304,16 +338,31 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         return;
     }
     _compact = compact;
-    void (^changes)(void) = ^{
+    if (!animated) {
         [self setNeedsLayout];
         [self layoutIfNeeded];
-    };
-    if (animated) {
-        [UIView animateWithDuration:0.32 delay:0.0 usingSpringWithDamping:0.86 initialSpringVelocity:0.0
-                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
-                         animations:changes completion:nil];
-    } else {
-        changes();
+        return;
+    }
+    // Der Schattenumriss wird von UIView-Animationen nicht mitgenommen und sprang sofort auf die Endform
+    // (sichtbares Aufblinken). Deshalb läuft er hier als eigene Animation mit gleicher Dauer und Kurve.
+    NSTimeInterval duration = 0.3;
+    CGPathRef fromPath = self.chromeContainerView.layer.shadowPath;
+    id fromValue = fromPath != NULL ? (__bridge id)fromPath : nil;
+    [UIView animateWithDuration:duration delay:0.0
+                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+    } completion:nil];
+    CALayer *layer = self.chromeContainerView.layer;
+    [layer removeAnimationForKey:@"shadowPath"];
+    if (fromValue != nil && layer.shadowPath != NULL) {
+        CABasicAnimation *shadowAnimation = [CABasicAnimation animationWithKeyPath:@"shadowPath"];
+        shadowAnimation.fromValue = fromValue;
+        shadowAnimation.toValue = (__bridge id)layer.shadowPath;
+        shadowAnimation.duration = duration;
+        shadowAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [layer addAnimation:shadowAnimation forKey:@"shadowPath"];
     }
 }
 
@@ -339,6 +388,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
     self.chromeEffectView.frame = self.chromeContainerView.bounds;
     self.chromeEffectView.layer.cornerRadius = self.chromeContainerView.layer.cornerRadius;
+    self.glassDimmingView.frame = self.chromeEffectView.bounds;
 
     CGFloat iconY = floor((CGRectGetHeight(chromeFrame) - kTopBarIconSize) / 2.0);
     CGFloat leftX = kTopBarLeadingPadding;

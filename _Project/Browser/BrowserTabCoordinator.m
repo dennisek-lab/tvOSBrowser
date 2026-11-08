@@ -282,7 +282,7 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
 - (void)refreshActiveTabUI {
     BrowserTabViewModel *tab = self.activeTab;
     if (tab == nil) {
-        self.topMenuView.URLLabel.text = @"";
+        [self.topMenuView setDisplayTitle:@"" domain:nil secure:NO];
         return;
     }
 
@@ -295,20 +295,15 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
     }
     NSString *fullTitle = self.activeWebView.reportedPageTitle.length > 0 ? self.activeWebView.reportedPageTitle : self.activeWebView.title;
     NSString *title = BrowserShortSiteName(self.activeWebView.reportedSiteName, fullTitle, host);
-    UILabel *label = self.topMenuView.URLLabel;
+    BOOL secure = [[NSURL URLWithString:currentURL].scheme.lowercaseString isEqualToString:@"https"];
     if (title.length > 0 && BrowserNameMatchesHost(title, host)) {
-        label.text = title;
+        [self.topMenuView setDisplayTitle:title domain:nil secure:secure];
     } else if (title.length > 0 && host.length > 0) {
-        UIColor *color = label.textColor ?: UIColor.whiteColor;
-        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title
-                                                                                 attributes:@{NSForegroundColorAttributeName: [color colorWithAlphaComponent:0.95]}];
-        [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  ·  " stringByAppendingString:host]
-                                                                     attributes:@{NSForegroundColorAttributeName: [color colorWithAlphaComponent:0.5]}]];
-        label.attributedText = text;
+        [self.topMenuView setDisplayTitle:title domain:host secure:secure];
     } else if (host.length > 0) {
-        label.text = host;
+        [self.topMenuView setDisplayTitle:host domain:nil secure:secure];
     } else {
-        label.text = currentURL.length > 0 ? currentURL : @"Neuer Tab";
+        [self.topMenuView setDisplayTitle:(currentURL.length > 0 ? currentURL : @"Neuer Tab") domain:nil secure:NO];
     }
 
     if (request != nil) {

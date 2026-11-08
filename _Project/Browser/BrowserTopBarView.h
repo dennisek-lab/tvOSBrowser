@@ -39,6 +39,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 /// Knöpfe für den magnetischen Zeiger: Rechteck in Koordinaten der Leiste und zugehörige Aktion.
 /// Farbe der Seite hinter der Leiste: passt Symbole, Schrift und Glas an (hell/dunkel).
 - (void)setPageBackgroundColor:(nullable UIColor *)color;
+/// Seitenname, dahinter dezent die Domain (nil = keine). Bei verschlüsselter Verbindung (HTTPS) ist der Name grün.
+- (void)setDisplayTitle:(nullable NSString *)title domain:(nullable NSString *)domain secure:(BOOL)secure;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;
 - (void)setFocusModeActive:(BOOL)focusModeActive;
 /// Kompakte Leiste beim Scrollen: kleine Glas-Kapsel nur mit dem Seitennamen (wie Safari).
