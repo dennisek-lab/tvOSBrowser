@@ -15,6 +15,7 @@
 #import "BrowserNowPlayingController.h"
 #import "BrowserPageActionCoordinator.h"
 #import "BrowserPreferencesStore.h"
+#import "BrowserReaderMode.h"
 #import "BrowserRemoteInputController.h"
 #import "BrowserSessionStore.h"
 #import "BrowserStartViewController.h"
@@ -49,6 +50,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
 @property (nonatomic) CGFloat lastPageScrollOffset;
 @property (nonatomic) CGFloat pageScrollTravel;
+@property (nonatomic) NSUInteger readerCheckGeneration;
 
 @end
 
@@ -274,6 +276,14 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     NSLog(@"[SelfTest] menu handled=%d", handled);
                     return;
                 }
+                if ([step isEqualToString:@"reader"]) {
+                    NSLog(@"[SelfTest] reader vorher verfügbar=%d aktiv=%d", self.topMenuView.readerAvailable, self.topMenuView.readerActive);
+                    [self performTopBarAction:BrowserTopBarActionReader];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        NSLog(@"[SelfTest] reader nachher verfügbar=%d aktiv=%d", self.topMenuView.readerAvailable, self.topMenuView.readerActive);
+                    });
+                    return;
+                }
                 if ([step isEqualToString:@"advmenu"]) {
                     [self showAdvancedMenu];
                     return;
@@ -474,6 +484,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         case BrowserTopBarActionFavorite:
             [self toggleFavoriteForCurrentPage];
             break;
+        case BrowserTopBarActionReader:
+            [self toggleReaderMode];
+            break;
     }
 }
 
@@ -631,6 +644,55 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 - (void)browserRemoteInputControllerCompactTopBar {
     [self.topMenuView setCompact:YES animated:YES];
     self.pageScrollTravel = 0.0;
+}
+
+#pragma mark - Reader-Modus
+
+/// Reader-Knopf der Leiste: Artikel anzeigen bzw. zur Originalseite zurück.
+- (void)toggleReaderMode {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil) {
+        return;
+    }
+    self.readerCheckGeneration++;
+    __weak typeof(self) weakSelf = self;
+    [BrowserReaderMode toggleWebView:webView completion:^(BrowserReaderState state) {
+        if (weakSelf.webview != webView) {
+            return;
+        }
+        [weakSelf.topMenuView setReaderAvailable:state != BrowserReaderStateUnavailable active:state == BrowserReaderStateActive];
+        [webView refreshClickTargets];
+        [weakSelf.remoteInputController pointerTargetsDidChange];
+    }];
+}
+
+/// Fragt die Lesbarkeit der aktuellen Seite ab und zeigt oder verbirgt den Reader-Knopf.
+- (void)updateReaderAvailability {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil) {
+        return;
+    }
+    NSUInteger generation = ++self.readerCheckGeneration;
+    __weak typeof(self) weakSelf = self;
+    [BrowserReaderMode checkWebView:webView completion:^(BrowserReaderState state) {
+        if (weakSelf.webview != webView || weakSelf.readerCheckGeneration != generation) {
+            return;
+        }
+        [weakSelf.topMenuView setReaderAvailable:state != BrowserReaderStateUnavailable active:state == BrowserReaderStateActive];
+        [weakSelf.remoteInputController pointerTargetsDidChange];
+    }];
+}
+
+/// Nach dem Laden: sofort und nochmals nach 2,5 s prüfen (Seiten, die ihren Text erst per Skript aufbauen).
+- (void)scheduleReaderAvailabilityChecks {
+    BrowserWebView *webView = self.webview;
+    for (NSNumber *delay in @[@0.4, @2.5]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (self.webview == webView && !webView.isLoading && !self.topMenuView.readerActive) {
+                [self updateReaderAvailability];
+            }
+        });
+    }
 }
 
 /// Stern in der Leiste: aktuelle Seite zu den Favoriten hinzufügen oder entfernen.
@@ -980,6 +1042,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self observeClickTargetsOfWebView:current];
     [current refreshClickTargets];
     [self.remoteInputController pointerTargetsDidChange];
+    [self.topMenuView setReaderAvailable:NO active:NO];
+    [self updateReaderAvailability];
     UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
     [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
     [self applyPageColorOfWebView:current];
@@ -1158,6 +1222,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     }
     if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
+        return YES;
+    }
+    // Reader läuft: Zurück beendet zuerst den Reader und zeigt die Originalseite.
+    if (self.topMenuView.readerActive) {
+        [self toggleReaderMode];
         return YES;
     }
     if (self.webview.canGoBack) {
@@ -1355,10 +1424,18 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self observeClickTargetsOfWebView:webView];
     }
     [self.tabCoordinator webViewDidStartLoad:webView];
+    if (webView == self.webview) {
+        // Neue Seite: Reader zu Ende, Lesbarkeit unbekannt.
+        self.readerCheckGeneration++;
+        [self.topMenuView setReaderAvailable:NO active:NO];
+    }
 }
 
 - (void)webViewDidFinishLoad:(id)webView {
     [self.tabCoordinator webViewDidFinishLoad:webView];
+    if (webView == self.webview) {
+        [self scheduleReaderAvailabilityChecks];
+    }
     if (webView == self.webview && self.webview.request.URL != nil) {
         [BrowserHistoryStore.sharedStore recordVisitWithURL:self.webview.request.URL title:[self currentSiteDisplayName]];
     }
