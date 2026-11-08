@@ -1,6 +1,7 @@
 #import "BrowserWebView.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserClickTargetTracker.h"
+#import "BrowserContentBlocker.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -454,6 +455,15 @@ static NSString *BrowserYouTubeRequestCaptureScript(void) {
     "})();";
 }
 
+/// WKUserContentController einer WKWebViewConfiguration (per Laufzeit).
+static id BrowserUserContentController(id configuration) {
+    SEL getter = NSSelectorFromString(@"userContentController");
+    if (configuration == nil || ![configuration respondsToSelector:getter]) {
+        return nil;
+    }
+    return ((id (*)(id, SEL))objc_msgSend)(configuration, getter);
+}
+
 static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     if (configuration == nil) {
         return;
@@ -501,6 +511,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 @property (nonatomic) BOOL loading;
 @property (nonatomic, strong) BrowserClickTargetTracker *clickTargetTracker;
 @property (nonatomic, weak, nullable) UIScrollView *observedScrollView;
+@property (nonatomic, strong, nullable) id contentController;
 
 @end
 
@@ -553,6 +564,8 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     BrowserSetBooleanSelectorIfAvailable(configuration, @"setAllowsPictureInPictureMediaPlayback:", YES);
     BrowserConfigurePrivateMediaPreferences(configuration);
     BrowserInstallYouTubeCaptureUserScript(configuration);
+    self.contentController = BrowserUserContentController(configuration);
+    [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     self.clickTargetTracker = [BrowserClickTargetTracker new];
     [self.clickTargetTracker installIntoConfiguration:configuration];
     __weak typeof(self) weakSelf = self;
@@ -1157,6 +1170,9 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 
     if (shouldAllow && isMainFrameRequest && request != nil) {
         self.lastRequest = request;
+        // Werbeblocker: Regelsätze für Seiten mit Ausnahme wegnehmen bzw. wieder anhängen, bevor geladen wird
+        [[BrowserContentBlocker sharedBlocker] updateUserContentController:self.contentController
+                                                        forNavigationToURL:request.URL];
     }
 
     if (decisionHandler != nil) {

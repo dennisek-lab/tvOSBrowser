@@ -1,0 +1,185 @@
+{
+ "lists": [
+  {
+   "name": "network-1",
+   "file": "network-1.json.z",
+   "hash": "6df553956b53",
+   "rules": 140000,
+   "jsonBytes": 19037550
+  },
+  {
+   "name": "network-2",
+   "file": "network-2.json.z",
+   "hash": "b689fcdc7c5a",
+   "rules": 9951,
+   "jsonBytes": 2086114
+  },
+  {
+   "name": "cosmetic-generic",
+   "file": "cosmetic-generic.json.z",
+   "hash": "1a7d723eb2d1",
+   "rules": 15163,
+   "jsonBytes": 1515030
+  },
+  {
+   "name": "cosmetic-domain",
+   "file": "cosmetic-domain.json.z",
+   "hash": "14196bfb0c8e",
+   "rules": 16158,
+   "jsonBytes": 2444492
+  }
+ ],
+ "version": "89f0ae0c7c43",
+ "sources": {
+  "ublock-filters": {
+   "converted": 12635,
+   "skipped": 16352,
+   "skippedByReason": {
+    "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 1674,
+    "scriptlet (##+js)": 10360,
+    "html-filter (##^)": 410,
+    "muster (regex/nicht-ASCII/Alternative)": 700,
+    "option $method": 9,
+    "option $replace": 28,
+    "option $redirect": 764,
+    "option $redirect-rule": 402,
+    "domain-platzhalter/regex": 159,
+    "kosmetik-domain-platzhalter": 875,
+    "seitenweite Ausnahme mit Muster": 144,
+    "kosmetik-sonstige": 85,
+    "option $uritransform": 19,
+    "kosmetik-erweitert (#?# #$# #%#)": 16,
+    "option $removeparam": 260,
+    "option $cname": 29,
+    "option $csp": 94,
+    "option $popunder (unbekannt)": 14,
+    "option $permissions": 11,
+    "option $rewrite (unbekannt)": 2,
+    "option $to": 37,
+    "option $strict3p": 5,
+    "option $denyallow": 13,
+    "option $shide": 1,
+    "option $urlskip (unbekannt)": 225,
+    "kosmetik-domain-gemischt (~)": 8,
+    "option $ipaddress": 1,
+    "domain gemischt (~)": 1,
+    "option $inline-script": 1,
+    "option $reason": 5
+   }
+  },
+  "easylist": {
+   "converted": 77685,
+   "skipped": 971,
+   "skippedByReason": {
+    "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 327,
+    "muster (regex/nicht-ASCII/Alternative)": 25,
+    "kosmetik-domain-platzhalter": 300,
+    "seitenweite Ausnahme mit Muster": 17,
+    "kosmetik-erweitert (#?# #$# #%#)": 291,
+    "option $csp": 4,
+    "option $rewrite (unbekannt)": 7
+   }
+  },
+  "easyprivacy": {
+   "converted": 56394,
+   "skipped": 79,
+   "skippedByReason": {
+    "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 4,
+    "scriptlet (##+js)": 30,
+    "html-filter (##^)": 1,
+    "muster (regex/nicht-ASCII/Alternative)": 7,
+    "option $method": 1,
+    "option $redirect": 29,
+    "option $redirect-rule": 1,
+    "domain-platzhalter/regex": 3,
+    "option $csp": 2,
+    "option $rewrite (unbekannt)": 1
+   }
+  },
+  "pgl": {
+   "converted": 3560,
+   "skipped": 0,
+   "skippedByReason": {}
+  },
+  "ublock-badware": {
+   "converted": 4508,
+   "skipped": 375,
+   "skippedByReason": {
+    "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 21,
+    "scriptlet (##+js)": 24,
+    "html-filter (##^)": 1,
+    "muster (regex/nicht-ASCII/Alternative)": 48,
+    "option $method": 3,
+    "option $redirect": 1,
+    "seitenweite Ausnahme mit Muster": 1,
+    "option $to": 243,
+    "option $ipaddress": 22,
+    "option $reason": 11
+   }
+  },
+  "urlhaus": {
+   "converted": 1950,
+   "skipped": 0,
+   "skippedByReason": {}
+  },
+  "easylist-germany": {
+   "converted": 5718,
+   "skipped": 287,
+   "skippedByReason": {
+    "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 106,
+    "muster (regex/nicht-ASCII/Alternative)": 5,
+    "kosmetik-domain-platzhalter": 39,
+    "seitenweite Ausnahme mit Muster": 3,
+    "kosmetik-erweitert (#?# #$# #%#)": 127,
+    "option $csp": 1,
+    "option $rewrite (unbekannt)": 4,
+    "option $genericblock": 2
+   }
+  }
+ },
+ "totals": {
+  "converted": {
+   "netzwerk-ausnahme": 3630,
+   "kosmetik-domain": 17666,
+   "netzwerk-block": 119681,
+   "kosmetik-ausnahme": 731,
+   "kosmetik-generisch": 14311,
+   "seitenweite-ausnahme": 921,
+   "netzwerk-block (hosts)": 5510
+  },
+  "skipped": {
+   "kosmetik-prozedural/ungueltig (:has-text, :xpath ...)": 2132,
+   "scriptlet (##+js)": 10414,
+   "html-filter (##^)": 412,
+   "muster (regex/nicht-ASCII/Alternative)": 785,
+   "option $method": 13,
+   "option $replace": 28,
+   "option $redirect": 794,
+   "option $redirect-rule": 403,
+   "domain-platzhalter/regex": 162,
+   "kosmetik-domain-platzhalter": 1214,
+   "seitenweite Ausnahme mit Muster": 165,
+   "kosmetik-sonstige": 85,
+   "option $uritransform": 19,
+   "kosmetik-erweitert (#?# #$# #%#)": 434,
+   "option $removeparam": 260,
+   "option $cname": 29,
+   "option $csp": 101,
+   "option $popunder (unbekannt)": 14,
+   "option $permissions": 11,
+   "option $rewrite (unbekannt)": 14,
+   "option $to": 280,
+   "option $strict3p": 5,
+   "option $denyallow": 13,
+   "option $shide": 1,
+   "option $urlskip (unbekannt)": 225,
+   "kosmetik-domain-gemischt (~)": 8,
+   "option $ipaddress": 23,
+   "domain gemischt (~)": 1,
+   "option $inline-script": 1,
+   "option $reason": 16,
+   "option $genericblock": 2,
+   "badfilter (nicht angewendet: 204)": 1
+  }
+ }
+}

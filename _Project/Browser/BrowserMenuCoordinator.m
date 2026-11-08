@@ -1,6 +1,7 @@
 #import "BrowserMenuCoordinator.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
+#import "BrowserContentBlocker.h"
 #import "BrowserWebView.h"
 
 static UIColor *MenuTextColor(void) {
@@ -995,6 +996,36 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)adBlockMenuItem {
+    BOOL enabled = self.preferencesStore.adBlockEnabled;
+    NSString *title = enabled ? @"Werbeblocker ausschalten" : @"Werbeblocker einschalten";
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        self.preferencesStore.adBlockEnabled = !enabled;
+        [[BrowserContentBlocker sharedBlocker] preferencesDidChange];
+        [[self.host browserWebView] reload];
+    }];
+}
+
+/// Schaltet den Werbeblocker für den Host der aktuellen Seite aus bzw. wieder ein.
+- (BrowserAdvancedMenuItem *)adBlockSiteMenuItem {
+    NSURL *url = [[self.host browserWebView] request].URL;
+    NSString *host = [BrowserContentBlocker exceptionKeyForURL:url];
+    BOOL excepted = [[BrowserContentBlocker sharedBlocker] isExceptionForURL:url];
+    NSString *title = host == nil ? @"Werbeblocker für diese Seite aus" :
+        [NSString stringWithFormat:excepted ? @"Werbeblocker für %@ wieder an" : @"Werbeblocker für %@ aus", host];
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        if (host == nil) {
+            return;
+        }
+        [[BrowserContentBlocker sharedBlocker] setException:!excepted forURL:url];
+        [[self.host browserWebView] reload];
+    }];
+}
+
 /// Schaltet den Grundzoom reihum durch feste Stufen und merkt ihn sich für alle Tabs.
 - (BrowserAdvancedMenuItem *)pageZoomMenuItem {
     NSArray<NSNumber *> *steps = @[@1.0, @1.25, @1.5, @1.75, @2.0, @2.5];
@@ -1123,6 +1154,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
                                                items:@[
             [self userAgentModeMenuItem],
             [self cloudflareDNSMenuItem],
+            [self adBlockMenuItem],
+            [self adBlockSiteMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Diagnostics"
                                                items:@[

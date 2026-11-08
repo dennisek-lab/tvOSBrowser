@@ -53,6 +53,8 @@
 		E5FDD435F08A7F5DB5E98B4B /* BrowserNowPlayingController.m in Sources */ = {isa = PBXBuildFile; fileRef = D7656CB165B5715007F9D501 /* BrowserNowPlayingController.m */; };
 		30BF46DEC490AD88A574B406 /* BrowserHistoryStore.m in Sources */ = {isa = PBXBuildFile; fileRef = A58BFA22DF971F1724BF6145 /* BrowserHistoryStore.m */; };
 		42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 96EA99793832406B52A78CAA /* BrowserStartViewController.m */; };
+		4E74E160BF506F77842D2BDF /* BrowserContentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */; };
+		BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */ = {isa = PBXBuildFile; fileRef = 59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -131,6 +133,9 @@
 		A58BFA22DF971F1724BF6145 /* BrowserHistoryStore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserHistoryStore.m; sourceTree = "<group>"; };
 		7E17E37090F48570920219DD /* BrowserStartViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserStartViewController.h; sourceTree = "<group>"; };
 		96EA99793832406B52A78CAA /* BrowserStartViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserStartViewController.m; sourceTree = "<group>"; };
+		D9BB82531B7D4F8FDB2C3C4C /* BrowserContentBlocker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserContentBlocker.h; sourceTree = "<group>"; };
+		F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserContentBlocker.m; sourceTree = "<group>"; };
+		59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ContentBlocker; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -275,6 +280,8 @@
 				A58BFA22DF971F1724BF6145 /* BrowserHistoryStore.m */,
 				7E17E37090F48570920219DD /* BrowserStartViewController.h */,
 				96EA99793832406B52A78CAA /* BrowserStartViewController.m */,
+				D9BB82531B7D4F8FDB2C3C4C /* BrowserContentBlocker.h */,
+				F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -343,6 +350,7 @@
 				B002B8661BAE420500C744AF /* main.m */,
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
 			);
 			name = "Supporting Files";
@@ -412,6 +420,7 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
 				3A2A7C1821E7805D0083CB13 /* right-arrow-forward.png in Resources */,
 				3A2A7C1E21E7842F0083CB13 /* menu-2.png in Resources */,
@@ -465,6 +474,7 @@
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,
 				30BF46DEC490AD88A574B406 /* BrowserHistoryStore.m in Sources */,
+				4E74E160BF506F77842D2BDF /* BrowserContentBlocker.m in Sources */,
 				E5FDD435F08A7F5DB5E98B4B /* BrowserNowPlayingController.m in Sources */,
 				C3B8D8F6E019212DCDE82430 /* BrowserClickTargetTracker.m in Sources */,
 				6921A70BFB3405E0FC80124C /* BrowserDNSProxy.m in Sources */,
