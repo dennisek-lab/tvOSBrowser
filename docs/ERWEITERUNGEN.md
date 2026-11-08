@@ -19,7 +19,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 7. [Klickziele, Seitenfarbe, Glow-Farbe](#7-klickziele-seitenfarbe-glow-farbe-browserclicktargettracker)
 8. [Fernbedienung](#8-fernbedienung-browserremoteinputcontroller)
 9. [Obere Leiste](#9-obere-leiste-browsertopbarview) (mit 9.1 [Reader-Modus](#91-reader-modus-browserreadermode))
-10. [Video: Hooks, nativer Player, Asset-Loader, YouTube](#10-video)
+10. [Video: Hooks, nativer Player, Asset-Loader, YouTube, automatische Untertitel](#10-video)
 11. [DNS-Proxy (Cloudflare)](#11-dns-proxy-browserdnsproxy)
 12. [Weitere Eingriffe in Systemklassen](#12-weitere-eingriffe-in-systemklassen)
 13. [Start-/Verlaufsansicht, Bedienungsdialog, Tab-Übersicht](#13-start-und-verlaufsansicht-bedienungsdialog-tab-übersicht)
@@ -43,6 +43,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Fernbedienung (GameController, Presses, Ring, Magnetic Buttons, Lupe) | `BrowserRemoteInputController.m/.h`, `UIApplication+BrowserSelectPressForwarding.m`, Host-Methoden in `ViewController.m` | hoch (GameController-Verhalten, `sendEvent:`-Tausch) |
 | Obere Leiste | `BrowserTopBarView.m/.h`, `BrowserTabCoordinator.m` (`updateTopNavAndWebView`) | mittel (`UIGlassEffect`) |
 | Nativer Videoplayer, Handover | `BrowserVideoPlaybackCoordinator.m`, `BrowserNativeVideoPlayerViewController.m`, `BrowserNativeVideoAssetLoader.m` | mittel |
+| Automatische Untertitel (whisper.cpp) | `BrowserSubtitle*.m/.h`, `vendor/whisper.xcframework`, `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | mittel (MTAudioProcessingTap, eigener HLS-Leser, Drittcode) |
 | Video-Hooks, Media-Session | `BrowserClickTargetTracker.m` (`BrowserVideoHookScript`, `BrowserMediaSessionHookScript`), `BrowserNowPlayingController.m` | mittel |
 | YouTube-Erfassung/-Extraktor | `BrowserWebView.m` (`BrowserYouTubeRequestCaptureScript`), `BrowserYouTubeExtractor.m` | hoch (Extraktion ist abgeschaltet) |
 | DNS-Proxy (Cloudflare DoH) | `BrowserDNSProxy.m/.h`, `SceneDelegate.m`, `AppDelegate.m` | hoch (`nw_*`-Privacy-Context, `proxyConfigurations`) |
@@ -140,6 +141,7 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 | Autoconsent-Bundle + `bridge.js` (mit vorangestelltem `window.__browserAcceptPayWalls=…`) | document-start, **alle** Frames | `BrowserCookieConsentBlocker makeUserScript` |
 | `BrowserClickTargetScript` | document-end (1), Hauptframe | `BrowserClickTargetTracker installIntoConfiguration:` |
 | `BrowserVideoHookScript` | document-start, Hauptframe | ebenda |
+| `BrowserFrameVideoScript` (Manifeste und Videos in eingebetteten Frames) | document-start, alle Frames (überspringt den Hauptframe selbst) | ebenda |
 | `BrowserMediaSessionHookScript` | document-start, Hauptframe | ebenda |
 
 Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
@@ -183,6 +185,12 @@ Lehnt Cookie-Banner automatisch ab (`autoAction: "optOut"`, nie zustimmen) auf B
 
 ### 5.4 Bezahlschranken
 `bridge.js` läuft den zweiten Teil nur, wenn `window.__browserAcceptPayWalls === true`. Nach 2,5/5/8/12 s sowie 1,5 s nach `autoconsentDone`/`optOutResult` sucht `scan()` sichtbare Knöpfe (`button, a, [role=button], input[type=button|submit]`), deren Beschriftung regulär zu `ACCEPT` passt (Akzeptieren, Zustimmen, „Mit Werbung weiter“, accept/agree …). Geklickt wird nur, wenn der umgebende Dialog (fixed/sticky, `role=dialog`, `aria-modal`, im CMP-iframe die ganze Seite) Text enthält, der zu `PAY` passt (Abo, Pur, werbefrei, subscribe, ad-free, `€` …). Meldung `payWallAccepted` erhöht ebenfalls `handledCount`. Nur einmal pro Seite (`accepted`). Normale Banner werden weiter nur abgelehnt.
+
+### 5.4a Nachlauf-Ablehnen, iframe-Signal und Störer (`bridge.js`)
+- **Ablehnen-Nachlauf (`rejectScan`)**, unabhängig vom Bezahlschranken-Schalter: Alle 2 s (ab 3 s, bis 30 s) wird nach einem sichtbaren Knopf gesucht, dessen Beschriftung zu `REJECT` passt (Reject/Reject Non-Essential, Ablehnen, Nur notwendige …) und der in einem Dialog mit Cookie-/Datenschutz-Text liegt. Gründe: autoconsent erkennt manchmal das falsche CMP (The Verge: Regel `pmc-privacy-banner` statt OneTrust, meldet `optOutResult ergebnis=ja`, der OneTrust-Banner bleibt). Nie „Manage/Einstellungen“, nie „Accept“. Log: `rejectClicked`, `rejectSkip`.
+- **Bezahl-Signal an iframes:** Der Zustimmen-Knopf steckt oft in einem fremden iframe (Golem: Sourcepoint `cmp-cdn.golem.de`), der Abo-Text („Golem pur bestellen“) im umgebenden Dokument. `ownPaySignal()` prüft Dokument (kurze Seite < 6000 Zeichen oder Dialog/Consent-Container mit `PAY`-Text, inkl. Knopf-/Linktexte) und sendet per `postMessage({browserPaySignal:1})` an Kindframes; diese setzen `parentPay` und scannen sofort. Log: `payWallAccepted … (Signal vom Elterndokument)`.
+- **Bezahl-zuerst-Hosts (`PAY_FIRST_HOSTS`, Bild-Familie):** Dort führt Ablehnen in eine Sackgasse (Tracking-Block → Seite hält es für einen Werbeblocker, bleibt weiß/Sperrseite `adblockwall.html`). Bei aktivem `__browserAcceptPayWalls` setzt `bridge.js` `autoconsentStandalone.instance.config.autoAction = null`: autoconsent erkennt dann nur noch (Log `popupFound`, kein `optOutResult`), und die Bezahlschranken-Logik klickt „Alle akzeptieren“ im Sourcepoint-iframe (`cmp2.bild.de`, Signal vom Elterndokument; `PAY` enthält `bild plus`). Neue Hosts dieser Art in `PAY_FIRST_HOSTS` eintragen. Schalter aus → normales Ablehnen. Akzeptieren und Ablehnen schließen sich pro Frame aus (`accepted`/`rejected`).
+- **Störer:** Eigener Abschnitt am Anfang von `bridge.js`, immer aktiv, solange der Cookie-Ablehner an ist. Blendet Google One Tap (`#credential_picker_container`, `#credential_picker_iframe`, `#g_id_onload`, iframes `accounts.google.com/gsi/iframe/select`) per CSS aus, im One-Tap-iframe selbst per `html,body{display:none}`. Der normale „Mit Google anmelden“-Knopf bleibt unberührt. Neue Störer nur mit eindeutig harmlosen Selektoren ergänzen.
 
 ### 5.5 Private/fragile Schnittstellen
 - WebKit (alle mit `respondsToSelector`/`instancesRespondToSelector`-Prüfung, bei Fehlen stilles Aus): `WKUserScript initWithSource:injectionTime:forMainFrameOnly:`, `addUserScript:`, `removeAllUserScripts`, `userScripts`, `addScriptMessageHandler:name:`, Protokoll `WKScriptMessageHandler` per `class_addProtocol`.
@@ -409,53 +417,195 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 
 ## 10. Video
 
-Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube.
+Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Bild-in-Bild, 10.7 Untertitel, 10.8 Einhängepunkt für Erweiterungen, 10.9 Automatische Untertitel (whisper.cpp).
 
 ### 10.1 Video-Hooks und Medienmeldungen
-**Zweck.** Vollbild-Wünsche und Videostarts der Seite abfangen, HLS/DASH-Manifeste für MSE-Videos (`blob:`) merken, Media-Session-Handler der Seite sichern.
+**Zweck.** Vollbild-Wünsche und Videostarts der Seite abfangen, HLS/DASH-Manifeste für MSE-Videos (`blob:`) finden und melden, Media-Session-Handler der Seite sichern.
 
-**Dateien.** `BrowserClickTargetTracker.m`: `BrowserVideoHookScript` (Rückkanal `browserVideo`, document-start, Hauptframe), `BrowserMediaSessionHookScript`, Teil von `BrowserClickTargetScript`; Weitergabe `BrowserWebView.videoEventHandler` → `ViewController observeClickTargetsOfWebView:` → `BrowserVideoPlaybackCoordinator handlePageVideoEvent:`.
+**Dateien.** `BrowserClickTargetTracker.m`: `BrowserManifestObserverJS` (gemeinsamer Teil), `BrowserVideoHookScript` (Hauptframe), `BrowserFrameVideoScript` (eingebettete Frames), beide document-start, Rückkanal `browserVideo`; `BrowserMediaSessionHookScript`, Teil von `BrowserClickTargetScript`. Weitergabe `BrowserWebView.videoEventHandler` → `ViewController observeClickTargetsOfWebView:` (nur aktueller Tab) → `BrowserVideoPlaybackCoordinator handlePageVideoEvent:`.
 
 **Ablauf.**
-- Überschreibt `fetch` und `XMLHttpRequest.prototype.open`, merkt `.m3u8` (`window.__browserManifests.hls`, bis 20 Einträge in `all`) und `.mpd` (`dash`).
-- Überschreibt `HTMLVideoElement.prototype.webkitEnterFullscreen`/`webkitEnterFullScreen` und `Element.prototype.requestFullscreen`/`webkitRequestFullscreen`/`webkitRequestFullScreen`; bei Video meldet es `{type:'fullscreen', bid}` und unterdrückt das Vollbild. Ebenfalls Ereignis `webkitbeginfullscreen`.
-- `playing`-Ereignis (nur Videos ≥ 320 × 180 CSS-Pixel, keine stummen Loops/Autoplay-Vorschauen) → `{type:'playing', bid}`; die App öffnet den nativen Player, wenn `autoOpenVideosInNativePlayer` (Standard ja) gesetzt ist (Menü: `autoOpenNativePlayerMenuItem`).
+- Manifest-Beobachter: überschreibt `fetch` und `XMLHttpRequest.prototype.open`. Erkannt wird an der Adresse (`.m3u8`, `.mpd`, `format=m3u8|mpd`, `/manifest/dash/`) **und** am Content-Type der Antwort (`…mpegurl`, `dash+xml`, über `response.headers`/`getResponseHeader`, beide CORS-frei lesbar). Ergebnis in `window.__browserManifests` (`hls`, `dash`, `all` mit bis zu 20 Adressen). HLS: die erste Playlist (Hauptplaylist) bleibt; Teil-Playlists (Name mit chunk/media_/…, oder im Ordner unter der Hauptplaylist) ersetzen sie nicht, eine Playlist in einem fremden Ordner gilt als neuer Stream. Jede neue Hauptadresse geht als `{type:'manifest', kind:'hls'|'dash', url, top}` an die App.
+- Hauptframe: überschreibt `HTMLVideoElement.prototype.webkitEnterFullscreen`/`webkitEnterFullScreen` und `Element.prototype.requestFullscreen`/`webkitRequestFullscreen`/`webkitRequestFullScreen`; bei Video meldet es `{type:'fullscreen', bid}` und unterdrückt das Vollbild. Ebenfalls Ereignis `webkitbeginfullscreen`.
+- Hauptframe: `playing`-Ereignis (nur Videos ≥ 320 × 180 CSS-Pixel, keine stummen Loops/Autoplay-Vorschauen) → `{type:'playing', bid}`; die App öffnet den nativen Player, wenn `autoOpenVideosInNativePlayer` (Standard ja) gesetzt ist (Menü „Native Player automatisch“, `autoOpenNativePlayerMenuItem` im Abschnitt Erweiterungen).
+- Frames (eingebettete Player, `forMainFrameOnly NO`, überspringt den Hauptframe): Manifeste wie oben, dazu `{type:'framevideo', src, t, paused, hls, dash, frame}` bei `playing`/`pause` und `{type:'framefullscreen', …}` beim Vollbildwunsch. **Kein** automatisches Öffnen beim Abspielen in Frames (Werbung läuft oft in Frames).
 - Media-Session: `navigator.mediaSession.setActionHandler` wird gewrappt, Handler landen in `window.__browserMediaHandlers` (für nächster/voriger Titel).
 - Befehle an das Video: `videoCommandScriptWithCSSPoint:command:` mit `toggle`, `seek:±S`, `play`, `pause`, `seekto:S`, `action:<name>`.
 
-**Fragil.** Überschreibt Prototypen der Seite; Seiten, die Referenzen früh sichern, umgehen die Hooks. Video-Vollbild kann tvOS-WebKit ohnehin nicht (`feature is not supported`), deshalb der Umweg über den nativen Player.
+**Fragil.** Überschreibt Prototypen der Seite; Seiten, die Referenzen früh sichern, umgehen die Hooks. Video-Vollbild kann tvOS-WebKit ohnehin nicht (`feature is not supported`), deshalb der Umweg über den nativen Player. Im **Simulator** gibt es kein MSE (`typeof MediaSource` = `undefined`), hls.js- und YouTube-Seiten spielen dort gar nicht; der Manifest-Weg lässt sich dort nur mit `js:`-Abrufen nachstellen (Beispiel unten).
 
-**Kaputt?** Vollbildknopf tut nichts oder öffnet Systemfehler; kein automatischer Player. Selbsttest `video` (loggt Zeit, `paused`, `readyState`, `rects`, `playing`, `idle`), `js:` mit `JSON.stringify(window.__browserManifests)`.
+**Kaputt?** Vollbildknopf tut nichts oder öffnet Systemfehler; kein automatischer Player. Selbsttest `video` (loggt Zeit, `paused`, `readyState`, `rects`, `playing`, `idle`), `js:` mit `JSON.stringify(window.__browserManifests)`, Logzeilen `[NativeVideoPlayer] Manifest hls|dash <Adresse> top=1|0`.
 
 ### 10.2 Nativer Player und Handover
-**Zweck.** Videos der Seite in `AVPlayerViewController` (4K/HDR, Transportleiste, Siri) abspielen und danach die Position zurückgeben.
+**Zweck.** Videos der Seite in `AVPlayerViewController` (4K/HDR, Transportleiste, Siri, Bild-in-Bild) abspielen und danach die Position zurückgeben.
 
 **Dateien.** `BrowserVideoPlaybackCoordinator.m/.h`, `BrowserNativeVideoPlayerViewController.m/.h`.
 
-**Datenfluss.** `openPageVideoWithID:trigger:` (Trigger: Fullscreen/Automatic/Menu) → `BrowserPageVideoProbeScript` wählt das Video (Kennung, Zeigerposition, laufendes, aktives, größtes), merkt es als `window.__browserHandoverVideo` und liefert JSON (`currentSrc`, `src`, `source`-Kinder, `hls`, `hlsAll`, `dash`, Position, User-Agent, Seiten-URL, Titel) → `nativeURLFromProbe:unsupportedReason:` (Reihenfolge: direkte Adresse, dann zuletzt gesehenes HLS; `.mpd`, `.webm`, `.ogv`, `.ogg`, `.flv`, `.mkv`, `.avi`, `.f4v` werden ausgeschlossen, Grund wird dem Nutzer gemeldet) → `pauseAndPresentPlayerForURL:probe:webView:` pausiert (`kBrowserHandoverPauseScript`), baut Header (User-Agent, `Referer`, `Origin`) und Cookies der WebView (`webViewCookiesForURL:`) und präsentiert `BrowserNativeVideoPlayerViewController` mit `initialPlaybackTime`. Beim Schließen schreibt `dismissHandler` die Position zurück in die Seite (Video bleibt pausiert). Bei Fehlern: `failureHandler` → zurück zur Seite (`kBrowserHandoverResumeScript`) plus Hinweis.
+**Datenfluss.** `openPageVideoWithID:trigger:` (Trigger: Fullscreen/Automatic/Menu) → `BrowserPageVideoProbeScript` wählt das Video (Kennung, Zeigerposition, laufendes, aktives, größtes), merkt es als `window.__browserHandoverVideo` und liefert JSON (`currentSrc`, `src`, `source`-Kinder, `hls`, `dash`, Position, Dauer, User-Agent, Seiten-URL, Titel, `<track>`-Spuren, eingeblendete Untertitelsprache, Vorschaubild aus Media Session/`poster`/`og:image`, Beschreibung) → `nativeURLFromProbe:unsupportedReason:` (Reihenfolge: direkte Adresse, HLS der Seite, per Rückkanal gemeldetes HLS; DASH (`isDASHURL:`), `.webm`, `.ogv`, `.ogg`, `.flv`, `.mkv`, `.avi`, `.f4v` werden ausgeschlossen, Grund wird bei Menü/Vollbild gemeldet: YouTube, DASH, Format, „setzt Video selbst zusammen“ (blob ohne Manifest), keine Adresse; beim automatischen Öffnen still). Findet die Probe kein Video im Hauptframe, aber ein Frame-Video wurde gemeldet → `openFrameVideoWithTrigger:`.
+→ `pauseAndPresentPlayerForURL:probe:webView:` pausiert (`kBrowserHandoverPauseScript`, hängt dazu einen `play`-Wächter an, der das Video angehalten hält, solange der Player läuft), baut Header (`requestHeadersForPageURL:userAgent:`: User-Agent der Seite, `Referer`, `Origin`) und Cookies der WebView (`webViewCookiesForURL:`, aus dem WebKit-Datenspeicher, passend zu Host, Pfad, `secure`, Ablauf) und präsentiert den Player (`playerForURL:…`: Titel aus Media Session/Seitentitel, Sitename als zweite Zeile, Beschreibung, Vorschaubild) mit `initialPlaybackTime` (am Ende der Seite: 0).
+→ Der Player springt **vor** dem Abspielen an die Startposition (`playWhenReady`/`initialSeekInFlight`), nicht bei Livestreams (Dauer unbestimmt) oder hinter dem Ende.
+→ Sitzungsende (`endSession`: Menütaste, Schließen, Ende des Bild-in-Bild-Fensters) ruft `dismissHandler` einmalig mit der Position (`NAN` bei Livestreams) → Wächter lösen, Position in die Seite schreiben, Video bleibt pausiert. Bei Fehlern (`AVPlayerItemStatusFailed`): `failureHandler` → zurück zur Seite (`kBrowserHandoverResumeScript`) plus Hinweis.
+- Frame-Videos: `evaluateJavaScript` erreicht Frames nicht. Pausiert wird über WebKit (`pauseAllMediaPlayback`), Position = letzte Meldung plus verstrichene Zeit, Header mit der Frame-Adresse als Referer. Die neue Position geht **nicht** zurück in den Frame.
+- Ältere Wege mit Schalter „Vollbild-Videowiedergabe“ (`playVideoUnderCursorIfAvailable`, `handleSelectPressForVideoAtCursor`) geben jetzt ebenfalls Header und Cookies der Seite mit.
+- Ein laufender Player (auch im Bild-in-Bild) wird vom Koordinator stark gehalten (`activePlayer`, `currentNativePlayer`). Ein neuer ausdrücklicher Wunsch (Menü, Vollbild) beendet ein Bild-in-Bild-Video und öffnet das neue; automatische Starts werden dann ignoriert.
 
-**Fragil/Grenzen.** DASH und DRM (FairPlay) gehen nicht. Der Player-Controller-Typ wird in `UIApplication+BrowserSelectPressForwarding.m` per `NSClassFromString(@"BrowserNativeVideoPlayerViewController")` gesucht, d. h. Umbenennung der Klasse bricht die Tastenweiterleitung (Abschnitt 12). Privater Selektor-Aufruf auf dem Player: `scrubByHorizontalDelta:`, `togglePlayback`, `skipByInterval:` (eigene Methoden der Klasse, per `respondsToSelector` geprüft).
+**Fragil/Grenzen.** DASH und DRM (FairPlay) gehen nicht. Der Player-Controller-Typ wird in `UIApplication+BrowserSelectPressForwarding.m` per `NSClassFromString(@"BrowserNativeVideoPlayerViewController")` gesucht, d. h. Umbenennung der Klasse bricht die Tastenweiterleitung (Abschnitt 12). Privater Selektor-Aufruf auf dem Player: `scrubByHorizontalDelta:`, `togglePlayback`, `skipByInterval:` (eigene Methoden der Klasse, per `respondsToSelector` geprüft). Asset-Option `AVURLAssetHTTPHeaderFieldsKey` ist nicht dokumentiert (wird seit Jahren geduldet).
 
-**Kaputt?** Logzeilen mit `[NativeVideoPlayer]` (Status, Fehler), `[NativeVideoPlayer] Wiedergabe fehlgeschlagen, zurück zur Seite: …` (aus dem Koordinator). `[InputTrace][NativePlayer]` loggt Tasten im Player.
+**Kaputt?** Logzeilen mit `[NativeVideoPlayer]` (`asset hls=… loader=… headers=… cookies=…`, Status, `Startposition … gesetzt`, `Sitzung endet t=…`, `Position zurück in die Seite: …`, `keine Adresse: cs=… hls=… dash=…`), `[NativeVideoPlayer] Wiedergabe fehlgeschlagen, zurück zur Seite: …`. `[InputTrace][NativePlayer]` loggt Tasten im Player. Selbsttest `native`, `nplayer`, `nseek:S`, `nclose` (Abschnitt 14.2).
 
 ### 10.3 Asset-Loader (`BrowserNativeVideoAssetLoader`)
-**Zweck.** Reicht Header und Cookies an `AVURLAsset` weiter, sonst verweigern viele Server den Stream.
+**Zweck.** Reicht Header und Cookies je Anfrage an HLS-Playlists weiter, sonst verweigern manche Server den Stream.
 
-**Ablauf.** `assetURLForPlaybackURL:` ersetzt `https`/`http` durch ein eigenes Schema; `attachToAsset:` setzt sich per `resourceLoader setDelegate:queue:` (Selektor `resourceLoader` mit Prüfung) als Delegate; Anfragen laufen mit `NSURLSession` und den Original-Headern/Cookies. Wichtige Besonderheiten in `fillContentInfoForLoadingRequest:…`:
+**Ablauf.** Nur für HLS (`.m3u8`) und nur, wenn Header oder Cookies da sind. `assetURLForPlaybackURL:` ersetzt `https`/`http` durch ein eigenes Schema; `attachToAsset:` setzt sich per `resourceLoader setDelegate:queue:` als Delegate; Anfragen laufen mit `NSURLSession` und den Original-Headern/Cookies (für `googlevideo.com` ohne `Origin`). Playlists werden umgeschrieben (`rewrittenPlaylistDataFromData:responseURL:`, relativ zur Adresse **nach** Weiterleitungen):
+- **Über den Loader** (eigenes Schema): Teil-Playlists der Hauptplaylist, `URI=` in `#EXT-X-MEDIA` (Audio, Untertitel), `#EXT-X-I-FRAME-STREAM-INF`, Schlüssel `#EXT-X-KEY`/`#EXT-X-SESSION-KEY`.
+- **Direkt `https`** (absolut gemacht): Mediensegmente, `#EXT-X-MAP` (Init-Segment), WebVTT-Segmente. AVFoundation lehnt Segmentdaten aus einem Resource-Loader bei HLS ab (`CoreMediaErrorDomain -12881`, so war HLS vorher kaputt). Segmente lädt AVFoundation selbst mit den Asset-Optionen `AVURLAssetHTTPHeaderFieldsKey`, `AVURLAssetHTTPUserAgentKey`, `AVURLAssetHTTPCookiesKey`.
+- Dateien (MP4/MOV) laufen ohne Loader direkt mit diesen Asset-Optionen.
+
+Besonderheiten in `fillContentInfoForLoadingRequest:…`:
 - **UTI statt MIME:** `contentInformationRequest.contentType` erwartet einen UTI (`public.mpeg-4`), nicht `video/mp4`. Umwandlung über `UTType typeWithMIMEType:` bzw. Dateiendung; HLS-Playlists werden als `application/vnd.apple.mpegurl` erkannt (`isPlaylistResponse:`).
 - **Content-Range:** Bei Teilantworten (206) steht die Gesamtlänge hinter dem `/` in `Content-Range` (`bytes 0-1/788493`); sonst `expectedContentLength`, sonst Datengröße. `byteRangeAccessSupported` aus `Accept-Ranges`/206.
 
-**Kaputt?** Player bleibt schwarz oder meldet Status „failed“; `[NativeVideoAssetLoader]`-Zeilen (Anfrage, Antwort, Fehler). Typische Ursachen: UTI nicht ermittelbar, falsche Länge, Server verlangt Header.
+**Kaputt?** Player bleibt schwarz oder meldet Status „failed“; `[NativeVideoAssetLoader]`-Zeilen (Anfrage, Antwort, Fehler). `-12881` heißt: Segment lief doch über den Loader (Umschreiben prüfen). Typische weitere Ursachen: UTI nicht ermittelbar, falsche Länge, Server verlangt Header.
 
 ### 10.4 Now Playing
-`BrowserNowPlayingController.m`: `MPRemoteCommandCenter` (Play, Pause, Toggle, ±10 s, Position, nächster/voriger Titel) → Befehle werden als `sendVideoCommand:` an die Seite gegeben; Angaben kommen aus `mediaInfo` (Abschnitt 7). Im nativen Player meldet AVKit selbst, die Seitenmeldung schweigt dann. Log `[NowPlaying] <Titel> t=…/… paused=…`, Fehler `[NowPlaying] category error`/`activate error`. Bildschirmschoner: `ViewController` setzt `idleTimerDisabled` aus `videoPlaying`.
+`BrowserNowPlayingController.m`: `MPRemoteCommandCenter` (Play, Pause, Toggle, ±10 s, Position, nächster/voriger Titel) → Befehle werden als `sendVideoCommand:` an die Seite gegeben; Angaben kommen aus `mediaInfo` (Abschnitt 7). Im nativen Player meldet AVKit selbst (aus `externalMetadata`: Titel, Untertitel, Beschreibung, Vorschaubild), die Seitenmeldung schweigt dann: `BrowserNativePlayerDidAppearNotification` schaltet sie stumm, `BrowserNativePlayerWillDisappearNotification` kommt erst mit dem Sitzungsende (also nicht beim Wechsel in Bild-in-Bild). Log `[NowPlaying] <Titel> t=…/… paused=…`, Fehler `[NowPlaying] category error`/`activate error`. Bildschirmschoner: `ViewController` setzt `idleTimerDisabled` aus `videoPlaying`.
 
 ### 10.5 YouTube
 - `BrowserYouTubeRequestCaptureScript` (Nutzerskript, alle Frames, document-start, wird zusätzlich nach `didFinishNavigation` erneut ausgeführt) fängt `fetch`/XHR zu `/youtubei/v1/player` ab und merkt PoToken, Client-Name/-Version, erste/letzte Anfrage in `window.__browserYouTubeIntegrity`.
-- `BrowserYouTubeExtractor` baut daraus eine Wiedergabeadresse. **Abgeschaltet:** `kBrowserYouTubeNativeExtractionEnabled = NO` in `BrowserVideoPlaybackCoordinator.m`. Der Erfassungsskript läuft weiter, der Extraktor wird nicht aufgerufen.
-- Logpräfix `[YouTubeExtractor]`. Risiko hoch: YouTube ändert Formate laufend, PoToken-Pflicht.
+- `BrowserYouTubeExtractor` baut daraus eine Wiedergabeadresse. **Bleibt abgeschaltet:** `kBrowserYouTubeNativeExtractionEnabled = NO` in `BrowserVideoPlaybackCoordinator.m`. Im Menü meldet der Koordinator für YouTube-Seiten (auch eingebettet) einen eigenen Hinweis.
+- **Prüfung am 8. November 2026** (Anfragen an `youtubei/v1/player` vom Mac, Video `aqz-KE-bpKQ`): Client `WEB` → „Video unavailable“, `TVHTML5` → „Sign in to confirm you're not a bot“, `IOS 19.09.3` (Stand im Extraktor) → HTTP 400. `IOS 20.10.4` liefert Formate, aber **nur getrennte Video- und Tonspuren** (DASH-artig, kein gemischtes MP4, kein `hlsManifestUrl` bei Abrufvideos) und einen SABR-Stream; die Tonspur antwortet ab 5 MB mit **403** (PoToken-Pflicht auf googlevideo). Die Webseite selbst lädt per SABR in MSE, es gibt kein Manifest zum Abgreifen.
+- Für einen funktionierenden Weg bräuchte es: aktuellen IOS-Client nachführen, aus den getrennten Spuren selbst eine HLS-Playlist bauen (`sidx` der fMP4-Dateien lesen, `#EXT-X-MAP`/`#EXT-X-BYTERANGE`), ein gültiges PoToken (BotGuard) erzeugen und bei jeder Änderung von YouTube nachziehen; Qualität wäre auf H.264 bis 1080p begrenzt (4K nur VP9/AV1). Das ist kein vertretbarer Aufwand, YouTube bleibt in der Webseite.
+- Logpräfix `[YouTubeExtractor]`.
 
-**Test.** Alle Videoteile: `POINTER_SELFTEST="url:<Seite mit Video>;x,y;click;video;playpause;left;right;state"` – die Zeilen `video`, `playpause overVideo=… playing=…`, `state presented=BrowserNativeVideoPlayerViewController` zeigen, ob der Player geöffnet wurde.
+### 10.6 Bild-in-Bild
+`allowsPictureInPicturePlayback = YES`, Audio-Session `playback`/`moviePlayback` (`BrowserNowPlayingController activateAudioSession`), Hintergrundmodus `audio` (`UIBackgroundModes` in `Info.plist`). Der Player ist sein eigener `AVPlayerViewControllerDelegate`:
+- `…WillStartPictureInPicture` → beim folgenden automatischen Schließen (`…ShouldAutomaticallyDismissAtPictureInPictureStart` = YES) läuft das Video weiter, die Sitzung bleibt offen, der Browser ist bedienbar.
+- `restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:` präsentiert den Player wieder auf dem Controller, der ihn zuerst gezeigt hat (`restoreHost`, über offene Dialoge hinweg).
+- `…DidStopPictureInPicture` ohne Rückkehr → `endSession` (Position in die Seite).
+- **Nicht geprüft:** Der Simulator kann kein Bild-in-Bild (`isPictureInPictureSupported` = NO, Selbsttest `nplayer` zeigt `pipSupported=0`). Am Gerät prüfen: Knopf in der Transportleiste, Browser bedienen, zurück ins Vollbild, Fenster schließen → Position in der Seite.
+
+### 10.7 Untertitel
+- **Stream-Spuren** (HLS `#EXT-X-MEDIA TYPE=SUBTITLES`, CEA-608, eingebettete Spuren): bietet AVKit selbst im Untertitel-Menü an; Auswahl sonst nach Systemeinstellung. Waren in der Seite Untertitel eingeblendet (`textTracks[i].mode == 'showing'`), wählt `selectStreamSubtitlesIfNeeded` die passende Sprache (`preferredSubtitleLanguage`), sonst die erste nicht erzwungene Spur. Log `Stream-Untertitel: <Liste>`, `Stream-Untertitel gewählt: …`.
+- **WebVTT der Seite** (`<track kind=subtitles|captions src=…>`, nur wenn der Stream keine eigenen Spuren hat, also typischerweise MP4): die App lädt die Datei selbst (Header/Cookies der Seite, kein CORS nötig), liest sie mit `cuesFromWebVTT:` (Zeitzeilen, Text, Tags entfernt; keine Positionierung/Stile) und zeigt sie als `UILabel` im `subtitleOverlayView` (Zeitbeobachter 0,2 s). Eingeblendet, wenn die Spur in der Seite an oder `default` war; Auswahl/Aus über das Transportleisten-Menü „Untertitel der Seite“ (`transportBarCustomMenuItems`, tvOS 15+). Log `WebVTT <Datei> cues=N`.
+
+### 10.8 Einhängepunkt für Erweiterungen (automatische Untertitel)
+Der Player bietet in `BrowserNativeVideoPlayerViewController.h` (Abschnitt „Einhängepunkt“) alles, ohne dass man die Datei ändern muss:
+
+| Was | Wo |
+|:--|:--|
+| Zeitpunkt „Player steht“ | `BrowserNativePlayerDidCreatePlayerItemNotification`, `object` = Player-Controller (aus `viewDidLoad`, Player und Element existieren, noch nicht angezeigt) |
+| Zeitpunkt „Sitzung endet“ | `BrowserNativePlayerWillEndSessionNotification` (vor dem Pausieren; auch wenn Bild-in-Bild endet). Hier Zeitbeobachter entfernen |
+| `AVPlayer` | `player.player` (geerbt von `AVPlayerViewController`) |
+| `AVPlayerItem` | `player.playerItem` (= `player.player.currentItem`) |
+| Anzeigeebene | `player.subtitleOverlayView`: Unteransicht von `contentOverlayView`, ganze Fläche, über dem Bild, unter der Transportleiste, `userInteractionEnabled = NO`. Eigene Labels hier einhängen. Liegt dort schon die WebVTT-Anzeige der Seite (unten, 90 pt Abstand) |
+| Quelle | `player.videoURL` (http/https, nicht die Loader-Adresse), `player.isStreamingPlaylist` (HLS → kein Audio-Tap, Segmente selbst laden; sonst Datei → `MTAudioProcessingTap` über `AVAudioMix` am `playerItem`) |
+| Netz | `player.requestHeaders` (User-Agent, Referer, Origin), `player.requestCookies` – für eigenes Laden von HLS-Audiosegmenten |
+| Schon Untertitel? | `player.isShowingExistingSubtitles` (Stream-Spur gewählt oder WebVTT der Seite an): dann keine automatische Erkennung starten |
+| Bild-in-Bild | `player.isPictureInPictureActive` (im Bild-in-Bild ist `contentOverlayView` nicht sichtbar) |
+
+Beispiel (z. B. im `+load` bzw. Initialisierer des Untertitel-Controllers):
+```objc
+[NSNotificationCenter.defaultCenter addObserverForName:BrowserNativePlayerDidCreatePlayerItemNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+    BrowserNativeVideoPlayerViewController *player = note.object;
+    // Controller anlegen, z. B. per objc_setAssociatedObject(player, …) am Player festhalten,
+    // [player.player addPeriodicTimeObserverForInterval:…], Labels in player.subtitleOverlayView.
+}];
+```
+
+**Test.** Alle Videoteile: `POINTER_SELFTEST="url:<Seite mit Video>;x,y;click;video;playpause;left;right;state"` – die Zeilen `video`, `playpause overVideo=… playing=…`, `state presented=BrowserNativeVideoPlayerViewController` zeigen, ob der Player geöffnet wurde. Gezielt (Simulator, Stand 8. November 2026 alle grün):
+```
+# HLS direkt (Auto-Öffnen beim Start, Sprung, Position zurück)
+url:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8;wait;wait;nplayer;nseek:120;wait;nplayer;nclose;wait;video
+# MP4 mit Startposition 4 s, Vorschaubild (og:image), Titel/Sitename
+url:https://www.w3schools.com/html/html5_video.asp;wait;js:(window.vv=document.querySelector('video'),vv.muted=false,vv.currentTime=4,vv.play(),'ok');wait;nplayer;nclose
+# MSE nachgestellt: Manifest per fetch/XHR, Video mit blob:-Adresse → Hauptplaylist im Player
+url:https://hlsjs.video-dev.org/demo/;wait;js:(fetch('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'),'f');js:(document.querySelector('video').src=URL.createObjectURL(new Blob(['x'])),'b');native;wait;nplayer;nclose
+# DASH → Hinweis, bleibt in der Seite
+url:https://hlsjs.video-dev.org/demo/;wait;js:(fetch('https://dash.akamaized.net/envivio/EnvivioDash3/manifest.mpd'),document.querySelector('video').src=URL.createObjectURL(new Blob(['x'])),'ok');native
+# WebVTT der Seite (Track anhängen, abspielen → Untertitel im Player)
+url:https://www.w3schools.com/html/html5_video.asp;wait;js:(window.vv=document.querySelector('video'),window.tr=document.createElement('track'),tr.src='https://interactive-examples.mdn.mozilla.net/media/examples/friday.vtt',tr.srclang='en',tr.label='English',tr.default=true,vv.appendChild(tr),vv.play(),'ok')
+# Video in einem Frame (Manifest top=0, Frame-Video mit Position)
+url:https://example.org/;wait;js:(window.f=document.createElement('iframe'),f.srcdoc='<video src=https://www.w3schools.com/html/mov_bbb.mp4 width=400 height=300></video>',document.body.prepend(f),'ok');wait;js:(f.contentDocument.querySelector('video').play(),'p');wait;native;wait;nplayer
+```
+
+### 10.9 Automatische Untertitel (whisper.cpp)
+**Zweck.** Untertitel für Videos ohne eigene Untertitelspur, lokal auf dem Apple TV erzeugt (Apples Spracherkennung gibt es unter tvOS nicht). Weg A: nur im nativen Player.
+
+**Dateien.**
+| Datei | Aufgabe |
+|:--|:--|
+| `BrowserSubtitleController.m/.h` | Einhängen in den Player, Schalter in der Transportleiste, Abschnitte mit Überlappung, Abdeckung, Anzeige-Takt |
+| `BrowserSubtitleEngine.m/.h` | whisper.cpp-Hülle (Modell laden, `whisper_full`, Stille- und Rauschfilter, Echtzeitfaktor, Speicher), `BrowserSubtitleCue` |
+| `BrowserSubtitleAudioSource.h` | Protokoll der Tonquellen (16 kHz mono float, Videozeit des ersten Samples) |
+| `BrowserSubtitleAudioTapSource.m/.h` | Dateien (MP4/MOV/M4A): `MTAudioProcessingTap` über `AVAudioMix`, Abwärtsmischung im Audio-Thread, Umrechnung auf 16 kHz mit `AVAudioConverter` |
+| `BrowserSubtitleHLSAudioSource.m/.h` | HLS: Playlist selbst lesen, Audio-Segmente vor der Abspielposition laden und dekodieren |
+| `BrowserSubtitleOverlayView.m/.h` | Ebene in `contentOverlayView`, Stil nach `MACaptionAppearance` |
+| `vendor/whisper.xcframework` | whisper.cpp v1.9.5, statisch, tvOS arm64 + Simulator arm64, Metal + Accelerate (committet, ≈17 MB) |
+| `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | Framework bauen, Modell laden |
+| `_Project/Browser/WhisperModels/` | Ordnerreferenz im App-Paket; Modelle `ggml-*.bin` sind nicht im Repo |
+
+**Bauen.**
+```bash
+tools/build_whisper.sh            # nur nötig für eine neue whisper.cpp-Version (Ergebnis ist committet)
+tools/fetch_whisper_model.sh      # Pflicht: lädt ggml-base.en-q5_1.bin (57 MB) nach _Project/Browser/WhisperModels/
+```
+- `build_whisper.sh` holt die Quelle nach `vendor/whisper.cpp` (nicht im Repo), lädt bei Bedarf CMake per pip nach `vendor/tools-venv`, baut beide Slices mit dem Xcode-Generator, fasst `libwhisper`, `libggml*` (base, cpu, blas, metal) und `libparakeet` per `libtool` zu einem statischen `whisper.framework` zusammen und erzeugt `vendor/whisper.xcframework`. Version: `WHISPER_TAG=v1.9.5`, Mindest-tvOS: `TVOS_MIN=17.0`.
+- Einbindung ins Projekt ohne Framework-Eintrag: `FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]` bzw. `[sdk=appletvsimulator*]` zeigen auf die Slices, gelinkt wird per Modul-Autolink (`#import <whisper/whisper.h>`, Modulkarte mit `link framework "whisper"`, `c++`, Accelerate, Metal, MetalKit). Fehlt das Framework, kompiliert `BrowserSubtitleEngine.m` ohne whisper (`__has_include`), die App baut, der Player meldet „nicht verfügbar“.
+- Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. Ohne installierte Metal-Toolchain (`xcodebuild -downloadComponent MetalToolchain`) wird der Kernel-Quelltext eingebettet (`GGML_METAL_EMBED_LIBRARY=ON`) und **beim ersten Laden zur Laufzeit übersetzt** (im Simulator ≈14 s, auf dem Gerät unbekannt, danach greift der Metal-Cache des Systems). Mit Toolchain baut das Skript `vendor/whisper-metal/<sdk>/default.metallib`; die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Ist sie nicht da, meldet die Phase nur einen Hinweis.
+- Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write io.github.tvosbrowser.app AutoSubtitlesCPUOnly -bool YES`.
+
+**Modell.** Reihenfolge in `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`: für „en“ `base.en-q5_1`, `base.en-q8_0`, `base.en`, `tiny.en-q5_1` …, danach mehrsprachige; für „auto“ zuerst mehrsprachige (`base-q5_1`, …). Bei Leistungsproblemen `tools/fetch_whisper_model.sh tiny.en-q5_1` und das base-Modell aus dem Ordner löschen. Mehrsprachig (Deutsch): `tools/fetch_whisper_model.sh base-q5_1`; dann erscheint im Player-Menü „Sprache automatisch“ (`autoSubtitlesLanguage = auto`, whisper erkennt die Sprache je Abschnitt).
+
+**Einhängepunkt.** Keine Änderung am Player nötig: `+[BrowserSubtitleController load]` meldet sich für `BrowserNativePlayerDidCreatePlayerItemNotification` an (Abschnitt 10.8), legt je Player einen Controller an (assoziiertes Objekt am Player, `attachToPlayerViewController:playbackURL:requestHeaders:cookies:` mit `videoURL`, `requestHeaders`, `requestCookies`) und hängt die Anzeige in `subtitleOverlayView`. `BrowserNativePlayerWillEndSessionNotification` ruft `detach` (Erkennung stoppen, Zeitbeobachter, Ebene und Menüeintrag entfernen, Modell freigeben); Bild-in-Bild mit Rückkehr in denselben Player läuft also weiter. HLS-Erkennung über `isStreamingPlaylist`. Zeigt der Player schon Untertitel (`isShowingExistingSubtitles`: Stream-Spur oder WebVTT der Seite), startet die Erkennung nicht bzw. pausiert (Prüfung alle 2 s), außer sie wurde im Player-Menü ausdrücklich eingeschaltet.
+
+**Ablauf.**
+1. `attach`: Ebene in `subtitleOverlayView` (sonst `contentOverlayView`), Menü „Automatische Untertitel“ (An/Aus, bei mehrsprachigem Modell zusätzlich Englisch/Sprache automatisch) in `transportBarCustomMenuItems` (vorhandene Einträge wie „Untertitel der Seite“ bleiben; der Player setzt sein Menü teils neu, deshalb prüft der Controller alle 2 s und hängt sich wieder an), `addPeriodicTimeObserverForInterval` 0,1 s. Ist `autoSubtitlesEnabled` an: Modell auf der whisper-Queue laden, dann Tonquelle starten.
+2. Tonquelle: Adresse mit `.m3u8` → HLS-Quelle, sonst Audio-Tap. Findet der Tap keine Audiospur (HLS ohne `.m3u8` in der Adresse), wird einmal die HLS-Quelle versucht.
+3. Abschnitte (`processingQueue`): Tap 5 s mit 1 s Überlappung (wenig Verzug), HLS 12 s mit 1,5 s Überlappung. Jeder Abschnitt nimmt nur Segmente, deren Mitte in `[Anfang, Ende − Überlappung/2)` liegt; eine Abdeckung im 0,1-s-Raster (`NSMutableIndexSet`) verhindert Doppelungen und überspringt nach dem Zurückspulen schon erkannte Stellen (HLS lädt solche Segmente gar nicht erst). Echtzeitquelle und whisper zu langsam: alte Abschnitte werden verworfen. Pause: angefangener Abschnitt wird sofort ausgewertet.
+4. whisper (`engineQueue`): greedy, `no_context`, `temperature_inc = 0`, `audio_ctx` passend zur Abschnittslänge (5 s → 384, 12 s → 704), Stille (RMS < 0,004) wird übersprungen, Texte in Klammern/ohne Buchstaben und `no_speech_prob > 0,8` verworfen, gleicher Text innerhalb 15 s ebenfalls.
+5. Anzeige: Untertitel mit Start ≤ t und `visibleUntil` > t, höchstens zwei Zeilen. Kommt ein Untertitel zu spät (Tap), bleibt er ab Ankunft noch 1,5–4 s stehen. Pause und Spulen ergeben sich aus dem Zeitbeobachter, Untertitel bleiben gespeichert.
+
+**HLS-Quelle.** Master: AAC-Varianten bevorzugt, kleinste Bandbreite; hat sie eine `AUDIO`-Gruppe mit `URI`, wird die Rendition genommen (Sprache der Einstellung, sonst `DEFAULT=YES`), sonst der gemuxte Ton der Variante (auch reine Audio-Varianten). Segmente: MPEG-TS (eigener Demuxer PAT → PMT → PES, Stream-Typ 0x0F AAC/ADTS, 0x03/0x04 MP3, 0x81 AC-3) → `ExtAudioFile`; gepacktes Audio (`.aac` mit ID3) → `ExtAudioFile`; fMP4 (`#EXT-X-MAP`, Init + Segment als Datei) → `AVAssetReader` mit 16 kHz mono. `#EXT-X-BYTERANGE` und AES-128 (CommonCrypto, IV aus Playlist oder Sequenznummer) gehen. Zeiten = Summe der `#EXTINF` (passt zur `currentTime` von AVPlayer bei VOD). Lädt bis 60 s voraus, höchstens 25 s unausgewerteter Ton im Stau. Header und Cookies der Seite werden mitgeschickt.
+
+**Grenzen.**
+- Bild-in-Bild: `contentOverlayView` ist im PiP-Fenster nicht sichtbar; die Erkennung läuft weiter, nach der Rückkehr stimmen die Untertitel sofort.
+- Live-HLS (ohne `#EXT-X-ENDLIST`), SAMPLE-AES/FairPlay, LATM-AAC: nicht unterstützt (Hinweis im Player). DASH geht im nativen Player ohnehin nicht.
+- Tap: Untertitel kommen um Abschnittslänge + Rechenzeit zu spät (≈5–6 s), weil der Tap nur liefert, was gerade läuft.
+- Mehrere Audiospuren in einer Datei: nur die erste.
+- Beobachtung außerhalb dieser Teile (Stand 2026-11-08, nach Merge mit main): Die Hauptplaylist `…/tears-of-steel.ism/.m3u8` (Dateiname nur „.m3u8“) öffnet der Player nicht (`AVFoundationErrorDomain -11828`), die Untertitel-Quelle liest sie aber; die Varianten-Playlist desselben Streams läuft samt Untertiteln (über den Asset-Loader).
+
+**Schalter im Seitenmenü** (vorbereitet, nicht eingebaut, weil `BrowserMenuCoordinator.m` gerade anderweitig bearbeitet wird). In `BrowserMenuCoordinator.m` neben `autoOpenNativePlayerMenuItem` einfügen und in die Liste „Ansicht & Wiedergabe“ (bzw. `extensionMenuItems`) aufnehmen:
+```objc
+- (BrowserAdvancedMenuItem *)autoSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.autoSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Automatische Untertitel"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesEnabled = !enabled;
+    }];
+}
+```
+Der Player liest die Einstellung beim Öffnen; im Player selbst schaltet das Menü der Transportleiste sofort.
+
+**Logs** (`[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` = Warnungen/Fehler von whisper/ggml, beim Laden alles):
+- `eingehängt, an=…, Sprache …, whisper=1, Modell …` – Einstellung und gefundenes Modell.
+- `Modell base.en-q5_1 geladen in 0.20 s, … Speicher 38 → 164 MB, System: …` – Ladezeit, Speicherzuwachs, ggml-Fähigkeiten.
+- `Abschnitt 5.0 s @ 23.9 s: 1 Segmente in 0.31 s (RTF 0.06, Schnitt 0.06), ctx 384, …, Speicher 233 MB – <Text>` – je Abschnitt Echtzeitfaktor (Rechenzeit/Audiodauer) und Speicher.
+- `Stand t=…: N Untertitel, N Abschnitte, N verworfen, N wartend, RTF Schnitt …, Speicher … MB` – alle 30 s.
+- `[Subtitles][Tap] prepare rate=44100 ch=2 …`, `[Subtitles][HLS] Audio-Rendition …`, `Audio-Playlist …: N Segmente, … fMP4=…, AES=…`, `Segment @ … s: … KB → … s Ton in … s`.
+- `Modell freigegeben, Speicher … MB` beim Schließen.
+
+**Messwerte Simulator** (Mac mit Apple Silicon, CPU, 4 Threads, base.en-q5_1): Tap 5-s-Abschnitte 0,30–0,41 s (RTF ≈ 0,06), HLS 12-s-Abschnitte 0,55–1,5 s (RTF 0,05–0,13). Modell laden 0,1–0,2 s (+≈14 s Metal-Übersetzung beim allerersten Laden, wenn Metal genutzt wird). Speicher der App 38 MB → 164 MB nach dem Laden, 230–265 MB während der Erkennung, nach dem Schließen ≈ 73 MB. Gerät: noch nicht gemessen.
+
+**Test.**
+```bash
+xcrun simctl spawn <SIM> defaults write io.github.tvosbrowser.app AutoSubtitlesEnabled -bool YES
+SIMCTL_CHILD_POINTER_SELFTEST='url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;state' \
+  xcrun simctl launch --console --terminate-running-process <SIM> io.github.tvosbrowser.app | grep Subtitles
+```
+Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8` (TS, Ton gemuxt; Selbsttest mit `;wait;…;nplayer`), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü oder Seitenmenü.
+
+**Kaputt?** Keine `[Subtitles]`-Zeilen: Einhängepunkt fehlt. `whisper=0`: Framework nicht gefunden (Suchpfad). `Modell –`: `tools/fetch_whisper_model.sh` nicht ausgeführt bzw. Ordner nicht im Paket. Tap ohne `prepare`: Audio-Mix nicht angenommen (z. B. HLS, dann sollte die HLS-Quelle übernehmen). RTF > 0,8 auf dem Gerät: `tiny.en-q5_1` nehmen oder Metal prüfen (`[Subtitles][whisper]`-Zeilen beim Laden).
 
 ---
 
@@ -510,6 +660,7 @@ Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 - **Alte Start-/Verlaufsansicht** (`BrowserStartViewController.m`, nicht mehr eingebunden, `showStartView` bleibt als Rückfall): Suchfeld, „Zuletzt besucht“, „Meistbesucht“, Favoriten; öffnet über `openURLHandler`. Daten aus `BrowserHistoryStore` (`recordVisitWithURL:title:`, `recentEntries:`, `topEntries:`, `favorites`, `addFavoriteWithURL:…`, `isFavoriteURL:`; je Host zusammengefasst, in `NSUserDefaults`; Benachrichtigung `BrowserHistoryStoreDidChangeNotification`). Früher Aufruf über Klick auf die Adresse.
 - **Sprachbefehle** (`BrowserCommand.m`, `BrowserCommandParser.m`, `BrowserCommandRouter.m`; Konzept `docs/SIRI_STEUERUNG.md`): Text aus dem Adressfeld (Diktat oder Tastatur) geht in `handleEnteredAddressText:` (`ViewController.m`) zuerst an `BrowserCommandParser parseText:`. Treffer → `BrowserCommandRouter performCommandNamed:argument:source:`, sonst wie bisher `openAddressOrSearch:`. Die Tabelle `BrowserCommand allCommands` enthält Name, Titel, Symbol, Argumentart (keins, an/aus/umschalten, Text, Sekunden) und Phrasen als Muster mit Alternativen (`"(starte|start) (den |)reader"`). Der Parser normalisiert (klein, Satzzeichen weg, Bindestrich = Leerzeichen, Füllwörter wie „bitte“ weg) und akzeptiert **nur ganze Phrasen**; danach „30 Sekunden zurück“ und die Präfixe „suche [nach] X“/„google X“ (Suche) und „öffne X“/„gehe zu X“ (nur, wenn X wie eine Adresse klingt, „heise punkt de“ wird `heise.de`). Der Router ruft das Host-Protokoll `BrowserCommandHost` (im `ViewController`, Abschnitt „BrowserCommandHost“) und blendet eine Glas-Kapsel unten mittig ein (`BrowserCommandToastView`, im Fenster, 1,8 s; keine Einblendung bei `address`, `tabs`, `menu`, `help`, die selbst etwas öffnen). Siri (`handleSiriCommandNotification:`) nutzt denselben Router. Neue Funktion anbinden: Eintrag in `allCommands`, Zweig in `performCommandNamed:`, Methode im Host. Debug-Build meldet doppelte Phrasen (`[Command] Phrase doppelt`). Screenshots in `docs/command-screens/`.
 - **Bedienungsdialog** (`BrowserGuideViewController.m`): Glas-Karte mit kurzer Bedienungshilfe, Schalter für den Start-Hinweis (`dontShowHintsOnLaunch`, `toggleHandler`). Aufruf `showHintsAlert` in `ViewController` (beim Start einmal, per Selbsttest `guide`). Der Text sollte mit Abschnitt 8.2 übereinstimmen; bei geänderter Belegung hier und in `README.mdown` nachziehen.
+  Stand 8. November 2026: sechs Zeilen (Zeigen/Klicken, Scrollen und Adresse, Knopf zu Knopf, Play/Pause, Zurück, Reader und mehr) plus Fußzeile (Kreisbewegung, iPhone/iPad); Abstände so gewählt, dass eine siebte Zeile (z. B. „Sprachbefehle“) noch auf den Bildschirm passt (Test mit Platzhalterzeile: `docs/guide-screens/guide-7-zeilen-test.png`, aktueller Stand `guide.png`). Der Dialog erscheint beim Start, bis „Nicht mehr anzeigen“ gewählt wird (Standard: anzeigen, also beim ersten Start automatisch); im ••• Menü unter „Hilfe → Bedienung“ jederzeit abrufbar. Startseite bleibt die einstellbare Webseite (`homePageURLString`, Vorgabe google.com); eine eigene HTML-Startseite gibt es nicht. Alle Dialogtexte sind deutsch (alte Sitzungen mit dem Tabtitel „New Tab“ werden beim Laden umbenannt).
 - **Tab-Übersicht** (`BrowserTabOverviewController.m`): Kartenansicht der Tabs; Host-Protokoll `BrowserTabOverviewControllerHost`; Tastenlogik in `BrowserRemoteInputController` (`TabOverviewVisible`, `…DismissTabOverview`, `…HandleTabOverviewAlternateAction`). Offen laut PLAN.md: Konflikte mit Play/Pause und Dialogen prüfen.
 - **Sitzung** (`BrowserSessionStore.m`, `BrowserTabCoordinator.m`): offene Tabs und Cookie-Kopie in `NSUserDefaults`; `persistSession` vor Rückgabe an Home. Cookie-Sicherung `saveCookiesToDefaults`/`restoreCookiesFromDefaults` (AppDelegate), aufgerufen von `SceneDelegate`.
 - **Formular-Eingabedialog** (`BrowserPageActionCoordinator.m`): Texteingabe und Login in einem Dialog (Benutzername + Passwort), `textContentType` aus `autocomplete` und Feldtyp (`BrowserTextContentType`), Werte über den nativen Setter des Eingabefeldes (React-kompatibel, `Object.getOwnPropertyDescriptor(proto, 'value')`), Absenden nur auf Wunsch über `requestSubmit()`. Test: Selbsttest `fill:` (loggt Titel, Felder, `textContentType`; letzter Wert ist der Index der Aktion).
@@ -577,6 +728,10 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
 | `js:<Code>` | JavaScript ausführen, Ergebnis loggen | `js <Ergebnis>` |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
+| `native` | Video der Seite im nativen Player öffnen (wie Menü „Im Player öffnen“, Zeigerposition zählt) | `native hasVideo=…`, danach `[NativeVideoPlayer]`-Zeilen |
+| `nplayer` | Zustand des nativen Players (`debugStateLine`) | `nplayer t=… dur=… rate=… status=… live=… hls=… loader=… pipAllowed=… pipSupported=… pip=… legible=N/<Spur> sidecar=… cues=… meta=… art=…` oder `kein Player` |
+| `nseek:<S>` | nativen Player auf Sekunde *S* setzen | wie `nplayer` (Zustand davor) |
+| `nclose` | nativen Player schließen (Position geht zurück in die Seite) | wie `nplayer`, dann `Sitzung endet t=…`, `Position zurück in die Seite: …` |
 
 Zeichen `;` und `|` dürfen in `js:`/`url:`/`fill:` nicht vorkommen (Trenner).
 
@@ -609,6 +764,7 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 | `[Input] Clickpad über GameController`, `[Input] Raten` | `BrowserRemoteInputController` | erste: nein, zweite: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |
 | `[NativeVideoPlayer]`, `[NativeVideoAssetLoader]`, `[YouTubeExtractor]` | Videoteile | im Code nicht geprüft |
+| `[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` | `BrowserSubtitle*` (Abschnitt 10.9) | nein |
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |

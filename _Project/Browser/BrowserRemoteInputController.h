@@ -36,6 +36,9 @@ NS_ASSUME_NONNULL_BEGIN
 @optional
 /// Ansicht, deren Inhalt die Hervorhebung als Linse vergrößert (WebView); nil = keine Linse.
 - (nullable UIView *)browserRemoteInputControllerLensSourceView;
+/// Optional: NO, wenn für dieses Ziel keine Linse gezeigt werden soll (z. B. Knöpfe der oberen Leiste,
+/// deren Inhalt nicht in der Quellansicht liegt).
+- (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target;
 /// Leuchtfarbe für das Ziel (Koordinaten von rootView); nil = Standardblau.
 - (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.

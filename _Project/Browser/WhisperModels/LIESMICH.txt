@@ -1,0 +1,2 @@
+Whisper-Modelle (ggml-*.bin) für die automatischen Untertitel.
+Nicht im Git; laden mit tools/fetch_whisper_model.sh (Standard: ggml-base.en-q5_1.bin).

@@ -26,6 +26,7 @@
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
 #import "BrowserTabOverviewController.h"
+#import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "ViewController.h"
@@ -401,6 +402,22 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     }];
                     return;
                 }
+                // Nativer Player: öffnen (wie Menü „Im Player öffnen“), Zustand, an Position springen, schließen.
+                if ([step isEqualToString:@"native"]) {
+                    NSLog(@"[SelfTest] native hasVideo=%d", [self.videoPlaybackCoordinator pageHasVideo]);
+                    [self.videoPlaybackCoordinator openPageVideoInNativePlayer];
+                    return;
+                }
+                if ([step isEqualToString:@"nplayer"] || [step hasPrefix:@"nseek:"] || [step isEqualToString:@"nclose"]) {
+                    BrowserNativeVideoPlayerViewController *player = [self.videoPlaybackCoordinator currentNativePlayer];
+                    NSLog(@"[SelfTest] %@ %@", step, player != nil ? [player debugStateLine] : @"kein Player");
+                    if ([step hasPrefix:@"nseek:"]) {
+                        [player.player seekToTime:CMTimeMakeWithSeconds([step substringFromIndex:6].doubleValue, NSEC_PER_SEC)];
+                    } else if ([step isEqualToString:@"nclose"]) {
+                        [player dismissViewControllerAnimated:YES completion:nil];
+                    }
+                    return;
+                }
                 if ([step isEqualToString:@"video"]) {
                     [self.webview evaluateJavaScriptAsync:@"(function(){var v=document.querySelector('video');return v?('t='+v.currentTime.toFixed(1)+' paused='+v.paused+' ready='+v.readyState+' net='+v.networkState+' err='+(v.error?v.error.code:0)+' playErr='+(window.__browserLastPlayError||'')):'none';})()"
                                                completion:^(id result) {
@@ -550,11 +567,11 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                                         message:@"You can still open the side menu by double-tapping the Play/Pause button."
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Obere Leiste ausblenden?"
+                                                                                         message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."
                                                                                   preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Hide Bar"
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Ausblenden"
                                                                     style:UIAlertActionStyleDestructive
                                                                   handler:^(__unused UIAlertAction *action) {
                     [self browserHideTopNav];
@@ -1674,6 +1691,17 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     return self.addressPanel != nil ? nil : self.webview;
 }
 
+- (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target {
+    // Ziele in der oberen Leiste: Die Linse würde die Webseite darunter zeigen und Titel bzw. Symbole verdecken.
+    if (self.topMenuView != nil && !self.topMenuView.hidden) {
+        CGRect chrome = [self.view convertRect:self.topMenuView.chromeFrame fromView:self.topMenuView];
+        if (CGRectIntersectsRect(CGRectInset(chrome, -8.0, -8.0), target)) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
 - (BOOL)browserRemoteInputControllerAddressPanelActive {
     return self.addressPanel != nil && self.presentedViewController == nil;
 }
@@ -1902,12 +1930,12 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         return;
     }
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Could Not Load Webpage"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Seite konnte nicht geladen werden"
                                                                              message:error.localizedDescription
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     if (tab.requestURL.length > 1) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Google This Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Bei Google suchen"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForFailedRequestURLString:tab.requestURL];
@@ -1917,20 +1945,20 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         }]];
     }
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Reload Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             weakSelf.tabCoordinator.previousURL = @"";
             [weakSelf.webview reload];
         }]];
     } else {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Enter a URL or Search"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf requestURLorSearchInput];
         }]];
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 

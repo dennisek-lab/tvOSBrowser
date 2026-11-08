@@ -17,7 +17,10 @@ static NSString * const kAdBlockAutoPauseDefaultsKey = @"AdBlockAutoPauseOnWall"
 static NSString * const kAdBlockAutoExceptionHostsDefaultsKey = @"AdBlockAutoExceptionHosts";
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
+static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
+static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
+static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -209,6 +212,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
+- (BOOL)rainbowGlowEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kRainbowGlowEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
+    [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
 - (NSArray<NSString *> *)cookieBannerExceptionHosts {
     NSArray *value = [[self defaults] arrayForKey:kCookieBannerExceptionHostsDefaultsKey];
     return [value isKindOfClass:NSArray.class] ? value : @[];
@@ -216,6 +229,25 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerExceptionHosts:(NSArray<NSString *> *)cookieBannerExceptionHosts {
     [[self defaults] setObject:cookieBannerExceptionHosts ?: @[] forKey:kCookieBannerExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)autoSubtitlesEnabled {
+    return [[self defaults] boolForKey:kAutoSubtitlesEnabledDefaultsKey];
+}
+
+- (void)setAutoSubtitlesEnabled:(BOOL)autoSubtitlesEnabled {
+    [[self defaults] setBool:autoSubtitlesEnabled forKey:kAutoSubtitlesEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSString *)autoSubtitlesLanguage {
+    NSString *value = [[self defaults] stringForKey:kAutoSubtitlesLanguageDefaultsKey];
+    return value.length > 0 ? value : @"en";
+}
+
+- (void)setAutoSubtitlesLanguage:(NSString *)autoSubtitlesLanguage {
+    [[self defaults] setObject:autoSubtitlesLanguage.length > 0 ? autoSubtitlesLanguage : @"en" forKey:kAutoSubtitlesLanguageDefaultsKey];
     [[self defaults] synchronize];
 }
 

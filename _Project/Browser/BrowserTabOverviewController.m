@@ -151,8 +151,8 @@ static CGFloat const kTabCardURLHeight = 64.0;
     self.thumbnailView.hidden = YES;
     self.thumbnailView.image = nil;
     self.addIconBackdropView.hidden = NO;
-    self.titleLabel.text = @"New Tab";
-    self.urlLabel.text = @"Open the home page";
+    self.titleLabel.text = @"Neuer Tab";
+    self.urlLabel.text = @"Startseite öffnen";
     self.hintLabel.hidden = YES;
     [self updateAppearance];
 }
@@ -163,9 +163,9 @@ static CGFloat const kTabCardURLHeight = 64.0;
     self.thumbnailView.hidden = NO;
     self.thumbnailView.image = tab.snapshotImage;
     self.addIconBackdropView.hidden = YES;
-    self.titleLabel.text = tab.title.length > 0 ? tab.title : @"New Tab";
-    self.urlLabel.text = tab.URLString.length > 0 ? tab.URLString : @"Home page";
-    self.hintLabel.text = @"Play/Pause to Close";
+    self.titleLabel.text = tab.title.length > 0 ? tab.title : @"Neuer Tab";
+    self.urlLabel.text = tab.URLString.length > 0 ? tab.URLString : @"Startseite";
+    self.hintLabel.text = @"Play/Pause: Schließen";
     self.hintLabel.hidden = !self.isFocused;
     [self updateAppearance];
 }
@@ -263,7 +263,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
     UILabel *subtitleLabel = [UILabel new];
     subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitleLabel.text = @"Switch tabs, open a new one, or close the focused tab.";
+    subtitleLabel.text = @"Tab wechseln, einen neuen öffnen oder den markierten schließen.";
     subtitleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
     subtitleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     [panelView.contentView addSubview:subtitleLabel];
@@ -290,7 +290,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
     UILabel *footerLabel = [UILabel new];
     footerLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    footerLabel.text = @"Select: Open   Play/Pause: Close Focused Tab   Menu: Dismiss";
+    footerLabel.text = @"Auswahl: Öffnen   Play/Pause: Tab schließen   Menü: Zurück";
     footerLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.62];
     footerLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     footerLabel.textAlignment = NSTextAlignmentCenter;

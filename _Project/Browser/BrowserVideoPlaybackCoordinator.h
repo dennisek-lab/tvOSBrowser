@@ -3,6 +3,7 @@
 
 @class BrowserDOMInteractionService;
 @class BrowserWebView;
+@class BrowserNativeVideoPlayerViewController;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -32,6 +33,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)openPageVideoInNativePlayer;
 /// Verarbeitet Meldungen des Seiten-Skripts (`BrowserWebView.videoEventHandler`): Vollbildwunsch, Videostart.
 - (void)handlePageVideoEvent:(NSDictionary *)event;
+/// Offener nativer Player (auch im Bild-in-Bild), sonst nil.
+- (nullable BrowserNativeVideoPlayerViewController *)currentNativePlayer;
 
 @end
 

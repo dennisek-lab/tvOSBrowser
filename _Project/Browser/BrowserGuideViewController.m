@@ -49,21 +49,24 @@
 
     UIStackView *rows = [[UIStackView alloc] init];
     rows.axis = UILayoutConstraintAxisVertical;
-    rows.spacing = 22.0;
+    rows.spacing = 12.0;
+    // Höchstens ca. 7 Zeilen, damit die Karte auf den Bildschirm passt. Belegung siehe docs/ERWEITERUNGEN.md, Abschnitt 8.2.
+    // Weitere Zeilen (z. B. „Sprachbefehle“) einfach unten anhängen; es ist Platz für eine mehr.
     NSArray<NSArray<NSString *> *> *items = @[
-        @[@"hand.point.up.left", @"Zeigen und klicken", @"Über das Clickpad wischen, drücken zum Klicken. Der Zeiger rastet an Links ein."],
-        @[@"arrow.up.arrow.down", @"Scrollen", @"Clickpad oben oder unten drücken. Zweimal oben öffnet die Adresse."],
-        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Clickpad links oder rechts drücken, auch zu Play-Knöpfen. Im laufenden Video: 10 Sekunden spulen."],
-        @[@"playpause", @"Play/Pause", @"Startet und stoppt Videos. Gedrückt halten: suchen und sprechen."],
-        @[@"ellipsis.circle", @"Mehr", @"Werbeblocker, Cookie-Ablehner und Einstellungen findest du oben rechts unter •••."],
-        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“, „neuer Tab“ oder „suche Wetter“ sagen."],
+        @[@"hand.point.up.left", @"Zeigen und klicken", @"Über das Clickpad wischen, zum Klicken drücken."],
+        @[@"arrow.up.arrow.down", @"Scrollen und Adresse", @"Oben oder unten drücken scrollt. Zweimal oben: Adressleiste. Zweimal unten: Leiste klein."],
+        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Clickpad links oder rechts drücken. Im Video: 10 Sekunden spulen."],
+        @[@"playpause", @"Play/Pause", @"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü."],
+        @[@"chevron.backward", @"Zurück", @"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück."],
+        @[@"text.page", @"Reader und mehr", @"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••."],
+        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“ oder „suche Wetter“ sagen."],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self rowWithSymbol:item[0] title:item[1] text:item[2]]];
     }
 
     UILabel *tips = [[UILabel alloc] init];
-    tips.text = @"Zurück-Taste: vorige Seite. Zweimal unten verkleinert die Leiste. Geht auch mit der Fernbedienung auf iPhone und iPad.";
+    tips.text = @"Kreisbewegung am Rand des Clickpads: von Element zu Element. Geht auch mit iPhone/iPad.";
     tips.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightRegular];
     tips.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
     tips.textAlignment = NSTextAlignmentCenter;
@@ -79,10 +82,10 @@
 
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[title, rows, tips, buttons]];
     content.axis = UILayoutConstraintAxisVertical;
-    content.spacing = 34.0;
+    content.spacing = 26.0;
     content.translatesAutoresizingMaskIntoConstraints = NO;
-    [content setCustomSpacing:40.0 afterView:rows];
-    [content setCustomSpacing:44.0 afterView:tips];
+    [content setCustomSpacing:28.0 afterView:rows];
+    [content setCustomSpacing:32.0 afterView:tips];
     [card.contentView addSubview:content];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -93,8 +96,8 @@
         [card.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [card.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [card.widthAnchor constraintEqualToConstant:1280.0],
-        [content.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:52.0],
-        [content.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-52.0],
+        [content.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:40.0],
+        [content.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-40.0],
         [content.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:64.0],
         [content.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-64.0],
     ]];

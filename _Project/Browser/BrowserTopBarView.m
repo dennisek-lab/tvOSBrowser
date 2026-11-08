@@ -222,8 +222,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _forwardFocusButton = [self newFocusButtonForAction:BrowserTopBarActionForward accessibilityLabel:@"Forward"];
     _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFavorite accessibilityLabel:@"Favorit"];
     _tabsFocusButton = [self newFocusButtonForAction:BrowserTopBarActionTabs accessibilityLabel:@"Tabs"];
-    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Enter URL or Search"];
-    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Top Navigation Visibility"];
+    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Adresse oder Suche"];
+    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Obere Leiste ein- oder ausblenden"];
     _menuFocusButton = [self newFocusButtonForAction:BrowserTopBarActionMenu accessibilityLabel:@"Menu"];
     _readerFocusButton = [self newFocusButtonForAction:BrowserTopBarActionReader accessibilityLabel:@"Reader"];
     _focusButtons = @[
@@ -612,8 +612,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         CGFloat textX = groupX + kTopBarIconSize + starGap;
         labelFrame = CGRectMake(textX, 0.0, textWidth, CGRectGetHeight(chromeFrame));
         labelCenter = CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
-        CGFloat targetX = CGRectGetMaxX(self.homeImageView.frame) + 4.0;
-        self.URLTargetFrame = CGRectMake(targetX, 0.0, MAX(120.0, labelTrailingX - targetX), CGRectGetHeight(chromeFrame));
+        // Ganzer Adressbereich zwischen Tab-Knopf und Kreisel ist wählbar (wie Safaris Adressfeld), nicht nur
+        // rechts vom Stern. Der Stern bleibt trotzdem treffbar: Beim Einrasten gewinnt das kleinste Ziel.
+        self.URLTargetFrame = CGRectMake(labelOriginX, 0.0, MAX(120.0, labelTrailingX - labelOriginX), CGRectGetHeight(chromeFrame));
     } else {
         self.homeImageView.center = labelCenter;
     }
