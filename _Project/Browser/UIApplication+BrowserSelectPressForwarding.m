@@ -98,6 +98,36 @@ static UIViewController *BrowserFindPresentedNativeVideoPlayerViewController(UIA
 
 @end
 
+#if DEBUG
+/// Eingabe-Sonde (nur DEBUG, Umgebungsvariable PROBE_INPUT=1): loggt jedes Ereignis außer Berührungen mit Typ, Untertyp
+/// und rohem Tastentyp sowie alle Mitteilungen (ohne laute). Zweck: prüfen, ob die Siri-Taste irgendeine Spur in der
+/// App hinterlässt (Log-Präfix [Probe]).
+static BOOL BrowserInputProbeEnabled(void) {
+    static BOOL enabled;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        enabled = [NSProcessInfo.processInfo.environment[@"PROBE_INPUT"] boolValue];
+        if (!enabled) {
+            return;
+        }
+        NSArray<NSString *> *noisy = @[@"UIViewAnimation", @"_UIWindow", @"UITextInput", @"NSUserDefaults", @"WebKit", @"_WK",
+                                       @"WK", @"AVPlayer", @"NSURL", @"UIScreen", @"_UIScene", @"CA", @"UIFocus",
+                                       @"_UIFocus", @"NSManagedObject", @"UIDevice", @"kCF", @"_NSThread", @"NSBundle",
+                                       @"UIKeyboard", @"_UIKeyboard", @"UIPasteboard", @"GCController", @"NSProcessInfo"];
+        [NSNotificationCenter.defaultCenter addObserverForName:nil object:nil queue:nil usingBlock:^(NSNotification *note) {
+            for (NSString *prefix in noisy) {
+                if ([note.name hasPrefix:prefix]) {
+                    return;
+                }
+            }
+            NSLog(@"[Probe] Mitteilung %@ (%@)", note.name, note.object ? NSStringFromClass([note.object class]) : @"-");
+        }];
+        NSLog(@"[Probe] Eingabe-Sonde aktiv");
+    });
+    return enabled;
+}
+#endif
+
 @implementation UIApplication (BrowserSelectPressForwarding)
 
 + (void)load {
@@ -108,6 +138,11 @@ static UIViewController *BrowserFindPresentedNativeVideoPlayerViewController(UIA
         if (originalMethod != NULL && replacementMethod != NULL) {
             method_exchangeImplementations(originalMethod, replacementMethod);
         }
+#if DEBUG
+        dispatch_async(dispatch_get_main_queue(), ^{
+            (void)BrowserInputProbeEnabled(); // Sonde gleich beim Start aktivieren (Mitteilungen auch ohne Tastendruck)
+        });
+#endif
     });
 }
 
@@ -117,7 +152,21 @@ static UIViewController *BrowserFindPresentedNativeVideoPlayerViewController(UIA
 /// (→ ±5 s), horizontales Wischen (→ Spulen) und der Beginn von Menü (→ Player schließen) abgefangen; damit kam
 /// man nie an die Menüs der Transportleiste. Übrig bleibt nur: den Rest eines Menü-Drucks verwerfen, der den
 /// Player geschlossen hat, und nach jedem Klick außerhalb des Players die Mitteilung für die Seite.
+
 - (void)browser_sendEvent:(UIEvent *)event {
+#if DEBUG
+    if (BrowserInputProbeEnabled() && event.type != UIEventTypeTouches) {
+        NSMutableArray<NSString *> *raw = [NSMutableArray array];
+        SEL allPressesSel = NSSelectorFromString(@"allPresses");
+        if ([event respondsToSelector:allPressesSel]) {
+            for (UIPress *press in ((id (*)(id, SEL))objc_msgSend)(event, allPressesSel)) {
+                [raw addObject:[NSString stringWithFormat:@"type=%ld phase=%ld key=%@", (long)press.type, (long)press.phase, press.key.charactersIgnoringModifiers ?: @"-"]];
+            }
+        }
+        NSLog(@"[Probe] Ereignis %@ type=%ld subtype=%ld %@", NSStringFromClass(event.class), (long)event.type, (long)event.subtype,
+              [raw componentsJoinedByString:@"; "]);
+    }
+#endif
     if (event.type != UIEventTypePresses) {
         [self browser_sendEvent:event];
         return;
