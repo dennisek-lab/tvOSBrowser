@@ -10,6 +10,7 @@ Aufruf (aus dem Repo-Wurzelverzeichnis):
     python3 tools/build_scriptlets.py              # Listen aus dem Cache von build_adblock_rules.py (tools/.adblock-cache)
     python3 tools/build_scriptlets.py --refresh    # Listen neu herunterladen
     python3 tools/build_scriptlets.py --no-register
+    python3 tools/build_scriptlets.py --out-dir DIR  # anderer Ausgabeordner (GitHub-Workflow filterlisten.yml)
 
 Voraussetzung: node/npm. Die Bibliotheken @adguard/scriptlets und @adguard/extended-css (beide GPL-3.0) werden in
 tools/vendor-download/scriptlets-npm installiert (nicht im Repo). Aus @adguard/scriptlets wird
@@ -34,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zlib
 from collections import Counter, OrderedDict
 
@@ -437,7 +439,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--no-register", action="store_true")
+    ap.add_argument("--out-dir", type=pathlib.Path, default=None,
+                    help="Ausgabeordner statt _Project/Browser/Scriptlets (impliziert --no-register)")
     args = ap.parse_args()
+    out_dir = args.out_dir.resolve() if args.out_dir else OUT_DIR
+    if args.out_dir:
+        args.no_register = True
 
     ensure_vendor()
     sl_dir = VENDOR / "node_modules" / "@adguard" / "scriptlets"
@@ -460,16 +467,19 @@ def main():
     data["library"] = {"scriptlets": corelibs.get("version", SCRIPTLETS_VERSION), "extendedCss": EXTCSS_VERSION}
     data["stats"] = {"converted": dict(b.stats.ok), "skipped": dict(b.stats.skip.most_common())}
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     comp = zlib.compressobj(9, zlib.DEFLATED, -15)
     packed = comp.compress(payload) + comp.flush()
-    (OUT_DIR / "scriptlets.json.z").write_bytes(packed)
-    shutil.copyfile(ec_dir / "dist" / "extended-css.min.js", OUT_DIR / "extended-css.min.js")
-    shutil.copyfile(sl_dir / "LICENSE", OUT_DIR / "LICENSE-GPL-3.0.txt")
-    stats = {"version": version, "library": data["library"], "rules": len(data["rules"]), "css": len(data["css"]),
+    (out_dir / "scriptlets.json.z").write_bytes(packed)
+    shutil.copyfile(ec_dir / "dist" / "extended-css.min.js", out_dir / "extended-css.min.js")
+    shutil.copyfile(sl_dir / "LICENSE", out_dir / "LICENSE-GPL-3.0.txt")
+    # Erzeugungszeit (Unix-Sekunden, UTC): Die App vergleicht damit mitgelieferte und heruntergeladene Regeln.
+    generated = int(time.time())
+    stats = {"version": version, "generatedAt": generated,
+             "date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(generated)), "library": data["library"], "rules": len(data["rules"]), "css": len(data["css"]),
              "hosts": len(data["hosts"]), "functions": len(data["fn"]), "generic": len(data["generic"]["s"]),
              "jsonBytes": len(payload), "packedBytes": len(packed), **data["stats"]}
-    (OUT_DIR / "manifest.json").write_text(json.dumps(stats, indent=1, ensure_ascii=False))
+    (out_dir / "manifest.json").write_text(json.dumps(stats, indent=1, ensure_ascii=False))
     print(f"Scriptlet-Regeln {len(data['rules'])}, CSS-Regeln {len(data['css'])}, Hosts {len(data['hosts'])}, "
           f"Funktionen {len(data['fn'])}, generisch {len(data['generic']['s'])}", file=sys.stderr)
     print(f"JSON {len(payload) / 1e6:.2f} MB, gepackt {len(packed) / 1e6:.2f} MB", file=sys.stderr)
