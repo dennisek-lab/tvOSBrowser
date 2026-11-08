@@ -86,6 +86,7 @@
 		33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */ = {isa = PBXBuildFile; fileRef = 5DC453250BE8BA6BD64CDA80 /* WebSubtitles */; };
 		B6187A3DDA79B2A1F2FF8855 /* BrowserIntelligence.m in Sources */ = {isa = PBXBuildFile; fileRef = 6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */; };
 		8FFB577CAA8EACB8C4191E1A /* BrowserIntelligenceController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */; };
+		A8F4F24798AE6D03A09DCC13 /* BrowserSpeechProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -224,6 +225,7 @@
 		6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserIntelligence.m; sourceTree = "<group>"; };
 		FD9D1B2F0C5D6753C240B6AF /* BrowserIntelligenceController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserIntelligenceController.h; sourceTree = "<group>"; };
 		2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserIntelligenceController.m; sourceTree = "<group>"; };
+		18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSpeechProbe.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -421,6 +423,7 @@
 				6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */,
 				FD9D1B2F0C5D6753C240B6AF /* BrowserIntelligenceController.h */,
 				2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */,
+				18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -642,6 +645,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				A8F4F24798AE6D03A09DCC13 /* BrowserSpeechProbe.swift in Sources */,
 				8FFB577CAA8EACB8C4191E1A /* BrowserIntelligenceController.m in Sources */,
 				B6187A3DDA79B2A1F2FF8855 /* BrowserIntelligence.m in Sources */,
 				87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */,
