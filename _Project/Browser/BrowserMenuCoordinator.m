@@ -1,4 +1,5 @@
 #import "BrowserMenuCoordinator.h"
+#import "BrowserMotion.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
@@ -254,10 +255,8 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     }
     self.didAnimateIn = YES;
     self.panelTrailingConstraint.constant = -16.0;
-    [UIView animateWithDuration:0.28
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{
+    // Liquid Glass: Glas materialisiert beim Hereinfedern; schlicht: einblenden und gleiten (BrowserMotion).
+    [BrowserMotion glassAppear:self.panelView effect:self.panelView.effect kind:BrowserMotionKindAppear alongside:^{
         self.dimView.alpha = 1.0;
         [self.view layoutIfNeeded];
     } completion:nil];
@@ -280,10 +279,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
         return;
     }
 
-    [UIView animateWithDuration:0.22
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
+    [BrowserMotion animateKind:BrowserMotionKindDisappear delay:0.0 options:0 animations:^{
         self.dimView.alpha = 0.0;
         [self.view layoutIfNeeded];
     } completion:nil];
@@ -295,10 +291,7 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     }
     self.dismissalInProgress = YES;
     self.panelTrailingConstraint.constant = self.panelWidth + 32.0;
-    [UIView animateWithDuration:0.22
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
+    [BrowserMotion glassDisappear:self.panelView kind:BrowserMotionKindDisappear alongside:^{
         self.dimView.alpha = 0.0;
         [self.view layoutIfNeeded];
     } completion:^(__unused BOOL finished) {
@@ -1099,6 +1092,16 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Liquid-Glass-Animationen (Federn, materialisierendes Glas) oder schlichte Überblendungen, s. BrowserMotion.
+- (BrowserAdvancedMenuItem *)liquidGlassAnimationsMenuItem {
+    BOOL enabled = self.preferencesStore.liquidGlassAnimationsEnabled;
+    return [self advancedMenuItemWithTitle:@"Liquid-Glass-Animationen"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.liquidGlassAnimationsEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)cookiePayWallMenuItem {
     BOOL enabled = self.preferencesStore.cookieBannerAcceptPayWalls;
     return [self advancedMenuItemWithTitle:@"Bezahlschranken zustimmen"
@@ -1274,6 +1277,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
                                                items:@[
             [self topNavigationVisibilityMenuItem],
             [self rainbowGlowMenuItem],
+            [self liquidGlassAnimationsMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
             [self userAgentModeMenuItem],

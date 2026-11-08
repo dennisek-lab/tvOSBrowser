@@ -19,6 +19,7 @@ static NSString * const kAdBlockAutoExceptionHostsDefaultsKey = @"AdBlockAutoExc
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
 static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
+static NSString * const kLiquidGlassAnimationsEnabledDefaultsKey = @"LiquidGlassAnimationsEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
@@ -230,6 +231,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
     [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)liquidGlassAnimationsEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kLiquidGlassAnimationsEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setLiquidGlassAnimationsEnabled:(BOOL)liquidGlassAnimationsEnabled {
+    [[self defaults] setBool:liquidGlassAnimationsEnabled forKey:kLiquidGlassAnimationsEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

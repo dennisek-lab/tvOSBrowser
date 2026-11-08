@@ -1,4 +1,5 @@
 #import "BrowserTopBarView.h"
+#import "BrowserMotion.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -195,6 +196,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _URLLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     _URLLabel.adjustsFontSizeToFitWidth = NO;
     _URLLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    // Beim Umschalten kompakt ↔ voll ändert sich die Breite: Inhalt mittig stehen lassen statt strecken/abschneiden.
+    _URLLabel.contentMode = UIViewContentModeCenter;
     [self.chromeEffectView.contentView addSubview:_URLLabel];
 
     _loadingSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
@@ -298,9 +301,17 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     if (self.readerAvailable == available && self.readerActive == active) {
         return;
     }
+    BOOL becomesActive = active && !self.readerActive;
     self.readerAvailable = available;
     self.readerActive = active;
-    [self applyReaderStyle];
+    // Knopf und blaue Hervorhebung blenden über BrowserMotion; Liquid Glass: Hervorhebung federt beim Einschalten auf.
+    if (becomesActive && BrowserMotion.liquidGlassEnabled) {
+        self.readerHighlightView.transform = CGAffineTransformMakeScale(0.82, 0.82);
+    }
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        [self applyReaderStyle];
+        self.readerHighlightView.transform = CGAffineTransformIdentity;
+    } completion:nil];
     [self setNeedsLayout];
 }
 
@@ -395,7 +406,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
             return;
         }
         self.loadingProgress = value;
-        [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut animations:^{
+        [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
             self.progressView.alpha = 1.0;
             self.progressView.frame = [self progressFrameForValue:value];
         } completion:nil];
@@ -406,10 +417,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     }
     self.progressVisible = NO;
     self.loadingProgress = 1.0;
-    [UIView animateWithDuration:0.2 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+    [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.progressView.frame = [self progressFrameForValue:1.0];
     } completion:^(__unused BOOL finished) {
-        [UIView animateWithDuration:0.25 animations:^{
+        [BrowserMotion animateKind:BrowserMotionKindFade delay:0.0 options:0 animations:^{
             self.progressView.alpha = 0.0;
         } completion:^(__unused BOOL done) {
             if (!self.progressVisible) {
@@ -499,27 +510,26 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self layoutIfNeeded];
         return;
     }
-    // Der Schattenumriss wird von UIView-Animationen nicht mitgenommen und sprang sofort auf die Endform
-    // (sichtbares Aufblinken). Deshalb läuft er hier als eigene Animation mit gleicher Dauer und Kurve.
-    NSTimeInterval duration = 0.3;
-    CGPathRef fromPath = self.chromeContainerView.layer.shadowPath;
-    id fromValue = fromPath != NULL ? (__bridge id)fromPath : nil;
-    [UIView animateWithDuration:duration delay:0.0
-                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut
-                     animations:^{
+    [self animateChromeLayoutAlongside:nil];
+}
+
+/// Layoutwechsel der Leiste (kompakt ↔ voll, Bearbeiten) über BrowserMotion. Der Schattenumriss wird von
+/// UIView-Animationen nicht mitgenommen und sprang sonst sofort auf die Endform (sichtbares Aufblinken); er läuft
+/// deshalb als eigene Animation mit derselben Feder bzw. Kurve mit.
+- (void)animateChromeLayoutAlongside:(void (^)(void))extra {
+    CALayer *layer = self.chromeContainerView.layer;
+    CGPathRef fromPath = CGPathRetain(layer.shadowPath);
+    [BrowserMotion animateKind:BrowserMotionKindStandard delay:0.0
+                       options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                    animations:^{
+        if (extra != nil) {
+            extra();
+        }
         [self setNeedsLayout];
         [self layoutIfNeeded];
     } completion:nil];
-    CALayer *layer = self.chromeContainerView.layer;
-    [layer removeAnimationForKey:@"shadowPath"];
-    if (fromValue != nil && layer.shadowPath != NULL) {
-        CABasicAnimation *shadowAnimation = [CABasicAnimation animationWithKeyPath:@"shadowPath"];
-        shadowAnimation.fromValue = fromValue;
-        shadowAnimation.toValue = (__bridge id)layer.shadowPath;
-        shadowAnimation.duration = duration;
-        shadowAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-        [layer addAnimation:shadowAnimation forKey:@"shadowPath"];
-    }
+    [BrowserMotion animateShadowPathOfLayer:layer fromPath:fromPath kind:BrowserMotionKindStandard];
+    CGPathRelease(fromPath);
 }
 
 - (void)layoutSubviews {
@@ -932,16 +942,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self layoutIfNeeded];
         return;
     }
-    [UIView animateWithDuration:0.3 delay:0.0
-                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut
-                     animations:^{
+    // Gleiche Bewegung wie kompakt ↔ voll, inklusive Schattenumriss (beim Bearbeiten klappt die Kapsel auf).
+    [self animateChromeLayoutAlongside:^{
         if (!addressEditing) {
             self.URLLabel.alpha = 1.0;
             self.loadingSpinner.alpha = 1.0;
         }
-        [self setNeedsLayout];
-        [self layoutIfNeeded];
-    } completion:nil];
+    }];
 }
 
 @end

@@ -1,4 +1,5 @@
 #import "BrowserTabOverviewController.h"
+#import "BrowserMotion.h"
 
 #import "BrowserTabViewModel.h"
 #import "BrowserViewModel.h"
@@ -330,6 +331,21 @@ static CGFloat const kTabCardURLHeight = 64.0;
         [footerLabel.bottomAnchor constraintEqualToAnchor:panelView.contentView.bottomAnchor constant:-24.0],
         [footerLabel.heightAnchor constraintEqualToConstant:kTabOverviewFooterHeight],
     ]];
+}
+
+// Liquid Glass: Kartenfläche materialisiert und federt beim Öffnen; schlicht bleibt es bei der Überblendung.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (animated) {
+        [BrowserMotion presentCard:self.panelView glassEffect:self.panelView.effect];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    if (animated) {
+        [BrowserMotion dismissCard:self.panelView];
+    }
 }
 
 - (void)viewDidDisappear:(BOOL)animated {

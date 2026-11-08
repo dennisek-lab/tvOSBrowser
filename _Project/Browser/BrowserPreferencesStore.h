@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *autoSubtitlesLanguage;
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
+/// Liquid-Glass-Animationen (Federn, Glas materialisiert, Standard: an); aus: schlichte Überblendungen, s. BrowserMotion.
+@property (nonatomic) BOOL liquidGlassAnimationsEnabled;
 
 /// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
 @property (nonatomic) NSUInteger cursorStyle;
