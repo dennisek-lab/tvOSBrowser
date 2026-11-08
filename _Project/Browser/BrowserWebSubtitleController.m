@@ -319,7 +319,7 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
     if (agent.length > 0) {
         headers[@"User-Agent"] = agent;
     }
-    if (page.absoluteString.length > 0) {
+    if ([page.scheme.lowercaseString hasPrefix:@"http"]) {
         headers[@"Referer"] = page.absoluteString;
         if (page.scheme.length > 0 && page.host.length > 0) {
             NSString *port = page.port != nil ? [NSString stringWithFormat:@":%@", page.port] : @"";
