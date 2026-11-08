@@ -10,6 +10,8 @@ static NSString * const kPageZoomDefaultsKey = @"PageZoom";
 static double const kDefaultPageZoom = 1.5;
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
 static NSString * const kHomepageDefaultsKey = @"homepage";
+static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
+static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -128,6 +130,26 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setHomePageURLString:(NSString *)homePageURLString {
     [[self defaults] setObject:homePageURLString ?: @"" forKey:kHomepageDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)adBlockEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kAdBlockEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setAdBlockEnabled:(BOOL)adBlockEnabled {
+    [[self defaults] setBool:adBlockEnabled forKey:kAdBlockEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSArray<NSString *> *)adBlockExceptionHosts {
+    NSArray *value = [[self defaults] arrayForKey:kAdBlockExceptionHostsDefaultsKey];
+    return [value isKindOfClass:NSArray.class] ? value : @[];
+}
+
+- (void)setAdBlockExceptionHosts:(NSArray<NSString *> *)adBlockExceptionHosts {
+    [[self defaults] setObject:adBlockExceptionHosts ?: @[] forKey:kAdBlockExceptionHostsDefaultsKey];
     [[self defaults] synchronize];
 }
 

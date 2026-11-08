@@ -17,6 +17,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) double pageZoom;
 @property (nonatomic) BOOL dontShowHintsOnLaunch;
 @property (nonatomic, copy) NSString *homePageURLString;
+/// Werbeblocker (Standard: an) und Seiten, für die er abgeschaltet ist (Hosts ohne „www.“).
+@property (nonatomic) BOOL adBlockEnabled;
+@property (nonatomic, copy) NSArray<NSString *> *adBlockExceptionHosts;
 
 - (void)ensureUserAgentConsistency;
 
