@@ -1086,6 +1086,16 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Einträge des Abschnitts „Erweiterungen“. Neue Erweiterungen hängen ihre Schalter hier an.
+- (NSArray<BrowserAdvancedMenuItem *> *)extensionMenuItems {
+    return @[
+        [self adBlockMenuItem],
+        [self adBlockSiteMenuItem],
+        [self autoOpenNativePlayerMenuItem],
+        [self cloudflareDNSMenuItem],
+    ];
+}
+
 - (NSArray<BrowserAdvancedMenuSection *> *)advancedMenuSections {
     BrowserAdvancedMenuItem *increaseFontSizeItem = [self advancedMenuItemWithTitle:@"Increase Font Size"
                                                                                style:UIAlertActionStyleDefault
@@ -1127,6 +1137,9 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 
     return @[
+        // Alle Erweiterungen gesammelt oben: Werbeblocker, Cookie-Ablehner, Player-Übergabe, DNS.
+        [BrowserAdvancedMenuSection sectionWithTitle:@"Erweiterungen"
+                                               items:[self extensionMenuItems]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Navigation"
                                                items:@[
             [self homePageMenuItem],
@@ -1147,15 +1160,11 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Video Playback"
                                                items:@[
-            [self autoOpenNativePlayerMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Compatibility"
                                                items:@[
             [self userAgentModeMenuItem],
-            [self cloudflareDNSMenuItem],
-            [self adBlockMenuItem],
-            [self adBlockSiteMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Diagnostics"
                                                items:@[
