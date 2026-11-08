@@ -97,7 +97,7 @@
     NSArray<NSArray<NSString *> *> *items = @[
         @[@"hand.point.up.left", @"Zeigen und klicken", @"Über das Clickpad wischen, zum Klicken drücken."],
         @[@"arrow.up.arrow.down", @"Scrollen und Adresse", @"Oben oder unten drücken scrollt. Zweimal oben: Adressleiste. Zweimal unten: Leiste klein."],
-        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Clickpad links oder rechts drücken. Im Video: 10 Sekunden spulen."],
+        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Links/rechts drücken, halten: weiter. Zweimal rechts: Menü. Im Video: 10 s spulen."],
         @[@"playpause", @"Play/Pause", @"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü."],
         @[@"chevron.backward", @"Zurück", @"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück."],
         @[@"text.page", @"Reader und mehr", @"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••."],

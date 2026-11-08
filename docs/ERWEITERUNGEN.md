@@ -33,6 +33,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 21. [Leistung: Messung, Optimierungen, Befunde](#21-leistung-messung-optimierungen-befunde)
 22. [Ersteinrichtung](#22-ersteinrichtung-browsersetupviewcontroller)
 23. [Altes Design](#23-altes-design)
+24. [Pop-ups und unbenutzte Tabs](#24-pop-ups-und-unbenutzte-tabs-browserpopupnotice)
 
 ---
 
@@ -413,7 +414,10 @@ Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang v
 | Wischen | Zeiger bewegen (8.8), rastet ein bei `kSnapEnterRadius` 24 pt vom Zielrand; aus einem kleinen Ziel heraus springt er zum nächsten Ziel in Bewegungsrichtung (ein Ziel pro Wischgeste, 8.3 „Magnet“), frei wird er erst bei `kSnapReleaseRadius` 80 pt ohne Nachbarn; Ziele größer als 420 × 140 werden nur hervorgehoben; Randscrollen am Bildschirmrand (nur der Finger, nicht das Gleiten) |
 | Auswahl (Mitte) | Klick (`performSelectAction` → Host `browserRemoteInputControllerHandlePrimaryAction`); jeder Druck kommt zweimal an (direkt über `pressesEnded:` und als Benachrichtigung aus `UIApplication browser_sendEvent:`, Abschnitt 12); die Kopie wird am gleichen `UIPress.timestamp` erkannt und verworfen (`lastDirectSelectPressEventTime`), zusätzlich bleibt die 0,15-s-Sperre |
 | Oben/unten | eine Seite scrollen (`kPageScrollFraction` 0,8); **oben zweimal** (< 0,4 s) → `browserRemoteInputControllerOpenAddressBar` (Leiste ausklappen, Bearbeiten-Zustand mit Aufklapp-Bereich und sofort offener Systemtastatur, Abschnitt 13); **unten zweimal** → `browserRemoteInputControllerCompactTopBar` |
-| Links/rechts | `browserRemoteInputControllerNavigateBack/Forward`: Zeiger auf laufendem Video → ±10 s (`sendVideoCommand:… seek:±10`), sonst `stepTargetBy:∓1` (Element-zu-Element; Reihenfolge nach Zeilen à 24 pt, dann links→rechts; am Ende des Sichtbaren `scrollThenStep:` scrollt weiter und springt zum nächsten Ziel, nach 0,45 s Wartezeit auf die neue Meldung). Ziele: `browserRemoteInputControllerStepTargets` (Zeigerziele plus Videos ohne eigene Bedienelemente, obere Leiste nur am Seitenanfang) |
+| Links/rechts | `browserRemoteInputControllerNavigateBack/Forward`: Zeiger auf laufendem Video → ±10 s (`sendVideoCommand:… seek:±10`), sonst `stepTargetBy:∓1` (Element-zu-Element; **ein Druck = genau ein Ziel**; Reihenfolge nach Zeilen, dann links→rechts – eine Zeile sind Ziele, deren Oberkante höchstens `MAX(12, halbe Höhe des kleinsten)` pt von der des ersten Zeilenziels abweicht, früher feste 24-pt-Raster, die oben bündige Knöpfe verschiedener Höhe auf zwei Zeilen verteilten; Bezugspunkt ist das zuletzt angesprungene Ziel (`lastStepTarget`), solange der Zeiger dort steht, nicht ein größerer eingerasteter Container; am Ende des Sichtbaren `scrollThenStep:` scrollt weiter und springt zum nächsten Ziel, nach 0,45 s Wartezeit auf die neue Meldung). Ziele: `browserRemoteInputControllerStepTargets` (Zeigerziele plus Videos ohne eigene Bedienelemente, obere Leiste nur am Seitenanfang) |
+| Links/rechts halten | erste Wiederholung nach 0,5 s (`kArrowRepeatDelay`), dann alle 0,25 s (`kArrowRepeatInterval`) ein Sprung (`fireArrowRepeat`, nur im Zeigermodus ohne Dialog, Leistenfokus, Tab-Übersicht, Karte oder Aufklapp-Bereich); beim Loslassen nach einer Wiederholung kein zusätzlicher Sprung. Doppelt zugestellte Beginn-/Ende-Ereignisse (gleicher `UIPress.timestamp`, wie beim Auswahl-Druck) wirken nur einmal (`arrowPressBegan:`, `arrowPressEndedShouldStep:`). `UIApplication browser_sendEvent:` leitet Pfeile nicht weiter (nur Auswahl), eine zweite Zustellung über diesen Weg gibt es für Pfeile also nicht |
+| Rechts zweimal (< 0,35 s, `kRightDoublePressWindow`) | Seitenleiste •••. Der erste Druck wirkt sofort (Sprung bzw. Scrollen); der zweite nimmt ihn zurück (`undoRightStep`: Zeigerposition und Scrollstand von vorher, ein noch wartendes `scrollThenStep:` wird über `stepGeneration` verworfen) und ruft `…HandleAdvancedMenuPress`. Über laufendem Video gilt das nicht (Host `browserRemoteInputControllerRightDoublePressOpensMenu` → NO, dort bleibt es bei 2 × 10 s). Unverändert: Tab-Übersicht, Aufklapp-Bereich der Adresse, Karten, Dialoge (eigene Zweige vor dem Zeigermodus) und nativer Player (Pfeile fängt `browser_sendEvent:` ab, Doppeltipp ±5 s). Im Reader (Seite in der WebView) wirkt es wie auf jeder Seite. Log `[Input] rechts doppelt: Sprung zurückgenommen, Seitenleiste` |
+| Siri-Taste, TV-/Home-Taste, Lautstärke | **nicht abfangbar.** Geprüft im SDK AppleTVOS 27.2: `UIPressType` kennt nur Pfeile, Auswahl, Menü, Play/Pause, Seite auf/ab und die Tasten fremder Fernbedienungen; `GCMicroGamepad`/`GCDirectionalGamepad` liefern Clickpad, `buttonA`, `buttonX` (Play/Pause) und `buttonMenu`; `MPRemoteCommandCenter` und `UIKeyCommand` haben keine Siri-Taste. DEBUG: `attachToGameController:` loggt alle Tasten aus `physicalInputProfile` (`[Input] Tasten der Fernbedienung: …`) und jeden Druck (`[Input] GameController-Taste … gedrückt`) – am Gerät lässt sich so nachprüfen, dass die Siri-Taste nicht dabei ist |
 | Play/Pause | kurz (nach 0,3 s Doppeltipp-Fenster): Video steuern, sonst Schnellmenü; lang (≥ 0,6 s): `…HandlePlayPauseLongPress` (`beginAddressEditing`, wie ein Druck auf die Leiste); doppelt: `…HandleAdvancedMenuPress` (•••-Menü, schließt vorher den Aufklapp-Bereich der Adresse). Ist ein Dialog oder die Zusammenfassung offen, schließt jede Variante nur diese Ebene (`closeDialogForPlayPause` in `ViewController.m`) |
 | Menü/Zurück | `browserRemoteInputControllerHandleMenuPress`, oberste Ebene zuerst: Dialog schließen → Karte „Zusammenfassung“/„Frag die Seite“ schließen bzw. „Übersetzen?“ ablehnen → Seitenvollbild verlassen → Aufklapp-Bereich → Reader → Seite zurück → sonst `NO` (System geht zum Home-Bildschirm, vorher Sitzung sichern) |
 | Im Aufklapp-Bereich der Adresse | optionale Host-Methode `browserRemoteInputControllerAddressPanelActive`: Pfeile → `stepTargetInDirection:` (räumlicher Sprung: Kandidaten in Blickrichtung, Wertung Abstand + 2 × seitlicher Versatz ab Zielkante), kein Seiten- oder Randscrollen, Zeiger wird nicht ausgeblendet; Select → `browserHandlePrimaryAction` → `handleAddressEditingSelectionAtPoint:` (Feld: Tastatur wieder öffnen, `showAddressKeyboard`); Play/Pause → Tastatur wieder öffnen; Menü → schließen. Solange die Tastatur offen ist, gehören Pfeile, Klick und Menü dem tvOS-Fokus der Systemsuche (Abschnitt 13.1). Eckenradius der Hervorhebung per `browserRemoteInputControllerCornerRadiusForTarget:` (Feld: Kapselform, Kacheln: Radius des Icons), keine Linse |
@@ -935,7 +939,7 @@ Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 - **Was ist neu** (`BrowserGuideViewController.m` mit `whatsNew = YES`): gleiche Glas-Karte wie der Bedienungsdialog, Titel „Was ist neu“, 14 Neuerungen dieser Fassung gegenüber dem Original in zwei Spalten (`+whatsNewItems`: Symbol, Titel, eine Zeile Text; höchstens 14, sonst passt die Karte nicht mehr auf den Bildschirm). Knöpfe „Weiter“ und „Bedienung ansehen“ (`showGuideHandler` öffnet danach den Bedienungsdialog). Erscheint einmal beim Start, wenn `WhatsNewSeenVersion` in den Defaults nicht `+whatsNewVersion` entspricht (dann statt des Bedienungsdialogs); neue Punkte → Liste ergänzen und `whatsNewVersion` hochzählen. Jederzeit unter ••• → Hilfe → „Was ist neu“ (`browserShowWhatsNew`), Selbsttest `whatsnew`. Hinweis: `xcrun simctl spawn … defaults delete` erreicht den App-Container nicht; zum Testen App deinstallieren oder den Selbsttest nutzen.
 - **Seitenleiste (•••)** (`BrowserMenuCoordinator.m`, `BrowserAdvancedMenuViewController`, Kachel `BrowserAdvancedMenuTile`, Überschrift `BrowserAdvancedMenuHeader`): Glas-Panel rechts, so breit wie früher die einspaltige Liste (38 % der Bildschirmbreite, 480–700 pt; Radius `BrowserShapePanelRadius`). Inhalt ist ein `UICollectionView` mit `UICollectionViewFlowLayout` in zwei Spalten: Kacheln hochkant, 150 pt hoch, 18 pt Abstand, Abschnittsüberschrift über beide Spalten. Kachelradius konzentrisch zum Panel (`BrowserShapeConcentricRadius(PanelRadius, PanelInset)` = 36). Jede Kachel: oben links farbiger Symbolkreis 50 pt (Farbe je Abschnitt, `BrowserMenuTintForSection`; Symbol je Titel, `BrowserMenuSymbolForTitle`, unbekannte Titel bekommen einen Punkt), oben rechts bei „An“/„Aus“ ein Schalter (grün/grau), darunter Titel (bis zwei Zeilen) und Wert. Ruhend eigene Glasfläche (Weiß 13 %) mit Kante (1,5 pt, Weiß 16 %), damit die Kacheln klar getrennt sind. Im Fokus wie in tvOS üblich hell (Weiß 96 %) mit dunkler Schrift, Schatten und Anhebung 1,05 (Feder über `BrowserMotion` Snap); ausgeschaltete Schalter werden dabei dunkel getönt, damit sie auf der hellen Fläche sichtbar bleiben. Die Liste ist beschnitten und läuft über die volle Panelbreite; seitlich 14 pt Abschnittsrand und oben 8 pt Inset lassen der vergrößerten Fokus-Kachel Platz. Neuer Eintrag: Titel in `BrowserMenuSymbolForTitle` eintragen, sonst erscheint der Platzhalterpunkt. Selbsttest `scrollend` scrollt die Liste im obersten Dialog ans Ende (für Screenshots).
 - **Tab-Übersicht** (`BrowserTabOverviewController.m`): Kartenansicht der Tabs, selbst ein modaler Dialog (`BrowserTabOverviewViewController`); Host-Protokoll `BrowserTabOverviewControllerHost`. Menü und Play/Pause behandelt der Controller in `pressesEnded:` selbst (Menü schließt, Play/Pause schließt den fokussierten Tab, zweiter Druck innerhalb 0,4 s verworfen), Klick über den Fokus; die Zweige in `BrowserRemoteInputController` (`TabOverviewVisible`, `…DismissTabOverview`, `…HandleTabOverviewAlternateAction`) greifen nur, wenn eine Taste doch dort ankommt. Seitenleiste und Übersicht können nicht gleichzeitig offen sein (beide modal); `browserShowTabOverview` schließt einen anderen offenen Dialog vorher, sonst schlüge die Präsentation still fehl und die Übersicht gälte als offen. Tastenverhalten bei offenen Dialogen: Abschnitt 8.2.
-- **Sitzung** (`BrowserSessionStore.m`, `BrowserTabCoordinator.m`): offene Tabs und Cookie-Kopie in `NSUserDefaults`; `persistSession` vor Rückgabe an Home. Cookie-Sicherung `saveCookiesToDefaults`/`restoreCookiesFromDefaults` (AppDelegate), aufgerufen von `SceneDelegate`.
+- **Sitzung** (`BrowserSessionStore.m`, `BrowserTabCoordinator.m`; je Tab zusätzlich `openedAt` und `used`, Abschnitt 24): offene Tabs und Cookie-Kopie in `NSUserDefaults`; `persistSession` vor Rückgabe an Home. Cookie-Sicherung `saveCookiesToDefaults`/`restoreCookiesFromDefaults` (AppDelegate), aufgerufen von `SceneDelegate`.
 - **Formular-Eingabedialog** (`BrowserPageActionCoordinator.m`): Texteingabe und Login in einem Dialog (Benutzername + Passwort), `textContentType` aus `autocomplete` und Feldtyp (`BrowserTextContentType`), Werte über den nativen Setter des Eingabefeldes (React-kompatibel, `Object.getOwnPropertyDescriptor(proto, 'value')`), Absenden nur auf Wunsch über `requestSubmit()`. Test: Selbsttest `fill:` (loggt Titel, Felder, `textContentType`; letzter Wert ist der Index der Aktion).
 
 Test (alle): Selbsttest `guide`, `menu`, `state`; ansonsten manuell mit der Fernbedienung.
@@ -1028,6 +1032,13 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `fill:v1\|v2\|…\|i` | aktuellen Eingabedialog (UIAlertController) ausfüllen; letzter Wert *i* ist der Index der zu drückenden Aktion | `fill alert=<Titel> fields=N types=[textContentType…]`, `tap <Aktion>` |
 | `dictate:<Text>` | Adresseingabe öffnen (`beginAddressEditing`, falls nicht offen), nach 1 s Text auf einmal einsetzen wie ein Diktat (`insertDictatedText:`); ab 3 Zeichen nach 1,5 s automatisch bestätigt und ausgewertet | `dictate field=ok text=…`, `[Address] Diktat erkannt …`, `[Address] Tastatur zu: bestätigt` |
 | `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Notification, dann Router), siehe `docs/SIRI_STEUERUNG.md` | `siri <befehl>`, `[Siri] Befehl …`, `[Command] …` |
+| `press:right2`, `press:rightdup`, `press:leftdup` | zweimal rechts (Abstand Haltezeit + 0,12 s) bzw. ein Druck, dessen Beginn und Ende je zweimal mit gleichem Zeitstempel ankommen | `[Keys] … doppelt zugestellt (gleicher Zeitstempel), verworfen` |
+| `rightpress`, `rightright[:ms]` | rechts einmal bzw. zweimal im Abstand *ms* (Vorgabe 150) direkt über `handleRightPress` | `rightright zweiter Druck: Zeiger … presented=…` |
+| `steporder` | Reihenfolge der Sprungziele (Zeilen) ausgeben | `steporder <Rechtecke in Sprungreihenfolge>` |
+| `tabinfo` | Tabs mit `benutzt`, Alter, Titel, Adresse; Ablaufzeit und Einblendung | `tabinfo N Tabs, aktiv i, Ablauf s, Einblendung …` |
+| `tab:N`, `closetab` | zu Tab *N* wechseln (zählt als benutzt) bzw. aktiven Tab schließen | `wechsle zu Tab N`, `closetab tabs=N` |
+| `tabexpire` | Ablaufprüfung sofort ausführen | `[Tabs] unbenutzten Tab automatisch geschlossen …` |
+| `popuppoint`, `popupjump` | Zeiger auf die Pop-up-Einblendung setzen (danach `click`) bzw. direkt zum Pop-up-Tab springen | `popuppoint {{x, y}, {w, h}}`, `[Popup] Sprung zum Hintergrund-Tab N` |
 | `cmd:<name>[\|<arg>]` | Befehl direkt über den Router (alle Namen aus `BrowserCommand`, z. B. `cmd:reader\|on`, `cmd:seek\|-10`, `cmd:open\|heise.de`) | `cmd …`, `[Command] <name> arg=… quelle=selbsttest ok\|nicht möglich\|unbekannt („Rückmeldung“)` |
 | `parse:<text>[\|<text>…]` | Parser prüfen, ohne auszuführen (mehrere Texte mit `\|`); ohne Parser-Treffer zusätzlich der sinngemäße Abgleich (Abschnitt 19.1) | `parse "<text>" -> reader\|on ("starte den reader")` bzw. `keine -> Suche`/`keine -> Adresse`, dann `parse "<text>" ähnlich: ausführen\|Suche -> <befehl> (Begriffe … Abstand …, Embedding …, unbekannt=…, Beispiel "…", <Grund>)` |
 | `enter:<text>` | Text wie aus dem Adressfeld bestätigt (Parser, dann sinngemäßer Abgleich, dann Befehl oder Suche) | `enter …`, `[Command] Diktat "…" -> …` bzw. `[Command] Diktat "…" ähnlich: …` |
@@ -1123,6 +1134,9 @@ POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:fra
 | `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
 | `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
+| `[Popup] Pop-up/Link im Hintergrund-Tab N geöffnet: <URL> (gleiche Website 0/1)`, `[Popup] nicht geöffnet, schon 5 Tabs`, `[Popup] Einblendung „…“`, `[Popup] Sprung zum Hintergrund-Tab N` | `ViewController`, `BrowserPopupNotice` | nein |
+| `[Tabs] Tab benutzt: <URL>`, `[Tabs] unbenutzten Tab automatisch geschlossen nach N s: <URL>` | `BrowserTabCoordinator` | nein |
+| `[Keys] links/rechts Beginn`, `[Keys] … Ende nach N ms[, gehalten: kein weiterer Sprung]`, `[Keys] Sprung ±1 (Taste rechts\|Taste links\|Wiederholung\|Ring\|Drehung): Ziel i -> j von n`, `[Keys] Rand …, scrollen`, `[Keys] … doppelt zugestellt (gleicher Zeitstempel), verworfen` | `BrowserRemoteInputController` | Beginn/Ende ja, Sprung und doppelt nein |
 | `[Perf] main/didFinishLaunching/viewDidLoad/viewDidAppear/erste Seite … (+N ms seit Prozessstart)`, `[Perf] Cookies …`, `[Perf] WebView angelegt …`, `[Perf] Werbeblocker: N von M Listen bereit`, `[Perf] JS synchron N ms …` (ab 20 ms), `[Perf] BrowserWebView freigegeben`, `[Perf] scene…`, `[Perf] Hauptthread …` (nur mit `PERF_STALLS=1`) | `BrowserPerf.h`, `main.m`, `AppDelegate`, `SceneDelegate`, `ViewController`, `BrowserWebView`, `BrowserContentBlocker` (Abschnitt 21) | ja |
 | `[Keys] Ende Typ=… presented=… tabs=…` (jede Taste, die `ViewController pressesEnded:` erreicht), `[Tabs] Play/Pause: Fokus=…` | `ViewController`, `BrowserTabOverviewController` | ja |
 | `[Keys] Auswahl doppelt (sendEvent), verworfen`, `[Keys] Auswahl über sendEvent bei offenem Dialog, ignoriert` | `BrowserRemoteInputController handleGlobalSelectPressEndedWithTimestamp:` | ja |
@@ -1438,3 +1452,81 @@ Selbsttest (DEBUG): `setup` zeigt die Karte, `setup:N` Schritt N, `setupopt:i` b
 
 **Test.** Eigener tvOS-Simulator, `SIMCTL_CHILD_POINTER_SELFTEST="pref:ClassicDesign=1;url:https://www.apple.com/apple-tv-4k/;wait;wait"` mit `xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app`, Screenshot per `xcrun simctl io <udid> screenshot` und mit `screen01.png` vergleichen. Zurück: `pref:ClassicDesign=0` (die Leiste ist danach bildgleich mit einem Start im neuen Design). Klicks: `360,50;click` (Startseite), `1712,50;click` (Vollbild-Dialog), `label` zeigt die Adresse. Zeiger sichtbar: Schritt `x,y` als letzten Schritt (nach 4 s Leerlauf blendet der Zeiger aus).
 
+---
+
+## 24. Pop-ups und unbenutzte Tabs (`BrowserPopupNotice`)
+
+**Zweck.** Pop-ups unterbrechen nicht mehr: Alles, was die Seite in einem neuen Fenster öffnen will, landet als Hintergrund-Tab. Der sichtbare Tab bleibt, es kommt kein Dialog. Tabs, die nie angesehen wurden, schließen sich nach 30 Minuten von selbst.
+
+### 24.1 Pop-ups als Hintergrund-Tab
+
+**Wege.** Alle drei enden in `ViewController openBackgroundTabWithRequest:popup:` → `BrowserTabCoordinator createBackgroundTabWithRequest:` → `BrowserViewModel addBackgroundTab` (hängt hinten an, aktiver Tab bleibt):
+- `window.open(…)` und `<a target="_blank">`, die die Seite selbst auslöst: `BrowserWebView` (UIDelegate `createWebViewWithConfiguration…`) → Host `webView:shouldCreateNewTabWithRequest:navigationType:`. `navigationType` 0 (`WKNavigationTypeLinkActivated`) gilt als Link, alles andere als Pop-up.
+- Klick des Nutzers auf einen `target=_blank`-Link: `BrowserPageActionCoordinator handleTargetBlankLinkAtDOMPoint` → `browserPageActionCoordinatorCreateNewTabWithRequest`.
+
+**Bewusst geklickte `target=_blank`-Links öffnen ebenfalls im Hintergrund.** Das ist so gewollt und nicht zu unterscheiden: Viele Seiten öffnen Werbe-Pop-ups über einen unsichtbaren `target=_blank`-Link über dem ganzen Inhalt, ein „echter“ Klick sieht für den Browser genauso aus. Einheitlich gilt deshalb: Neue Fenster gehen in den Hintergrund. Die Einblendung (24.2) zeigt den Titel. Mit Klick darauf oder Play/Pause ist man mit einem Druck dort.
+
+Die WebView für den neuen Tab entsteht wie jede andere (`createConfiguredWebView`, gleiche Werbeblocker-/Nutzerskript-Konfiguration). Sie wird in `thumbnailStagingView` geparkt (`parkWebViewForThumbnailing:`) und lädt dort. Medien werden nach dem Laden angehalten wie bei jedem Hintergrund-Tab. Der neue Tab hat `userInteracted = NO`, `openedAt = jetzt` und als Titel bis zum Laden den Host.
+
+**Nur http/https.** Andere Schemata (`about:blank`, `javascript:`, Apps) werden ignoriert. Bei 5 Tabs (`kMaximumTabCount`) wird nichts geöffnet. Es gibt eine kurze Rückmeldung „Pop-up nicht geöffnet: höchstens fünf Tabs“ (`commandRouter showFeedback`), keinen Dialog. Log: `[Popup] nicht geöffnet, schon 5 Tabs`.
+
+**Einschränkungen (bewusst).**
+- `createWebViewWithConfiguration` gibt `nil` zurück, die Seite bekommt für `window.open` also `null`, und `window.opener` fehlt im neuen Tab. Anmeldefenster, die per `postMessage` an den Opener zurückmelden (manche OAuth-Abläufe, Zahlungsfenster), funktionieren deshalb im Pop-up-Tab nicht. Gegen eine echte Kind-WebView mit Opener spricht, dass sie im selben Prozess wie die Seite hängen und ohne Nutzerinteraktion weiterlaufen würde.
+- Seiten, die bei `null` auf `location.href = …` zurückfallen, navigieren den sichtbaren Tab um. Das ist das Verhalten der Seite.
+- `window.open` ohne Nutzergeste blockiert WebKit selbst (`javaScriptCanOpenWindowsAutomatically` ist unter tvOS standardmäßig NO). Solche Pop-ups kommen gar nicht erst an, Testseite „Auto-Pop-up“ liefert `null`. Klicks über die Fernbedienung gelten als Geste.
+
+### 24.2 Einblendung unten rechts
+
+`BrowserPopupNotice` (eigene Klasse, `initWithContainerView:`): Kapsel 104 pt hoch, höchstens 780 pt breit, 80 pt vom rechten und 70 pt vom unteren Rand.
+- **Darstellung:** Mit Liquid Glass ist das ein getöntes `UIGlassEffect`. Liefert `BrowserMotion.glassMaterialAvailable` NO (altes Design, ältere Systeme), ist es ein dunkler Blur. Erscheinen und Verschwinden laufen über `BrowserMotion glassAppear/glassDisappear`.
+- **Texte:**
+  - gleiche Website (`BrowserSiteKeyForHost`: letzte zwei Namensteile, drei bei `co.uk` u. ä.): „Diese Webseite hat soeben ein Pop-up geöffnet“;
+  - fremde Website: „Pop-up geöffnet: <Titel>“, bis der Titel geladen ist mit dem Host (ohne `www.`);
+  - Link: „Im Hintergrund geöffnet: <Titel>“;
+  - darunter „Play/Pause: öffnen“.
+  - Den Titel aktualisiert `webViewDidFinishLoad` (`updateDisplayName:forTabWithIdentifier:` mit `BrowserShortSiteName`).
+- **Zusammenfassen:** Ein weiteres Pop-up, solange die Einblendung steht, ersetzt den Text („3 Pop-ups geöffnet“ bzw. „3 Tabs im Hintergrund geöffnet“) und startet die 6 s neu. Gestapelt wird nicht. Ziel ist dann der zuletzt geöffnete Tab.
+- **Dauer:** 6 s ab dem letzten Pop-up. Ein Generationszähler verhindert, dass ein altes Ausblenden ein neues abschneidet.
+- **Zum Tab springen:** Die Einblendung ist ein Zeigerziel (ohne Linse, eigener Eckenradius). Seitenziele, die sie verdeckt, fallen weg. Ein Klick darauf (`browserHandlePrimaryAction`, vor der Prüfung der oberen Leiste) ruft `jumpToPopupTab` auf. Play/Pause kurz springt ebenfalls dorthin, solange sie sichtbar ist, kein Dialog und keine Adressleiste offen ist und kein Video läuft (`browserRemoteInputControllerHandlePlayPausePress`, vor dem Hinweis „Übersetzen?“). Läuft ein Video, steuert Play/Pause weiter das Video.
+- Schließt sich der Tab der Einblendung (automatisch, 24.3), wird sie ausgeblendet.
+
+**Siri-Taste.** Ursprünglich gewünscht war „Siri-Taste öffnet das Pop-up“. Das geht nicht: Apps bekommen die Siri-Taste nicht (Abschnitt 8.2, Zeile „Siri-Taste“). Ersatz sind der Klick auf die Einblendung und Play/Pause.
+
+### 24.3 Unbenutzte Tabs automatisch schließen
+
+- **Zustand je Tab** (`BrowserTabViewModel`):
+  - `openedAt` (Wanduhr, Sekunden seit 1970) und `userInteracted`, in der Sitzung als `openedAt`/`used` gespeichert.
+  - Normal geöffnete Tabs und Tabs aus alten Sitzungen ohne `used` gelten als benutzt.
+  - Nur Hintergrund-Tabs aus 24.1 starten mit `used = NO`.
+- **Benutzt** wird ein Tab für immer, sobald er angezeigt wird (`attachActiveWebView` → `markTabUsed:`, Log `[Tabs] Tab benutzt: <URL>`). Klicken, Scrollen und Laden einer Adresse passieren immer im angezeigten Tab und sind damit abgedeckt.
+- **Prüfung** (`ViewController closeExpiredUnusedTabs` → `BrowserTabCoordinator closeUnusedTabsOlderThan:`):
+  - **Wann:** per Timer (`startUnusedTabTimer`, jede Minute; bei kurzer Testzeit `MIN(60, MAX(2, Ablauf/4))` s), bei `UIApplicationDidBecomeActiveNotification` (Rückkehr in den Vordergrund, auch beim Start).
+  - **Ablauf:** läuft rückwärts durch die Tabs und schließt unbenutzte, die älter als die Ablaufzeit sind. Nie den aktiven, nie den letzten Tab.
+  - Bei offener Tab-Übersicht wird nicht geprüft.
+  - Log `[Tabs] unbenutzten Tab automatisch geschlossen nach N s: <URL>`.
+- **Einstellung:** Seitenleiste, Abschnitt „Navigation“, letzter Eintrag „Unbenutzte Tabs nach 30 Min. schließen“ (An/Aus, Symbol `clock.badge.xmark`, Schlüssel `CloseUnusedTabs`, Standard an; `BrowserPreferencesStore closeUnusedTabsEnabled`/`unusedTabExpiryInterval`). Die übrigen Einträge behalten ihre Reihenfolge.
+- **Testzeit:** Im DEBUG-Build überschreibt die Umgebungsvariable `TAB_EXPIRY_SECONDS` die 1800 s.
+
+### 24.4 Woran man merkt, dass es kaputt ist
+
+- Pop-up wechselt doch den Tab oder öffnet nichts: `[Popup] … im Hintergrund-Tab N geöffnet` fehlt. Dann prüfen, ob `createWebViewWithConfiguration` den Host noch erreicht (WebKit-Update, Abschnitt 3).
+- Einblendung ohne Glas im neuen Design: `glassMaterialAvailable` prüfen.
+- Tabs verschwinden, die man gesehen hat: Fehlt `[Tabs] Tab benutzt` beim Anzeigen, wurde `attachActiveWebView` umgangen.
+
+### 24.5 Test
+
+Eigener Simulator, lokale Testseite mit Pop-up-Knöpfen (`window.open`, `target=_blank` auf andere Website, drei Pop-ups, Auto-Pop-up ohne Geste), `python3 -m http.server`:
+
+```sh
+# Pop-ups, Zusammenfassen, Titel, 5-Tab-Grenze
+SIMCTL_CHILD_POINTER_SELFTEST="url:http://127.0.0.1:8765/index.html;js:document.getElementById('pop').click(),1;tabinfo" …
+# Klick auf die Einblendung und Play/Pause (Schritte im Abstand 1,5 s, damit es in die 6 s passt)
+SIMCTL_CHILD_POINTER_SELFTEST_INTERVAL=1.5 SIMCTL_CHILD_POINTER_SELFTEST="…;js:…pop…click(),1;popuppoint;click;tabinfo" …
+# Ablauf mit 20 s: unbenutzter Tab schließt nach ~23 s, angezeigter (tab:2) bleibt
+SIMCTL_CHILD_TAB_EXPIRY_SECONDS=20 SIMCTL_CHILD_POINTER_SELFTEST="…;js:…pop…;tab:2;tab:0;w;w;w;w;w;w;w;w;tabinfo" …
+```
+
+Stand 8. November 2026 (Simulator tvOS 27.2) bestanden:
+- **Pop-ups:** Pop-up und Link landen im Hintergrund, mehrere werden zusammengefasst, der Titel wird nachgeladen. Bei 5 Tabs kommt die Rückmeldung, kein Dialog. Das Auto-Pop-up blockiert WebKit.
+- **Sprung:** Klick auf die Einblendung und Play/Pause springen zum Tab.
+- **Ablauf:** Der unbenutzte Tab schließt nach 23 s. Ein angezeigter Tab bleibt nach 33 s offen. Beim Start schließen abgelaufene Tabs aus der Sitzung, der letzte bleibt.
