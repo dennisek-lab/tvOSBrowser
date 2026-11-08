@@ -31,6 +31,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 19. [Intelligente Funktionen: Zusammenfassen, Übersetzen, Sprachbefehle sinngemäß, Frag die Seite](#19-intelligente-funktionen-browserintelligence)
 20. [Formen und Eckenradien](#20-formen-und-eckenradien-browsershape)
 21. [Leistung: Messung, Optimierungen, Befunde](#21-leistung-messung-optimierungen-befunde)
+22. [Ersteinrichtung](#22-ersteinrichtung-browsersetupviewcontroller)
 
 ---
 
@@ -1319,4 +1320,25 @@ Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `Br
 **Sonde am Gerät** (`BrowserPerfProbe.m`, nur DEBUG): mit `DEVICECTL_CHILD_PERF_LOG=1` schreibt die App „[Perf] Start bis aktiv … ms“ und alle 5 s „[Perf] t=…s Speicher … MB CPU … %“ (eigener Prozess, ohne Seitenprozesse). Seitenprozesse zählen: `xcrun devicectl device info processes --device <UDID> | grep -c WebKit.WebContent`. Instruments „App Launch“ hängt am Apple TV beim Start, deshalb diese Sonde. Ergebnisse: `docs/BERICHT-STABILITAET-LEISTUNG.md`.
 
 **Am Gerät messen.** Start mehrfach mit `DEVICECTL_CHILD_POINTER_SELFTEST=wait` und die `[Perf]`-Zeilen vergleichen; `DEVICECTL_CHILD_PERF_STALLS=1` für Blockaden beim Laden; Glow-Kosten mit Instruments (Core Animation/Energie) mit und ohne eingerastetes Ziel; Schriftgrößen-Durchlauf mit dem `js:`-Schritt auf großen Seiten.
+
+## 22. Ersteinrichtung (`BrowserSetupViewController`)
+
+Erscheint beim Start, solange `BrowserPreferencesStore.setupCompleted` (Schlüssel `SetupCompleted`) nicht gesetzt ist – also beim ersten Start und einmal bei bestehenden Installationen, die die Einrichtung noch nicht kannten. Eine Glas-Karte (1500 pt breit, wie die Bedienungshilfe) mit sechs Schritten, bedient über den tvOS-Fokus:
+
+| Schritt | Inhalt | Speichert |
+|:--|:--|:--|
+| Willkommen | Überblick, „Überspringen“ (übernimmt die Vorbelegung) oder „Einrichten“ | – |
+| 1 Favoriten | „Welche Seiten willst du über diesen Browser öfter besuchen?“ 12 Vorschläge (nichts vorausgewählt), „Eigene Seite“ (bis 7 eigene Adressen) | `BrowserHistoryStore` Favoriten (Stern) |
+| 2 Startseite | „Welche Seite soll beim Starten der App als Erstes geöffnet werden?“ Google, gewählte Favoriten, „Andere Seite“ | `homePageURLString` (leer = Google) |
+| 3 Schutz | Werbeblocker, Cloudflare-DNS („für freies Internet“), Cookie-Banner ablehnen (soweit möglich) | `adBlockEnabled`, `BrowserDNSProxy.enabled`, `cookieBannerBlockEnabled` |
+| 4 Videos | Videos im Apple-Player, automatische Untertitel, Untertitel in der Webseite | `autoOpenVideosInNativePlayer`, `autoSubtitlesEnabled`, `webSubtitlesEnabled` |
+| 5 Design | Liquid Glass oder altes Design | `classicDesignEnabled` |
+
+Vorbelegung: aktuelle Werte; bei einer frischen Installation (kein `WhatsNewSeenVersion`) sind alle Schalter an, Design Liquid Glass. Vorhandene Favoriten sind vorausgewählt, Abwählen entfernt sie beim Abschluss. Wird eine als Startseite gewählte Seite als Favorit abgewählt, fällt die Startseite auf Google zurück. Menü-Taste: ein Schritt zurück, im ersten Schritt bleibt die Karte offen.
+
+Nach „Fertig“ (`ViewController applySetupResultWithHomePageChanged:`): Werbe- und Cookie-Blocker laden ihre Einstellungen neu, die DNS-Weiterleitung wird gestartet bzw. vom Datenspeicher genommen, Webseiten-Untertitel an/aus, Benachrichtigung `BrowserDesignDidChangeNotification`, dann Startseite laden (falls geändert, sonst Seite neu laden) und die Bedienungshilfe zeigen. „Was ist neu“ wird für diese Fassung als gesehen markiert. Alles bleibt in der Seitenleiste änderbar.
+
+Import aus anderen Browsern gibt es nicht: tvOS gibt Apps keinen Zugriff auf Safari-Daten oder Daten anderer Apps; die Vorschläge im Favoriten-Schritt ersetzen das für den Einstieg.
+
+Selbsttest (DEBUG): `setup` zeigt die Karte, `setup:N` Schritt N, `setupopt:i` betätigt die i-te Auswahl des Schritts, `setupnext` Weiter/Fertig. Log `[Setup]`.
 

@@ -43,7 +43,7 @@ Bedienung
 
 **Texteingabe:** Bei jedem Textfeld bietet das iPhone eine Tastatur-Mitteilung an; darüber lassen sich auch Passwörter einfügen.
 
-Beim ersten Start erscheint „Was ist neu“ (Neuerungen dieser Fassung), danach die Bedienungshilfe. Beide sind unter *••• → Hilfe* jederzeit abrufbar.
+Beim ersten Start führt eine kurze Einrichtung durch Favoriten, Startseite, Schutz (Werbeblocker, Cloudflare-DNS, Cookie-Banner), Videos (Apple-Player, automatische Untertitel) und Design (Liquid Glass oder alt), danach erscheint die Bedienungshilfe. Nach Updates erscheint einmal „Was ist neu“. Beide sind unter *••• → Hilfe* jederzeit abrufbar.
 
 
 Funktionen

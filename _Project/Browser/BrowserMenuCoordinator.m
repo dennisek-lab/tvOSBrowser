@@ -63,6 +63,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Cookies löschen": @"xmark.bin",
             @"Bedienung": @"questionmark.circle",
             @"Was ist neu": @"gift",
+            @"Einrichtung": @"wand.and.stars",
             @"Medien-Diagnose": @"waveform.path.ecg",
             @"WebKit-Medieneinstellungen": @"slider.horizontal.3",
         };
@@ -1200,6 +1201,14 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)setupMenuItem {
+    return [self advancedMenuItemWithTitle:@"Einrichtung"
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        [self.host browserShowSetup];
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)whatsNewMenuItem {
     return [self advancedMenuItemWithTitle:@"Was ist neu"
                                      style:UIAlertActionStyleDefault
@@ -1600,6 +1609,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                                items:@[
             [self usageGuideMenuItem],
             [self whatsNewMenuItem],
+            [self setupMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Erweitert"
                                                items:@[

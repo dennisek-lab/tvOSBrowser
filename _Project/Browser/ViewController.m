@@ -11,6 +11,9 @@
 #import "BrowserCommandRouter.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserGuideViewController.h"
+#import "BrowserSetupViewController.h"
+#import "BrowserCookieConsentBlocker.h"
+#import "BrowserDNSProxy.h"
 #import "BrowserPerf.h"
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -210,7 +213,10 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     if (!self.displayedHintsOnLaunch) {
         // Neue Fassung: einmal „Was ist neu“, sonst wie gewohnt die Bedienungshilfe (abschaltbar).
         NSString *seen = [NSUserDefaults.standardUserDefaults stringForKey:@"WhatsNewSeenVersion"];
-        if (![seen isEqualToString:BrowserGuideViewController.whatsNewVersion]) {
+        if (!self.preferencesStore.setupCompleted) {
+            // Erster Start (oder Einrichtung noch nie abgeschlossen): erst einrichten, danach die Bedienungshilfe.
+            [self showSetup];
+        } else if (![seen isEqualToString:BrowserGuideViewController.whatsNewVersion]) {
             [NSUserDefaults.standardUserDefaults setObject:BrowserGuideViewController.whatsNewVersion forKey:@"WhatsNewSeenVersion"];
             [self showWhatsNew];
         } else if (!self.preferencesStore.dontShowHintsOnLaunch) {
@@ -500,6 +506,23 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                 }
                 if ([step isEqualToString:@"advmenu"]) {
                     [self showAdvancedMenu];
+                    return;
+                }
+                if ([step isEqualToString:@"setup"]) {
+                    [self showSetup];
+                    return;
+                }
+                if ([step hasPrefix:@"setup"] && [self.presentedViewController isKindOfClass:BrowserSetupViewController.class]) {
+                    // setup:N Schritt zeigen, setupopt:i i-te Auswahl betätigen, setupnext Weiter/Fertig
+                    BrowserSetupViewController *setup = (BrowserSetupViewController *)self.presentedViewController;
+                    if ([step hasPrefix:@"setup:"]) {
+                        [setup debugShowPage:[[step substringFromIndex:6] integerValue]];
+                    } else if ([step hasPrefix:@"setupopt:"]) {
+                        [setup debugActivateOption:[[step substringFromIndex:9] integerValue]];
+                    } else if ([step isEqualToString:@"setupnext"]) {
+                        [setup debugNext];
+                    }
+                    NSLog(@"[SelfTest] %@", step);
                     return;
                 }
                 if ([step isEqualToString:@"homechooser"]) {
@@ -1502,6 +1525,37 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [self presentViewController:guide animated:YES completion:nil];
 }
 
+- (void)showSetup {
+    if (self.presentedViewController != nil) {
+        return;
+    }
+    BrowserSetupViewController *setup = [[BrowserSetupViewController alloc] init];
+    __weak typeof(self) weakSelf = self;
+    setup.completionHandler = ^(BOOL homePageChanged) {
+        [weakSelf applySetupResultWithHomePageChanged:homePageChanged];
+    };
+    [self presentViewController:setup animated:YES completion:nil];
+}
+
+/// Nach der Einrichtung: geänderte Schalter wirksam machen, Startseite laden, dann die Bedienungshilfe.
+- (void)applySetupResultWithHomePageChanged:(BOOL)homePageChanged {
+    // „Was ist neu“ wäre direkt nach der Einrichtung doppelt; die Bedienungshilfe folgt sofort.
+    [NSUserDefaults.standardUserDefaults setObject:BrowserGuideViewController.whatsNewVersion forKey:@"WhatsNewSeenVersion"];
+    [[BrowserContentBlocker sharedBlocker] preferencesDidChange];
+    [[BrowserCookieConsentBlocker sharedBlocker] preferencesDidChange];
+    BrowserDNSProxy *proxy = [BrowserDNSProxy sharedProxy];
+    [proxy startAndWaitWithTimeout:1.0];
+    [proxy applyToWebsiteDataStore:[BrowserWebView defaultWebsiteDataStore]];
+    [self browserSetWebSubtitlesEnabled:self.preferencesStore.webSubtitlesEnabled];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"BrowserDesignDidChangeNotification" object:nil];
+    if (homePageChanged) {
+        [self loadHomePage];
+    } else {
+        [self.webview reload];
+    }
+    [self showHintsAlert];
+}
+
 - (void)showWhatsNew {
     if (self.presentedViewController != nil) {
         return;
@@ -1513,6 +1567,10 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         [weakSelf showHintsAlert];
     };
     [self presentViewController:whatsNew animated:YES completion:nil];
+}
+
+- (void)browserShowSetup {
+    [self showSetup];
 }
 
 - (void)browserShowWhatsNew {

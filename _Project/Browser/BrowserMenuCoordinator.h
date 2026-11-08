@@ -15,6 +15,7 @@
 - (void)browserLoadHomePage;
 - (void)browserShowHints;
 - (void)browserShowWhatsNew;
+- (void)browserShowSetup;
 - (void)browserShowTabOverview;
 - (void)browserCreateNewTabLoadingHomePage:(BOOL)loadHomePage;
 - (void)browserHideTopNav;
