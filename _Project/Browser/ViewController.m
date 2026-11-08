@@ -192,6 +192,22 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     }
                     return;
                 }
+                if ([step isEqualToString:@"views"]) {
+                    __block void (^dump)(UIView *, NSInteger);
+                    __block __weak void (^weakDump)(UIView *, NSInteger);
+                    weakDump = dump = ^(UIView *view, NSInteger depth) {
+                        CGRect frame = [view convertRect:view.bounds toView:self.view];
+                        if (!CGRectContainsPoint(frame, CGPointMake(300, 6)) || view.hidden) {
+                            return;
+                        }
+                        NSLog(@"[SelfTest] view %@%@ frame=%@ bg=%@ alpha=%.2f", [@"" stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0], NSStringFromClass(view.class), NSStringFromCGRect(frame), view.backgroundColor, view.alpha);
+                        for (UIView *subview in view.subviews) {
+                            weakDump(subview, depth + 1);
+                        }
+                    };
+                    dump(self.view.window, 0);
+                    return;
+                }
                 if ([step isEqualToString:@"menu"]) {
                     BOOL handled = [self browserRemoteInputControllerHandleMenuPress];
                     NSLog(@"[SelfTest] menu handled=%d", handled);
@@ -566,6 +582,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             // Kein Bildschirmschoner, solange auf der Seite ein Video läuft.
             UIApplication.sharedApplication.idleTimerDisabled = weakWebView.videoPlaying;
             [weakSelf.nowPlayingController updateWithMediaInfo:weakWebView.mediaInfo];
+            [weakSelf applyPageColorOfWebView:weakWebView];
         }
     };
 }
@@ -666,6 +683,24 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self activeWebViewChangedFrom:previous];
 }
 
+/// Füllt den Streifen hinter der oberen Leiste mit der Farbe der Seite, wie Safari.
+- (void)applyPageColorOfWebView:(BrowserWebView *)webView {
+    [self.tabCoordinator refreshActiveTabUI];
+    UIColor *color = webView.pageBackgroundColor ?: UIColor.blackColor;
+    if ([self.view.backgroundColor isEqual:color]) {
+        return;
+    }
+    [UIView animateWithDuration:0.25 animations:^{
+        self.view.backgroundColor = color;
+        // Container der WebViews aus dem Storyboard (schwarz) und alles bis zur Hauptansicht.
+        for (UIView *view = webView.superview; view != nil && view != self.view; view = view.superview) {
+            view.backgroundColor = color;
+        }
+        [webView setSurroundingColor:color];
+    }];
+    [self.topMenuView setPageBackgroundColor:color];
+}
+
 /// Nach Tabwechsel: Video im alten Tab anhalten, Zeigerziele, Bildschirmschoner und Now Playing auf den neuen Tab umstellen.
 - (void)activeWebViewChangedFrom:(BrowserWebView *)previous {
     BrowserWebView *current = self.webview;
@@ -680,6 +715,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self.remoteInputController pointerTargetsDidChange];
     UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
     [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
+    [self applyPageColorOfWebView:current];
 }
 
 - (void)browserHideTopNav {

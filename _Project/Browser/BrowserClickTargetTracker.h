@@ -40,6 +40,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ist auf der Seite gerade ein Element oder Video im Vollbild?
 @property (nonatomic, readonly) BOOL pageFullscreen;
 
+/// Farbe der Seite (theme-color, sonst Hintergrund von body/html, sonst Weiß), Stand der letzten Meldung.
+@property (nonatomic, readonly, nullable) UIColor *pageBackgroundColor;
+
+/// Titel der Seite, Stand der letzten Meldung (auch nach Änderungen durch Skripte).
+@property (nonatomic, readonly, copy, nullable) NSString *pageTitle;
+
 /// JavaScript, das das Vollbild der Seite verlässt.
 + (NSString *)exitFullscreenScript;
 

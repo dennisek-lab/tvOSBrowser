@@ -31,6 +31,23 @@ static NSString *BrowserClickTargetScript(void) {
         "}"
         "return 0;"
     "}"
+    "function rgba(c){ var m=/rgba?\\(([^)]+)\\)/.exec(c||''); if(!m){ return null; } var p=m[1].split(/[ ,\\/]+/).filter(Boolean).map(parseFloat); return [p[0],p[1],p[2],p.length>3?p[3]:1]; }"
+    "function pageColor(){"
+        // Wie Safari: Farbe am oberen Rand der Seite abtasten (oberstes Element mit deckendem Hintergrund).
+        "var xs=[innerWidth*0.5, innerWidth*0.15, innerWidth*0.85];"
+        "for (var s=0;s<xs.length;s++){"
+            "for (var n=document.elementFromPoint(xs[s],2); n; n=n.parentElement){"
+                "var cs=rgba(getComputedStyle(n).backgroundColor);"
+                "if (cs && cs[3]>0.5) { return cs; }"
+                "if (getComputedStyle(n).backgroundImage!=='none' && n!==document.body && n!==document.documentElement) { break; }"
+            "}"
+        "}"
+        "var meta=document.querySelector('meta[name=theme-color]:not([media]),meta[name=theme-color][media*=dark]');"
+        "if (meta && meta.content){ var probe=document.createElement('i'); probe.style.color=meta.content; document.documentElement.appendChild(probe); var c=rgba(getComputedStyle(probe).color); probe.remove(); if (c && c[3]>0.5) { return c; } }"
+        "var els=[document.body, document.documentElement];"
+        "for (var i=0;i<els.length;i++){ if (!els[i]) { continue; } var c2=rgba(getComputedStyle(els[i]).backgroundColor); if (c2 && c2[3]>0.5) { return c2; } }"
+        "return [255,255,255,1];"
+    "}"
     "function usable(el, r){"
         "if (r.width<6||r.height<6) { return false; }"
         "if (r.bottom<0||r.right<0||r.top>innerHeight||r.left>innerWidth) { return false; }"
@@ -68,11 +85,12 @@ static NSString *BrowserClickTargetScript(void) {
                "next:!!h.nexttrack,prev:!!h.previoustrack};"
         "}"
         // Nur echtes Element-Vollbild. Video-Vollbild kann tvOS-WebKit nicht, webkitDisplayingFullscreen bleibt nach dem Fehlversuch aber hängen.
+        "var bg=pageColor();"
         "var fs=!!(document.fullscreenElement||document.webkitFullscreenElement);"
-        "var key=fs+':'+innerWidth+':'+scrollX+':'+scrollY+':'+playing+':'+vids.join(';')+':'+out.join(';')+':'+JSON.stringify(m);"
+        "var key=document.title+':'+bg+':'+fs+':'+innerWidth+':'+scrollX+':'+scrollY+':'+playing+':'+vids.join(';')+':'+out.join(';')+':'+JSON.stringify(m);"
         "if (key===last) { return; }"
         "last=key;"
-        "try { webkit.messageHandlers.browserTargets.postMessage({w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m,fs:fs}); } catch(e) {}"
+        "try { webkit.messageHandlers.browserTargets.postMessage({ti:document.title||'',w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m,fs:fs,bg:bg}); } catch(e) {}"
     "}"
     "function schedule(delay){"
         "if (pending) { return; }"
@@ -102,6 +120,8 @@ static NSString *BrowserClickTargetScript(void) {
 @property (nonatomic, readwrite) BOOL videoPlaying;
 @property (nonatomic, readwrite, copy, nullable) NSDictionary *mediaInfo;
 @property (nonatomic, readwrite) BOOL pageFullscreen;
+@property (nonatomic, readwrite, copy, nullable) NSString *pageTitle;
+@property (nonatomic, readwrite, nullable) UIColor *pageBackgroundColor;
 @property (nonatomic) CGFloat cssViewportWidth;
 @property (nonatomic) CGPoint contentOffsetAtReport;
 - (void)handleMessageBody:(id)body;
@@ -221,6 +241,11 @@ static NSString *BrowserClickTargetScript(void) {
     self.videoPlaying = [dictionary[@"p"] boolValue];
     self.mediaInfo = [dictionary[@"m"] isKindOfClass:NSDictionary.class] ? dictionary[@"m"] : nil;
     self.pageFullscreen = [dictionary[@"fs"] boolValue];
+    self.pageTitle = [dictionary[@"ti"] isKindOfClass:NSString.class] ? dictionary[@"ti"] : nil;
+    NSArray *bg = [dictionary[@"bg"] isKindOfClass:NSArray.class] ? dictionary[@"bg"] : nil;
+    if (bg.count >= 3) {
+        self.pageBackgroundColor = [UIColor colorWithRed:[bg[0] doubleValue] / 255.0 green:[bg[1] doubleValue] / 255.0 blue:[bg[2] doubleValue] / 255.0 alpha:1.0];
+    }
     self.cssViewportWidth = [dictionary[@"w"] doubleValue];
     self.contentOffsetAtReport = self.scrollView != nil ? self.scrollView.contentOffset : CGPointZero;
     if (self.targetsDidChange != nil) {

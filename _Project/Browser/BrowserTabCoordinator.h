@@ -48,6 +48,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)createNewTabLoadingHomePage:(BOOL)loadHomePage;
 - (BOOL)createNewTabWithRequest:(NSURLRequest *)request;
 - (void)switchToTabAtIndex:(NSInteger)tabIndex;
+/// Adresszeile (Titel und Domain) neu setzen.
+- (void)refreshActiveTabUI;
 - (void)closeTabAtIndex:(NSInteger)tabIndex;
 - (void)recreateActiveWebViewPreservingCurrentURL;
 - (void)captureSnapshotForCurrentTab;

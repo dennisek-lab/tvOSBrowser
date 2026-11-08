@@ -37,6 +37,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 
 - (CGRect)interactiveFrameForView:(UIView *)view;
 /// Knöpfe für den magnetischen Zeiger: Rechteck in Koordinaten der Leiste und zugehörige Aktion.
+/// Farbe der Seite hinter der Leiste: passt Symbole, Schrift und Glas an (hell/dunkel).
+- (void)setPageBackgroundColor:(nullable UIColor *)color;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;
 - (void)setFocusModeActive:(BOOL)focusModeActive;
 - (nullable UIView *)preferredFocusItem;

@@ -127,13 +127,13 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     self.focusHighlightView.hidden = YES;
     [self.chromeEffectView.contentView addSubview:self.focusHighlightView];
 
-    _backImageView = [self newIconViewNamed:@"go-back-left-arrow"];
-    _refreshImageView = [self newIconViewNamed:@"refresh-button"];
-    _forwardImageView = [self newIconViewNamed:@"right-arrow-forward"];
-    _homeImageView = [self newIconViewNamed:@"house-outline"];
-    _tabsImageView = [self newIconViewNamed:@"multi-tab"];
-    _fullscreenImageView = [self newIconViewNamed:@"resize-arrows"];
-    _menuImageView = [self newIconViewNamed:@"menu-2"];
+    _backImageView = [self newIconViewWithSymbol:@"chevron.backward" fallbackImageNamed:@"go-back-left-arrow"];
+    _refreshImageView = [self newIconViewWithSymbol:@"arrow.clockwise" fallbackImageNamed:@"refresh-button"];
+    _forwardImageView = [self newIconViewWithSymbol:@"chevron.forward" fallbackImageNamed:@"right-arrow-forward"];
+    _homeImageView = [self newIconViewWithSymbol:@"house" fallbackImageNamed:@"house-outline"];
+    _tabsImageView = [self newIconViewWithSymbol:@"square.on.square" fallbackImageNamed:@"multi-tab"];
+    _fullscreenImageView = [self newIconViewWithSymbol:@"arrow.up.left.and.arrow.down.right" fallbackImageNamed:@"resize-arrows"];
+    _menuImageView = [self newIconViewWithSymbol:@"ellipsis.circle" fallbackImageNamed:@"menu-2"];
 
     _URLLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _URLLabel.text = @"tvOS Browser";
@@ -189,12 +189,37 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     [self setFocusModeActive:NO];
 }
 
-- (UIImageView *)newIconViewNamed:(NSString *)imageName {
-    UIImageView *imageView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:imageName]];
+/// SF Symbols wie in Safari, die alten Bilder nur als Rückfall.
+- (UIImageView *)newIconViewWithSymbol:(NSString *)symbolName fallbackImageNamed:(NSString *)imageName {
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *image = [UIImage systemImageNamed:symbolName withConfiguration:configuration];
+    if (image == nil) {
+        image = [UIImage imageNamed:imageName];
+    }
+    UIImageView *imageView = [[UIImageView alloc] initWithImage:[image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
     imageView.userInteractionEnabled = NO;
-    imageView.contentMode = UIViewContentModeScaleAspectFit;
+    imageView.contentMode = UIViewContentModeCenter;
+    imageView.tintColor = UIColor.whiteColor;
     imageView.alpha = 0.95;
     return imageView;
+}
+
+- (void)setPageBackgroundColor:(UIColor *)color {
+    CGFloat red = 0, green = 0, blue = 0, alpha = 0;
+    if (color == nil || ![color getRed:&red green:&green blue:&blue alpha:&alpha]) {
+        red = green = blue = 0;
+    }
+    // Relative Helligkeit: helle Seite -> dunkle Symbole und Schrift, dunkle Seite -> helle.
+    CGFloat luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    BOOL light = luminance > 0.6;
+    UIColor *foreground = light ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
+    for (UIImageView *imageView in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
+                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
+        imageView.tintColor = foreground;
+    }
+    self.URLLabel.textColor = [foreground colorWithAlphaComponent:0.75];
+    self.loadingSpinner.color = foreground;
+    self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
 }
 
 - (BrowserTopBarFocusButton *)newFocusButtonForAction:(BrowserTopBarAction)action

@@ -226,7 +226,29 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 
     NSURLRequest *request = self.activeWebView.request;
     NSString *currentURL = tab.URLString.length > 0 ? tab.URLString : request.URL.absoluteString;
-    self.topMenuView.URLLabel.text = currentURL.length > 0 ? currentURL : @"New Tab";
+    // Wie Safari kurz statt der ganzen Adresse: Seitentitel und dahinter dezent die Domain.
+    NSString *host = [NSURL URLWithString:currentURL].host ?: @"";
+    if ([host hasPrefix:@"www."]) {
+        host = [host substringFromIndex:4];
+    }
+    NSString *title = self.activeWebView.reportedPageTitle.length > 0 ? self.activeWebView.reportedPageTitle : self.activeWebView.title;
+    title = [title stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    UILabel *label = self.topMenuView.URLLabel;
+    if (title.length > 48) {
+        title = [[title substringToIndex:46] stringByAppendingString:@"…"];
+    }
+    if (title.length > 0 && host.length > 0) {
+        UIColor *color = label.textColor ?: UIColor.whiteColor;
+        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title
+                                                                                 attributes:@{NSForegroundColorAttributeName: [color colorWithAlphaComponent:0.95]}];
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  ·  " stringByAppendingString:host]
+                                                                     attributes:@{NSForegroundColorAttributeName: [color colorWithAlphaComponent:0.5]}]];
+        label.attributedText = text;
+    } else if (host.length > 0) {
+        label.text = host;
+    } else {
+        label.text = currentURL.length > 0 ? currentURL : @"Neuer Tab";
+    }
 
     if (request != nil) {
         [self.host browserTabCoordinatorUpdateTextFontSize];

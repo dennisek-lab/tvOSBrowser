@@ -619,6 +619,25 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     return self.clickTargetTracker.pageFullscreen;
 }
 
+- (NSString *)reportedPageTitle {
+    return self.clickTargetTracker.pageTitle;
+}
+
+- (void)setSurroundingColor:(UIColor *)color {
+    self.backgroundColor = color;
+    UIView *runtimeView = (UIView *)self.runtimeWebView;
+    runtimeView.backgroundColor = color;
+    SEL underPage = NSSelectorFromString(@"setUnderPageBackgroundColor:");
+    if ([runtimeView respondsToSelector:underPage]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(runtimeView, underPage, color);
+    }
+    self.scrollView.backgroundColor = color;
+}
+
+- (UIColor *)pageBackgroundColor {
+    return self.clickTargetTracker.pageBackgroundColor;
+}
+
 - (void)exitPageFullscreen {
     [self evaluateJavaScriptAsync:[BrowserClickTargetTracker exitFullscreenScript]];
 }
