@@ -32,24 +32,54 @@ static BrowserReaderState BrowserReaderStateFromResult(id result) {
     return BrowserReaderStateUnavailable;
 }
 
+const NSUInteger BrowserReaderDefaultTextLength = 6000;
+
 @implementation BrowserReaderMode
 
-+ (void)runMethod:(NSString *)method onWebView:(BrowserWebView *)webView completion:(void (^)(BrowserReaderState))completion {
+/// Ruft window.__browserReader.<call> auf (call mit Argumentliste, z. B. "check()" oder "text(6000)").
++ (void)evaluateCall:(NSString *)call onWebView:(BrowserWebView *)webView completion:(void (^)(id _Nullable result))completion {
     NSString *script = BrowserReaderInstallScript();
     if (script.length < 1000 || webView == nil) {
-        if (completion) { completion(BrowserReaderStateUnavailable); }
+        if (completion) { completion(nil); }
         return;
     }
     CGFloat viewWidth = CGRectGetWidth(webView.bounds);
     NSString *full = [NSString stringWithFormat:
         @"(function(){try{if(!window.__browserReader){window.__browserReaderViewWidth=%.0f;%@}"
-         "return window.__browserReader.%@();}catch(e){return 'e:'+e;}})()", viewWidth, script, method];
-    [webView evaluateJavaScriptAsync:full completion:^(id result) {
+         "return window.__browserReader.%@;}catch(e){return 'e:'+e;}})()", viewWidth, script, call];
+    [webView evaluateJavaScriptAsync:full completion:completion];
+}
+
++ (void)runMethod:(NSString *)method onWebView:(BrowserWebView *)webView completion:(void (^)(BrowserReaderState))completion {
+    [self evaluateCall:[method stringByAppendingString:@"()"] onWebView:webView completion:^(id result) {
 #if DEBUG
         NSLog(@"[Reader] %@ -> %@", method, result);
 #endif
         if (completion) { completion(BrowserReaderStateFromResult(result)); }
     }];
+}
+
++ (void)textForWebView:(BrowserWebView *)webView
+             maxLength:(NSUInteger)maxLength
+            completion:(void (^)(NSDictionary<NSString *, id> *))completion {
+    NSUInteger limit = maxLength > 0 ? maxLength : BrowserReaderDefaultTextLength;
+    [self evaluateCall:[NSString stringWithFormat:@"text(%lu)", (unsigned long)limit] onWebView:webView completion:^(id result) {
+        NSDictionary<NSString *, id> *info = nil;
+        if ([result isKindOfClass:NSString.class] && [(NSString *)result hasPrefix:@"{"]) {
+            NSData *data = [(NSString *)result dataUsingEncoding:NSUTF8StringEncoding];
+            id parsed = data != nil ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            info = [parsed isKindOfClass:NSDictionary.class] ? parsed : nil;
+        }
+#if DEBUG
+        NSLog(@"[Reader] text -> %@ %lu Zeichen (Seite %@)", info[@"source"] ?: result,
+              (unsigned long)[info[@"text"] length], info[@"total"] ?: @"?");
+#endif
+        if (completion) { completion(info); }
+    }];
+}
+
++ (void)textForWebView:(BrowserWebView *)webView completion:(void (^)(NSDictionary<NSString *, id> *))completion {
+    [self textForWebView:webView maxLength:BrowserReaderDefaultTextLength completion:completion];
 }
 
 + (void)checkWebView:(BrowserWebView *)webView completion:(void (^)(BrowserReaderState))completion {

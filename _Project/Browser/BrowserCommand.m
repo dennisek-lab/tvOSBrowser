@@ -190,6 +190,19 @@ static void BrowserCommandExpandPattern(NSString *pattern, NSMutableArray<NSStri
                 @"10": @[@"(vorspulen|spul vor|spule vor|skip forward|fast forward)"],
                 @"-10": @[@"(zurückspulen|spul zurück|spule zurück|skip back|rewind)"],
             } prefixes:@[]],
+            // Intelligente Funktionen (BrowserIntelligence, PLAN.md Phase 6).
+            [self commandWithName:@"summarize" title:@"Zusammenfassen" symbol:@"text.line.3.summary" argument:BrowserCommandArgumentNone video:NO
+                         patterns:@{@"": @[@"(fasse|fass) (die seite |diese seite |den artikel |den text |das |)zusammen",
+                                           @"(seite|artikel|text|) zusammenfassen", @"zusammenfassung( zeigen| anzeigen|)",
+                                           @"(worum geht es|worum gehts|was steht hier)",
+                                           @"(summarize|summarise) (this page|the page|this article|the article|this|)",
+                                           @"(summary|tldr|tl dr|give me a summary)"]}
+                         prefixes:@[]],
+            [self commandWithName:@"translate" title:@"Übersetzen" symbol:@"translate" argument:BrowserCommandArgumentNone video:NO
+                         patterns:@{@"": @[@"(übersetze|übersetz|übersetzen) (die seite |diese seite |die webseite |den artikel |das |)(ins deutsche|auf deutsch|)",
+                                           @"(seite|webseite|artikel) übersetzen", @"(auf deutsch|ins deutsche) übersetzen", @"übersetzung",
+                                           @"(translate|translate this page|translate the page|translate page|translate to german)"]}
+                         prefixes:@[]],
         ];
 #if DEBUG
         // Doppelte Phrasen wären mehrdeutig: im Debug-Build melden.

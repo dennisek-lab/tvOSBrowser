@@ -28,6 +28,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 16. [Offen/unklar](#16-offenunklar)
 17. [App-Icon und Top Shelf](#17-app-icon-und-top-shelf)
 18. [Animationen (Liquid Glass / schlicht)](#18-animationen-browsermotion)
+19. [Intelligente Funktionen: Zusammenfassen, Übersetzen](#19-intelligente-funktionen-browserintelligence)
 
 ---
 
@@ -470,6 +471,8 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 
 **Warum Overlay statt `loadHTMLString:baseURL:`.** (a) Beim Ausschalten kommt die Originalseite sofort zurück, mit Scrollstand, Formularen, laufenden Skripten, ohne Neuladen und ohne Verlauf zu verbiegen (`loadHTMLString` legt einen Verlaufseintrag an; „Zurück“ würde die Seite neu laden). (b) Die Extraktion läuft auf dem fertig gerenderten DOM (auch per Skript gebauter Inhalt, Cookie-Overlays sind bereits weg). (c) Dieselbe Herkunft: relative Bild- und Link-Adressen, Cookies und Bildschutz (Referer) funktionieren wie auf der Seite. (d) Alle Nutzerskripte (Klickziel-Tracker, Video-Hooks, Cookie-Ablehner) laufen unverändert weiter, weil es dasselbe Dokument bleibt: Links im Reader sind normale `<a>`-Elemente im Haupt-DOM und werden vom Tracker (document-end, `querySelectorAll`) gemeldet; nach dem Umschalten stößt die App `refreshClickTargets` an. Ein eigenes Reader-Dokument per `loadHTMLString` bräuchte dagegen eine neue Navigation, Tracker und Cookie-Ablehner liefen neu, das Original käme nur über Neuladen zurück. Bewusst **kein** Shadow DOM, weil der Tracker Shadow DOM nicht durchsucht und Links dort nicht einrasten würden; stattdessen `all: initial` auf dem Container, Selektoren mit `#__reader`-Präfix und `!important` für `::first-letter`/`::first-line`/`::before`/`::after` (Seitenstile wie Initialen). 
 
+**Text ohne Overlay** (für Zusammenfassen, Abschnitt 19). `+[BrowserReaderMode textForWebView:maxLength:completion:]` ruft `window.__browserReader.text(max)` auf: Readability auf einer Kopie des Dokuments, Ergebnis per `DOMParser` (inert, lädt keine Bilder) zerlegt, nur `p`/`li`/`blockquote`/`dd` ohne `nav`/`table`/`figure`/`sup`/Formulare, Fußnotenzeichen `[1]` entfernt, Absätze mit Leerzeile, auf `BrowserReaderDefaultTextLength` (6.000 Zeichen) gekürzt. Ohne Readability-Ergebnis Rückfall auf `article`/`main`/`body` (`source` = `body` bzw. `…-raw`). Rückgabe JSON `{title, site, lang, source, text, total}`; die Seite bleibt unverändert, ein laufender Reader bleibt an.
+
 **Private/fragile Stellen.** Kein privates API. Anfällig: (a) das Ausblenden per `html.__rd > body > *:not(#__reader)` bei Seiten, die Inhalt außerhalb des Body oder nach dem Einschalten neu einfügen (dann erscheint er unter/über dem Reader), (b) Seitenstile, die den Container trotz `all: initial` verändern (selten), (c) Readability kann bei Nicht-Artikeln `null` liefern: dann bleibt die Seite unverändert und der Knopf verschwindet (`toggle` gibt `n` zurück), (d) lange Seiten: `parse()` läuft synchron im Seitenthread (Sekundenbruchteile bis wenige Sekunden), (e) `loadHTMLString`-Alternative wäre der Rückfall, falls Apple Skriptausführung im Seitenkontext einschränkt.
 
 **Woran man merkt, dass es kaputt ist.** Knopf erscheint nie: `[Reader] check -> n` bzw. `e:…` in der Konsole (DEBUG), `js:typeof window.__browserReader`; `Datei fehlt: Reader/…js` heißt Ordner nicht im Paket. Reader zeigt Seite doppelt oder halb: Seitenstil schlägt durch. Links im Reader rasten nicht ein: `window.__browserTargets` prüfen (Abschnitt 4).
@@ -861,6 +864,10 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `nplayer` | Zustand des nativen Players (`debugStateLine`) | `nplayer t=… dur=… rate=… status=… live=… hls=… loader=… pipAllowed=… pipSupported=… pip=… legible=N/<Spur> sidecar=… cues=… meta=… art=…` oder `kein Player` |
 | `nseek:<S>` | nativen Player auf Sekunde *S* setzen | wie `nplayer` (Zustand davor) |
 | `nclose` | nativen Player schließen (Position geht zurück in die Seite) | wie `nplayer`, dann `Sitzung endet t=…`, `Position zurück in die Seite: …` |
+| `ai` | Intelligente Funktionen: Anbieter, Embeddings de/en, Systemsprache, abgelehnte Hosts, Sprache und Login der aktuellen Seite (Abschnitt 19) | `ai Anbieter=lokal … de: Satz-Embedding=ja\|nein …`, `ai Seite <host>: Sprache=… -> <Grund> (Hinweis=0\|1)` |
+| `summarize` | Seite zusammenfassen (wie Menü „Zusammenfassen“), Karte bleibt offen | `summarize <URL>`, dann `[Reader] text -> …`, `[AI] Satz #…`, `[AI] zusammenfassen: ok …`, `[AI] Karte: …` |
+| `translate` | Seite über translate.goog öffnen (wie Sprachbefehl „Übersetzen“) | `translate <URL> -> <Proxy-URL>`, `[AI] übersetzen …` |
+| `translate:hint` / `translate:reset` | Kapsel „Übersetzen?“ erzwingen (für Screenshots) / abgelehnte Hosts und Sitzungsliste leeren | `translate:hint <host>` / `translate:reset` |
 
 Zeichen `;` und `|` dürfen in `js:`/`url:`/`fill:` nicht vorkommen (Trenner).
 
@@ -878,6 +885,8 @@ POINTER_SELFTEST="gestures"
 POINTER_SELFTEST="parse:Reader|Starte den Reader|zurück|suche Wetter|Reader Test Vergleich;url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;cmd:reader;enter:Reader aus"
 # Aufklapp-Bereich der Adresse mit Daten füllen und öffnen
 POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wikipedia.org/;wait;favorite;url:https://www.heise.de/;wait;address;dir:down;dir:right"
+# Zusammenfassen und Übersetzen (Abschnitt 19)
+POINTER_SELFTEST="translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(device);wait;wait;ai;summarize;wait;menu;translate"
 ```
 
 ---
@@ -898,7 +907,8 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
-| `[Reader] check/toggle/exit -> a|y|n|e:…` | `BrowserReaderMode` | ja |
+| `[Reader] check/toggle/exit -> a|y|n|e:…`, `[Reader] text -> <Quelle> N Zeichen (Seite M)` | `BrowserReaderMode` | ja |
+| `[AI] zusammenfassen: …`, `[AI] Karte: …`, `[AI] Übersetzen-Hinweis <host>: <Grund> …`, `[AI] übersetzen …`, `[AI] Übersetzen abgelehnt für …`, `[AI] kontextuelles Embedding …` | `BrowserIntelligence`, `BrowserIntelligenceController` | nein (nur `[AI] Satz #…` ist DEBUG) |
 | `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
 | `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
@@ -966,4 +976,64 @@ swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
 **Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Der Regenbogen-Glow (`BrowserGlowView`) ändert seine Form beim Einrasten sofort, die Fläche federt; bei sehr unterschiedlichen Zielgrößen sieht man das kurz.
 
 **Test.** Simulator, eigenes Gerät: `defaults write io.github.tvosbrowser.app LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
+
+---
+
+## 19. Intelligente Funktionen (`BrowserIntelligence`)
+
+**Zweck.** Erste Punkte aus `PLAN.md` Phase 6: Artikel zusammenfassen (lokal, extraktiv) und Seiten übersetzen (Google-Übersetzungs-Proxy), dazu ein Hinweis „Übersetzen?“ bei fremdsprachigen Seiten. Hintergrund: Apples Sprachmodell, Translation und Writing Tools sind auf tvOS 27.2 für Apps gesperrt, `NaturalLanguage` ist verfügbar (`docs/APPLE_INTELLIGENCE.md`). Modelle lesen hier nur und schlagen vor; sie klicken nie und senden nichts ab.
+
+**Dateien.**
+- `_Project/Browser/BrowserAIProvider.h`: Protokoll `BrowserAIProvider` (`providerName`, `available`, `dominantLanguageForText:confidence:`, `summarizeText:title:maxSentences:completion:`, `diagnosticsDescription`) und Ergebnis `BrowserAISummary` (Sätze, Sprache, Verfahren, Dauer, Kandidaten). Spätere Anbieter (Mac im Heimnetz, Cloud, `SystemLanguageModel`) kommen hinter dieselbe Schnittstelle.
+- `_Project/Browser/BrowserIntelligence.h/.m`: Fassade `BrowserIntelligence` (`sharedIntelligence`, Textabruf und Zusammenfassen, Sprachprüfung der Seite, Proxy-Adresse, abgelehnte Hosts) und darin der Anbieter `BrowserNLProvider` (NaturalLanguage, eigene serielle Queue). Rein Foundation.
+- `_Project/Browser/BrowserIntelligenceController.h/.m`: Oberfläche. `BrowserSummaryCardView` (Glas-Karte), `BrowserTranslateHintView` (Glas-Kapsel), Tasten, Seitenereignisse, Selbsttest.
+- Text: `BrowserReaderMode textForWebView:` und `reader.js` `text(max)` (Abschnitt 9.1).
+- Anschlüsse (additiv): `ViewController.m` (Eigenschaft `intelligenceController`, Selbsttest-Weiche, Menütaste, Play/Pause, `webViewDidStartLoad`/`DidFinishLoad`, Tabwechsel, Host-Methoden), `BrowserMenuCoordinator` (`intelligenceMenuItems` oben in „Diese Seite“, optionale Host-Methoden `browserSummarizePage`/`browserTranslatePage`), `BrowserCommand.m` (Befehle `summarize`, `translate`), `BrowserCommandRouter` (optionale Host-Methoden `browserCommandSummarize`/`browserCommandTranslate`).
+
+**Zusammenfassen: Ablauf.**
+1. Auslöser: Menü •••, „Diese Seite“, „Zusammenfassen“; Sprachbefehl („Zusammenfassen“, „Fasse (die Seite) zusammen“, „Worum geht es“, „summarize (this page)“, „summary“); Selbsttest `summarize`. Die Karte erscheint sofort mit „Wird zusammengefasst …“.
+2. Text: `textForWebView:` (Readability, 6.000 Zeichen, etwa 1.500 Tokens). Unter 200 Zeichen: Rückmeldung „Zu wenig Text zum Zusammenfassen“, Karte zu.
+3. Anbieter (Hintergrund-Queue): Sprache (`NLLanguageRecognizer`), Sätze (`NLTokenizer`, danach deutsche Ordnungszahlen und Abkürzungen wie „am 13. September“, „z. B.“, „Nr.“ wieder zusammenfügen), Inhaltswörter als Lemma (`NLTagger`, Nomen/Verben/Adjektive). Kandidaten: 40 bis 420 Zeichen, mindestens 6 Wörter, Satzzeichen am Ende, überwiegend Buchstaben, keine Seitenbausteine (Folgen, Abo, Newsletter …).
+4. Bewertung je Satz (jeweils auf 0…1 normiert): **Zentralität** = Kosinus zum Mittelwert aller Satzvektoren (`NLEmbedding sentenceEmbeddingForLanguage:`; fehlt es, ersatzweise `NLContextualEmbedding` mit gemittelten Token-Vektoren, sofern die Modelldaten auf dem Gerät liegen), **TF-IDF-Zentroid** = Summe aus Häufigkeit im Text mal IDF der Begriffe (nur Begriffe, die mindestens zweimal vorkommen), geteilt durch Begriffszahl hoch 0,75, **Position** = 1/(1 + i/4) plus Bonus für Absatzanfänge. Gewichte 0,40/0,38/0,22 (ohne Embedding 0,68 TF-IDF/0,32 Position), Abschlag für sehr kurze Sätze, erster Satz +0,2.
+5. Auswahl: 4 Sätze (unter 14 Satzzeichen im Text), 5 (unter 30) oder 6; MMR gegen Wiederholung (Ähnlichkeit = Maximum aus 2 × Jaccard der Begriffe und Kosinus oberhalb des Durchschnitts); Sätze unter 30 % des besten Werts fallen weg, wenn noch 3 übrig bleiben; Ausgabe in Originalreihenfolge.
+6. Karte: Titel und Host, Sätze als Liste in New York (Reader-Schrift, 32 pt, bei Bedarf bis 24 pt verkleinert, bis alles passt), Fußzeile „Lokal auf dem Apple TV · N von M Sätzen · Sprache · Dauer · Zurück-Taste schließt“. Menütaste schließt (auch während der Berechnung, das Ergebnis wird dann verworfen); neue Seite und Tabwechsel schließen ebenfalls.
+
+**Glas und Bewegung.** Karte und Kapsel sind `UIVisualEffectView` mit `UIGlassEffect` (Rückfall Dunkel-Blur), dunkle Tönung 0,42 bzw. 0,38, Rand 1 pt weiß 16 %, `cornerCurve` kontinuierlich, Karte 56 pt Radius, Kapsel halbe Höhe. Auf- und Abbau über `BrowserMotion glassAppear:`/`glassDisappear:` (Liquid Glass: Glas materialisiert, Karte federt aus 0,94, Kapsel aus 0,9; schlicht: Alpha). Wechsel Laden → Ergebnis: Inhalt sofort an die Endposition, Glasfläche federt mit `BrowserMotionKindStandard` auf die neue Höhe, Inhalt blendet mit `Fade` ein.
+
+**Übersetzen.** Adresse `https://<host>.translate.goog/<pfad>?<query>&_x_tr_sl=auto&_x_tr_tl=<sys>&_x_tr_hl=<sys>&_x_tr_pto=wapp` (Host: Bindestriche verdoppeln, Punkte zu Bindestrichen; bei `http` zusätzlich `_x_tr_sch=http`; keine IP-Adressen). Zielsprache ist die Systemsprache (`NSLocale.preferredLanguages`, Rückfall `de`). Auslöser: Menü „Übersetzen“, Sprachbefehl („Übersetzen“, „Übersetze (die Seite)“, „auf Deutsch übersetzen“, „translate (this page)“), Kapsel, Selbsttest `translate`. Bei Menü und Sprachbefehl wird vorher die Sprache geprüft: Seiten in der Systemsprache werden nicht übersetzt („Seite ist schon auf Deutsch“); auf translate.goog selbst „Seite ist schon übersetzt“.
+
+**Hinweis „Übersetzen?“.** 1,5 s nach `webViewDidFinishLoad` (nur aktiver Tab, Adresse unverändert, nicht mehr ladend) liefert ein kleines Skript: Passwortfeld, Anmelde-Adresse (`login`, `signin`, `anmelden`, `oauth`, `sso` …), `lang`-Attribut und 2.500 Zeichen Text aus `article`/`main`/`body`. Die Kapsel erscheint nur, wenn: kein Proxy, Host nicht abgelehnt, kein Login, mindestens 200 Zeichen, Sprache sicher (≥ 0,65) und ungleich der Systemsprache; pro Host höchstens einmal je App-Sitzung. Play/Pause übersetzt, die Zurück-Taste lehnt für den Host dauerhaft ab (`NSUserDefaults` `TranslateDeclinedHosts`, Rückmeldung „Für <host> nicht mehr fragen“), nach 10 s blendet sie ohne Ablehnung aus. Logzeile immer: `[AI] Übersetzen-Hinweis <host>: <Grund> (Sprache=… lang=… Text=… Login=…)`.
+
+**Messwerte (Simulator „AI-Test“, Apple TV 4K 3. Gen., tvOS 27.2, auf dem Mac, 8. November 2026).**
+
+| Seite | Text (Zeichen) | Sätze | Verfahren | Textabruf | Rechnen |
+|:--|:--|:--|:--|:--|:--|
+| de.wikipedia.org/wiki/Apple_TV | 6.000 von 18.620 | 6 von 41 | TF-IDF (kein deutsches Satz-Embedding) | 16–23 ms | 9–85 ms |
+| heise.de-Meldung (TU Dresden, Reaktor) | 2.321 | 5 von 15 | TF-IDF | 19 ms | 67 ms |
+| en.wikipedia.org/wiki/Apple_TV_(device) | 6.000 von 47.845 | 6 von 46 | Satz-Embedding + TF-IDF | 50 ms | 518 ms (erster Aufruf, lädt das Embedding) |
+| theverge.com, Hands-on (Halskette) | 6.000 von 7.644 | 6 von 47 | Satz-Embedding + TF-IDF | 14 ms | 479 ms |
+| theverge.com, Kurzmeldung (Apple, Steuern) | 508 | 3 von 3 (Baustein „Follow topics …“ gefiltert) | Satz-Embedding + TF-IDF | 10 ms | 221 ms |
+
+Embeddings im Simulator (Schritt `ai`): Englisch Satz-Embedding ja (dim 512) und Wort-Embedding ja (dim 300); Deutsch weder Satz- noch Wort-Embedding; `NLContextualEmbedding` für beide vorhanden (dim 512), aber ohne Modelldaten („Download nötig“), eine Anforderung kam im Test nicht zurück. **Am Apple TV messen** bleibt offen (Embeddings de/en, Dauer, Speicher).
+
+**Bewertung.** Lexika und Nachrichten (Wikipedia, heise): brauchbar bis gut; Definition, Kernaussage und zwei, drei Fakten stehen in der Karte, auf Deutsch auch ohne Embedding, weil Meldungen die Kernaussage vorne haben. Erzählende Texte (Hands-on, Kolumnen): schwach, die Sätze stehen ohne Zusammenhang da, die eigentliche Wertung fehlt oft. Lange Artikel werden nur über die ersten 6.000 Zeichen zusammengefasst. Die Zusammenfassung wird nicht übersetzt (englische Seite → englische Sätze). Screenshots: `docs/ai-screens/`.
+
+**Grenzen und Fallen.**
+- Deutsch hat im Simulator kein Satz-Embedding; dann nur TF-IDF und Position. Ob das Gerät eines hat oder die kontextuellen Modelldaten lädt, ist offen.
+- translate.goog: Google sieht die Seite; Logins und Cookies der Originalseite gelten dort nicht (deshalb kein Hinweis auf Login-Seiten). Manche Seiten sperren den Proxy (heise.de leitet auf `tollbit-heise-de.translate.goog` um, eine Bot-Bezahlschranke). Google übersetzt nachladend; eine übersetzte Seite zusammenzufassen liefert gemischte Sprachen.
+- Readability liefert bei Teaser- und Abo-Seiten nur den sichtbaren Teil (Kolumne auf theverge.com: 1.643 Zeichen).
+- Solange die Kapsel sichtbar ist (10 s), gehört Play/Pause ihr, auch wenn der Zeiger auf einem Video steht.
+
+**Woran man merkt, dass es kaputt ist.** `[Reader] text -> (null)` bzw. `e:…`: Reader-Skripte fehlen oder die Seite blockiert Skripte. `[AI] zusammenfassen: fehlgeschlagen … Kandidaten=0`: Text zu kurz oder Satzfilter zu streng (Sätze ohne Satzzeichen am Ende zählen nicht). Kapsel erscheint nie: Grund in `[AI] Übersetzen-Hinweis …`; `abgelehnt` mit `translate:reset` zurücksetzen. Proxy-Seite leer oder Fehlerseite: Google hat das Adressschema geändert, `translationProxyURLForURL:targetLanguage:` prüfen.
+
+**Test.** Eigener Simulator, Build mit `-derivedDataPath ../build-sim-ai`, Start mit `-AppleLanguages "(de)" -AppleLocale de_DE` (sonst ist die Systemsprache Englisch und der Hinweis erscheint auf deutschen Seiten):
+```
+SIMCTL_CHILD_POINTER_SELFTEST='url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;ai;summarize'
+# Hinweis annehmen
+SIMCTL_CHILD_POINTER_SELFTEST='translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(device);wait;wait;playpause'
+SIMCTL_CHILD_POINTER_SELFTEST='parse:Fasse zusammen|summarize this page|Übersetze die Seite;url:https://www.heise.de/;wait;enter:Fasse zusammen'
+```
+Screenshots mit `xcrun simctl io <UDID> screenshot …` (nie `booted`, wenn mehrere Simulatoren laufen).
+
+**Aktualisieren.** Gewichte und Schwellen stehen in `summarySyncForText:` (Kommentare 4a bis 5), Satzlängen und Bausteinfilter in `BrowserNLSentenceLooksUsable`, Abkürzungen in `BrowserNLShouldJoinSentences`, Befehlsphrasen in `BrowserCommand.m`. Neuer Anbieter: Klasse mit `BrowserAIProvider`, in `+[BrowserIntelligence sharedIntelligence]` wählen.
 

@@ -58,6 +58,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// "toggle", "play", "pause", "seek:±N" (wie BrowserWebView sendVideoCommand:).
 - (void)browserCommandSendVideoCommand:(NSString *)command;
 
+@optional
+/// Intelligente Funktionen (BrowserIntelligenceController): Karte „Zusammenfassung“ zeigen; die Karte ist die Rückmeldung.
+- (void)browserCommandSummarize;
+/// Seite über translate.goog öffnen. NO, wenn nicht möglich (Rückmeldung kommt vom Controller).
+- (BOOL)browserCommandTranslate;
+
 @end
 
 @interface BrowserCommandRouter : NSObject

@@ -83,6 +83,8 @@
 		1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */ = {isa = PBXBuildFile; fileRef = BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */; };
 		A74DEB982B0F00C3BF821208 /* BrowserWebSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */; };
 		33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */ = {isa = PBXBuildFile; fileRef = 5DC453250BE8BA6BD64CDA80 /* WebSubtitles */; };
+		B6187A3DDA79B2A1F2FF8855 /* BrowserIntelligence.m in Sources */ = {isa = PBXBuildFile; fileRef = 6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */; };
+		8FFB577CAA8EACB8C4191E1A /* BrowserIntelligenceController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -214,6 +216,11 @@
 		2A7416FF6924CC55F4768E04 /* BrowserWebSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebSubtitleController.h; sourceTree = "<group>"; };
 		067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWebSubtitleController.m; sourceTree = "<group>"; };
 		5DC453250BE8BA6BD64CDA80 /* WebSubtitles */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebSubtitles; sourceTree = "<group>"; };
+		26536AFD3F850970966D2EFA /* BrowserAIProvider.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAIProvider.h; sourceTree = "<group>"; };
+		A8759B4C2ADE7AC854368C23 /* BrowserIntelligence.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserIntelligence.h; sourceTree = "<group>"; };
+		6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserIntelligence.m; sourceTree = "<group>"; };
+		FD9D1B2F0C5D6753C240B6AF /* BrowserIntelligenceController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserIntelligenceController.h; sourceTree = "<group>"; };
+		2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserIntelligenceController.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -404,6 +411,11 @@
 				BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */,
 				2A7416FF6924CC55F4768E04 /* BrowserWebSubtitleController.h */,
 				067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */,
+				26536AFD3F850970966D2EFA /* BrowserAIProvider.h */,
+				A8759B4C2ADE7AC854368C23 /* BrowserIntelligence.h */,
+				6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */,
+				FD9D1B2F0C5D6753C240B6AF /* BrowserIntelligenceController.h */,
+				2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -625,6 +637,8 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				8FFB577CAA8EACB8C4191E1A /* BrowserIntelligenceController.m in Sources */,
+				B6187A3DDA79B2A1F2FF8855 /* BrowserIntelligence.m in Sources */,
 				87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */,
 				02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */,
 				A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */,

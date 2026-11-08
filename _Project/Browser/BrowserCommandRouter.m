@@ -197,6 +197,17 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
         [host browserCommandShowMenu];
     } else if ([key isEqualToString:@"help"]) {
         [host browserCommandShowHelp];
+    } else if ([key isEqualToString:@"summarize"] || [key isEqualToString:@"translate"]) {
+        // Rückmeldung (Karte bzw. Toast) kommt vom BrowserIntelligenceController.
+        BOOL summarize = [key isEqualToString:@"summarize"];
+        if (summarize && [host respondsToSelector:@selector(browserCommandSummarize)]) {
+            [host browserCommandSummarize];
+        } else if (!summarize && [host respondsToSelector:@selector(browserCommandTranslate)]) {
+            ok = [host browserCommandTranslate];
+        } else {
+            ok = NO;
+            feedback = @"Befehl nicht verfügbar";
+        }
     } else if (command.requiresVideo && ![host browserCommandPageHasVideo]) {
         ok = NO;
         feedback = @"Kein Video auf der Seite";

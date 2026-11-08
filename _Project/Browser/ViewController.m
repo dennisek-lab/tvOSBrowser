@@ -13,6 +13,7 @@
 #import "BrowserGuideViewController.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
+#import "BrowserIntelligenceController.h"
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
 #import "BrowserNavigationService.h"
@@ -40,6 +41,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @interface ViewController () <BrowserCommandHost, BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
 
 @property (nonatomic) BrowserCommandRouter *commandRouter;
+@property (nonatomic) BrowserIntelligenceController *intelligenceController;
 @property (nonatomic) BrowserDOMInteractionService *domInteractionService;
 @property (nonatomic) BrowserMenuCoordinator *menuCoordinator;
 @property (nonatomic) BrowserNavigationService *navigationService;
@@ -86,6 +88,14 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     self.viewModel.fullscreenVideoPlaybackEnabled = self.preferencesStore.fullscreenVideoPlaybackEnabled;
 
     self.commandRouter = [[BrowserCommandRouter alloc] initWithHost:self];
+    __weak typeof(self) weakIntelligenceSelf = self;
+    self.intelligenceController = [[BrowserIntelligenceController alloc] initWithContainerProvider:^UIView *{
+        return weakIntelligenceSelf.view.window ?: weakIntelligenceSelf.view;
+    } webViewProvider:^BrowserWebView *{
+        return weakIntelligenceSelf.webview;
+    } feedbackHandler:^(NSString *text, NSString *symbolName, BOOL success) {
+        [weakIntelligenceSelf.commandRouter showFeedback:text symbolName:symbolName success:success];
+    }];
     self.domInteractionService = [BrowserDOMInteractionService new];
     self.navigationService = [[BrowserNavigationService alloc] initWithPreferencesStore:self.preferencesStore];
     self.sessionStore = [BrowserSessionStore new];
@@ -179,6 +189,9 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self dismissViewControllerAnimated:NO completion:nil];
         [steps enumerateObjectsUsingBlock:^(NSString *step, NSUInteger index, __unused BOOL *stop) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((index * 3 + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if ([self.intelligenceController runSelfTestStep:step]) {
+                    return; // ai, summarize, translate, translate:hint, translate:reset
+                }
                 if ([step isEqualToString:@"click"]) {
                     NSLog(@"[SelfTest] click");
                     [self browserHandlePrimaryAction];
@@ -1223,6 +1236,24 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [self toggleReaderMode];
 }
 
+#pragma mark Intelligente Funktionen (BrowserIntelligenceController)
+
+- (void)browserCommandSummarize {
+    [self.intelligenceController summarizeCurrentPage];
+}
+
+- (BOOL)browserCommandTranslate {
+    return [self.intelligenceController translateCurrentPage];
+}
+
+- (void)browserSummarizePage {
+    [self.intelligenceController summarizeCurrentPage];
+}
+
+- (void)browserTranslatePage {
+    [self.intelligenceController translateCurrentPage];
+}
+
 - (void)browserCommandBeginAddressEditing {
     [self beginAddressEditing];
 }
@@ -1483,6 +1514,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [self.remoteInputController pointerTargetsDidChange];
     [self.topMenuView setReaderAvailable:NO active:NO];
     [self updateReaderAvailability];
+    [self.intelligenceController activeWebViewDidChange];
     UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
     [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
     [self applyPageColorOfWebView:current];
@@ -1688,6 +1720,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self.webview exitPageFullscreen];
         return YES;
     }
+    // Karte „Zusammenfassung“ schließen bzw. „Übersetzen?“ für diesen Host ablehnen.
+    if (self.presentedViewController == nil && [self.intelligenceController handleMenuPress]) {
+        return YES;
+    }
     if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return YES;
@@ -1730,6 +1766,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 }
 
 - (void)browserRemoteInputControllerHandlePlayPausePress {
+    // Hinweis „Übersetzen?“ sichtbar: Play/Pause nimmt ihn an.
+    if (self.presentedViewController == nil && self.addressPanel == nil && [self.intelligenceController handlePlayPausePress]) {
+        return;
+    }
     if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return;
@@ -1947,6 +1987,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         // Neue Seite: Reader zu Ende, Lesbarkeit unbekannt.
         self.readerCheckGeneration++;
         [self.topMenuView setReaderAvailable:NO active:NO];
+        [self.intelligenceController pageDidStartLoadInWebView:webView];
     }
 }
 
@@ -1954,6 +1995,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [self.tabCoordinator webViewDidFinishLoad:webView];
     if (webView == self.webview) {
         [self scheduleReaderAvailabilityChecks];
+        [self.intelligenceController pageDidFinishLoadInWebView:webView];
     }
     if (webView == self.webview && self.webview.request.URL != nil) {
         [BrowserHistoryStore.sharedStore recordVisitWithURL:self.webview.request.URL title:[self currentSiteDisplayName]];

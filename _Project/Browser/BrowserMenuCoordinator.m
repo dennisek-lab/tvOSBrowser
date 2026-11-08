@@ -936,6 +936,22 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// „Zusammenfassen“ und „Übersetzen“ (BrowserIntelligenceController); nach dem Schließen des Menüs ausgeführt.
+- (NSArray<BrowserAdvancedMenuItem *> *)intelligenceMenuItems {
+    NSMutableArray<BrowserAdvancedMenuItem *> *items = [NSMutableArray array];
+    if ([self.host respondsToSelector:@selector(browserSummarizePage)]) {
+        [items addObject:[self advancedMenuItemWithTitle:@"Zusammenfassen" detail:@"Lokal auf dem Gerät" handler:^{
+            [self.host browserSummarizePage];
+        }]];
+    }
+    if ([self.host respondsToSelector:@selector(browserTranslatePage)]) {
+        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzen" detail:@"Google" handler:^{
+            [self.host browserTranslatePage];
+        }]];
+    }
+    return items;
+}
+
 - (BrowserAdvancedMenuItem *)setCurrentPageAsHomePageMenuItem {
     return [self advancedMenuItemWithTitle:@"Diese Seite als Startseite"
                                      style:UIAlertActionStyleDefault
@@ -1278,13 +1294,13 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 
     return @[
         [BrowserAdvancedMenuSection sectionWithTitle:@"Diese Seite"
-                                               items:@[
+                                               items:[[self intelligenceMenuItems] arrayByAddingObjectsFromArray:@[
             reloadItem,
             [self pageZoomMenuItem],
             [self adBlockSiteMenuItem],
             [self cookieBannerSiteMenuItem],
             [self setCurrentPageAsHomePageMenuItem],
-        ]],
+        ]]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Navigation"
                                                items:@[
             [self homePageMenuItem],

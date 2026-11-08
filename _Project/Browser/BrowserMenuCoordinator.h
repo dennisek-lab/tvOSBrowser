@@ -26,6 +26,11 @@
 /// Untertitel für Videos in der Webseite (Weg B) ein-/ausschalten; speichert die Einstellung und startet/stoppt sofort.
 - (void)browserSetWebSubtitlesEnabled:(BOOL)enabled;
 
+@optional
+/// Intelligente Funktionen (BrowserIntelligenceController), Menü „Diese Seite“.
+- (void)browserSummarizePage;
+- (void)browserTranslatePage;
+
 @end
 
 @interface BrowserMenuCoordinator : NSObject

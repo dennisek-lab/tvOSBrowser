@@ -161,9 +161,68 @@
     if (window.__browserTargets && window.__browserTargets.report) { setTimeout(function () { window.__browserTargets.report(); }, 50); }
   }
 
+  // Reiner Artikeltext für Zusammenfassen/Übersetzen, ohne Overlay. Absätze durch Leerzeile getrennt,
+  // Überschriften, Tabellen, Bildunterschriften und Fußnotenzeichen fehlen. Ohne Readability-Ergebnis:
+  // Text aus <article>/<main>/<body> ohne Navigation. Rückgabe JSON {title, site, lang, source, text, total}.
+  function articleText(max) {
+    max = max > 0 ? max : 6000;
+    var article = null;
+    try { article = new Readability(document.cloneNode(true), { charThreshold: 200 }).parse(); } catch (e) { article = null; }
+    var root = null;
+    var source = 'reader';
+    if (article && article.content) {
+      // DOMParser: inertes Dokument, lädt keine Bilder und führt nichts aus.
+      try { root = new DOMParser().parseFromString(article.content, 'text/html').body; } catch (e) { root = null; }
+    }
+    if (!root) {
+      source = 'body';
+      root = document.querySelector('article, main, [role=main]') || document.body;
+    }
+    var skip = 'nav, header, footer, aside, table, figure, figcaption, sup, style, script, noscript, form, button, #__reader .rd-meta, #__reader .rd-foot, #__reader .rd-site';
+    var blocks = [];
+    var total = 0;
+    var nodes = root ? root.querySelectorAll('p, li, blockquote, dd') : [];
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.querySelector('p, li, blockquote')) { continue; }
+      if (node.closest && node.closest(skip)) { continue; }
+      var copy = node.cloneNode(true);
+      var noise = copy.querySelectorAll('sup, style, script, .mw-editsection');
+      for (var j = 0; j < noise.length; j++) { noise[j].remove(); }
+      var text = (copy.textContent || '').replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+      if (text.length < 2) { continue; }
+      total += text.length;
+      blocks.push(text);
+    }
+    if (blocks.length === 0 && root) {
+      var fallback = (root.innerText || root.textContent || '').replace(/[ \t]+/g, ' ').trim();
+      blocks = fallback.split(/\n{2,}|\n/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 1; });
+      total = fallback.length;
+      source = source + '-raw';
+    }
+    var out = [];
+    var used = 0;
+    for (var k = 0; k < blocks.length && used < max; k++) {
+      var b = blocks[k];
+      if (used + b.length > max) { b = b.slice(0, max - used); }
+      out.push(b);
+      used += b.length + 2;
+    }
+    var host = location.hostname.replace(/^www\./, '');
+    return JSON.stringify({
+      title: (article && article.title) || document.title || host,
+      site: (article && article.siteName) || host,
+      lang: document.documentElement.lang || (article && article.lang) || '',
+      source: source,
+      text: out.join('\n\n'),
+      total: total
+    });
+  }
+
   window.__browserReader = {
     // 'a' = Reader aktiv, 'y' = Seite lesbar, 'n' = nicht lesbar
     check: function () { return state.active ? 'a' : (readable() ? 'y' : 'n'); },
+    text: function (max) { return articleText(max); },
     toggle: function () {
       if (state.active) { exit(); return this.check(); }
       return enter() ? 'a' : 'n';
