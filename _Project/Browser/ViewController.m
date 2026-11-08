@@ -6,6 +6,7 @@
 //  Improved by Jip van Akker on 14/10/2015 through 10/01/2019
 //
 
+#import "BrowserHistoryStore.h"
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
 #import "BrowserNavigationService.h"
@@ -14,6 +15,7 @@
 #import "BrowserPreferencesStore.h"
 #import "BrowserRemoteInputController.h"
 #import "BrowserSessionStore.h"
+#import "BrowserStartViewController.h"
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
 #import "BrowserTabOverviewController.h"
@@ -395,7 +397,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             [self browserShowTabOverview];
             break;
         case BrowserTopBarActionURL:
-            [self showInputURLorSearchGoogle];
+            [self showStartView];
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
@@ -569,6 +571,32 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     }];
 }
 
+/// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
+- (NSString *)currentSiteDisplayName {
+    NSString *name = self.webview.reportedSiteName;
+    if (name.length == 0) {
+        name = self.webview.reportedPageTitle;
+    }
+    if (name.length == 0) {
+        name = self.webview.title;
+    }
+    return name;
+}
+
+/// Startansicht mit Suchfeld, Zuletzt besucht, Meistbesucht und Favoriten.
+- (void)showStartView {
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    BrowserStartViewController *startViewController = [BrowserStartViewController new];
+    startViewController.modalPresentationStyle = UIModalPresentationFullScreen;
+    __weak typeof(self) weakSelf = self;
+    startViewController.openURLHandler = ^(NSURL *url) {
+        [weakSelf.webview loadRequest:[NSURLRequest requestWithURL:url]];
+    };
+    [self presentViewController:startViewController animated:YES completion:nil];
+}
+
 - (void)requestURLorSearchInput {
     NSString *host = self.webview.request.URL.host;
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Schnellmenü"
@@ -581,6 +609,20 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf showInputURLorSearchGoogle];
     }]];
+
+    NSURL *currentURL = self.webview.request.URL;
+    if ([BrowserHistoryStore hostKeyForURL:currentURL] != nil) {
+        BOOL isFavorite = [BrowserHistoryStore.sharedStore isFavoriteURL:currentURL];
+        [alertController addAction:[UIAlertAction actionWithTitle:isFavorite ? @"Aus Favoriten entfernen" : @"Zu Favoriten hinzufügen"
+                                                            style:UIAlertActionStyleDefault
+                                                          handler:^(__unused UIAlertAction *action) {
+            if (isFavorite) {
+                [BrowserHistoryStore.sharedStore removeFavoriteWithURL:currentURL];
+            } else {
+                [BrowserHistoryStore.sharedStore addFavoriteWithURL:currentURL title:[weakSelf currentSiteDisplayName]];
+            }
+        }]];
+    }
 
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
         [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
@@ -1130,6 +1172,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 - (void)webViewDidFinishLoad:(id)webView {
     [self.tabCoordinator webViewDidFinishLoad:webView];
+    if (webView == self.webview && self.webview.request.URL != nil) {
+        [BrowserHistoryStore.sharedStore recordVisitWithURL:self.webview.request.URL title:[self currentSiteDisplayName]];
+    }
     if (self.tabOverviewController.visible) {
         BrowserTabViewModel *tab = [self.tabCoordinator tabForWebView:webView];
         NSInteger tabIndex = tab != nil ? [self.viewModel.tabs indexOfObject:tab] : NSNotFound;
