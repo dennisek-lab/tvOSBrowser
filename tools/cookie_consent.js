@@ -5,12 +5,29 @@
   if (window.__browserConsentOff || window.__browserConsent) { return; }
   window.__browserConsent = 1;
 
-  var HOST = location.hostname, TOP = (window === window.top);
-  var finished = false, started = Date.now(), settingsClicks = 0, settingsAt = 0, saveTries = 0;
+  var TOP = (window === window.top);
+  function hostName() {
+    if (location.hostname) { return location.hostname; }
+    try { if (window.top.location.hostname) { return window.top.location.hostname; } } catch (e) {}
+    try { if (window.parent.location.hostname) { return window.parent.location.hostname; } } catch (e) {}
+    return 'about:blank';
+  }
+  var HOST = hostName();
+  var finished = false, started = Date.now();
   var purSeen = false, wallLocal = false, scheduled = false, observer = null, timers = [];
 
-  function post(cmp, action) {
-    try { webkit.messageHandlers.browserConsent.postMessage({ cmp: cmp, action: action, host: HOST, top: TOP }); } catch (e) {}
+  function post(cmp, action, detail) {
+    try { webkit.messageHandlers.browserConsent.postMessage({ cmp: cmp, action: action, host: HOST, top: TOP, detail: detail || '' }); } catch (e) {}
+  }
+  var lastClicked = '';
+  function describe(el) {
+    var t = '';
+    try { t = (el.innerText || el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '') + ''; } catch (e) {}
+    t = t.replace(/\s+/g, ' ').trim().slice(0, 40);
+    var c = '';
+    try { c = typeof el.className === 'string' ? el.className.trim().split(/\s+/).slice(0, 3).join('.') : ''; } catch (e) {}
+    var id = ''; try { id = el.id ? '#' + el.id : ''; } catch (e) {}
+    return 'clicked: "' + t + '" ' + String(el.tagName || '').toLowerCase() + id + (c ? '.' + c : '');
   }
 
   // ---------- Hilfsfunktionen ----------
@@ -23,12 +40,24 @@
     if (!t.trim()) { t = (el.getAttribute('aria-label') || el.getAttribute('title') || '') + ''; }
     return t;
   }
-  function vis(el) {
+  function vis(el, strict) {
     try {
       var r = el.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) { return false; }
-      var s = getComputedStyle(el);
-      if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.05) { return false; }
+      var w = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+      var s = w.getComputedStyle(el);
+      if (s.display === 'none' || s.visibility === 'hidden' || s.visibility === 'collapse' || parseFloat(s.opacity) < 0.05) { return false; }
+      if (strict) {
+        // Mitte des Elements muss im Viewport liegen und nicht von einem fremden Element verdeckt sein.
+        var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        if (cx < 0 || cy < 0 || cx > w.innerWidth || cy > w.innerHeight) { return false; }
+        var top = el.ownerDocument.elementFromPoint(cx, cy);
+        if (!top) { return false; }
+        if (top !== el && !el.contains(top) && !(top.contains && top.contains(el))) {
+          var root = el.getRootNode && el.getRootNode();
+          if (!(root && root.host && (top === root.host || root.host.contains(top)))) { return false; }
+        }
+      }
       return true;
     } catch (e) { return false; }
   }
@@ -55,11 +84,18 @@
   function click(el) {
     if (isAccept(el)) { return false; }
     try {
+      var w = (el.ownerDocument && el.ownerDocument.defaultView) || window;
       el.scrollIntoView && el.scrollIntoView({ block: 'nearest' });
-      ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach(function (t) {
-        try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })); } catch (e) {}
+      var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      lastClicked = describe(el);
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
+        var init = { bubbles: true, cancelable: true, view: w, clientX: x, clientY: y, button: 0, buttons: t.indexOf('down') > 0 ? 1 : 0 };
+        try {
+          var ev = (t.indexOf('pointer') === 0 && w.PointerEvent) ? new w.PointerEvent(t, init) : new w.MouseEvent(t, init);
+          el.dispatchEvent(ev);
+        } catch (e) {}
       });
-      el.click();
+      if (typeof el.click === 'function') { el.click(); }
       return true;
     } catch (e) { return false; }
   }
@@ -84,8 +120,6 @@
     /^rechazar( todo| todas| todas las cookies)?$/,
     /^rifiuta( tutto| tutti)?$/
   ];
-  var SETTINGS = /^(cookie-?einstellungen|einstellungen( anpassen| verwalten| ändern)?|anpassen|individuelle einstellungen|mehr optionen|weitere optionen|optionen|zwecke( und anbieter)? (verwalten|anzeigen)|präferenzen|auswahl anpassen|datenschutzeinstellungen|konfigurieren|verwalten|cookie settings|settings|manage( cookies| preferences| options| settings)?|more options|customi[sz]e( settings)?|preferences|options|show purposes|cookie preferences|mehr infos?|details)$/;
-  var SAVE = /^((auswahl|einstellungen|meine auswahl|änderungen|meine einstellungen) )?(speichern|bestätigen|übernehmen)( (und|&) (schließen|beenden|weiter|fortfahren))?$|^speichern (und|&) (beenden|schließen|weiter)$|^(save|confirm)( my)?( choices| preferences| settings| selection)?( (and|&) (close|exit|continue))?$|^save (&|and) exit$|^confirm my choices$/;
   // Bezahl-/Abo-Texte: nie anklicken
   var BAD = /(\babo\b|abonn|subscri|\bpur\b|pur-|€|\bmonat|kostenpflichtig|bezahl|jetzt kaufen|premium|\bplus\b)/;
   var COOKIEWORDS = /cookie|datenschutz|privacy|consent|einwilligung|tracking|cmp|gdpr|dsgvo/i;
@@ -136,24 +170,16 @@
   // Je Eintrag: Name, Selektoren für „Ablehnen“, optionaler JS-Aufruf. Reihenfolge = Priorität.
   var CMPS = [
     { n: 'onetrust', sel: ['#onetrust-reject-all-handler', '.ot-pc-refuse-all-handler', 'button.ot-bnr-reject-all'],
-      js: function () { if (window.OneTrust && typeof OneTrust.RejectAll === 'function' && firstVisible('#onetrust-banner-sdk,#onetrust-pc-sdk')) { OneTrust.RejectAll(); return true; } return false; },
-      settings: '#onetrust-pc-btn-handler', save: '.save-preference-btn-handler' },
+      js: function () { if (window.OneTrust && typeof OneTrust.RejectAll === 'function' && firstVisible('#onetrust-banner-sdk,#onetrust-pc-sdk')) { OneTrust.RejectAll(); return true; } return false; } },
     { n: 'usercentrics', sel: ['[data-testid=uc-deny-all-button]', 'button#deny', '.uc-deny-all-button'],
-      js: function () { if (window.UC_UI && typeof UC_UI.denyAllConsents === 'function' && UC_UI.isInitialized && UC_UI.isInitialized() && firstVisible('#usercentrics-root')) { var p = UC_UI.denyAllConsents(); try { p.then(function () { UC_UI.closeCMP(); }); } catch (e) {} return true; } return false; },
-      settings: '[data-testid=uc-more-button]', save: '[data-testid=uc-save-button]' },
-    { n: 'sourcepoint', sel: ['button.sp_choice_type_13', 'button.sp_choice_type_REJECT_ALL', 'button[title="Alle ablehnen" i]', 'button[title="Reject All" i]', 'button[title="Ablehnen" i]', 'button[title="Nur notwendige" i]'],
-      settings: 'button.sp_choice_type_12, button[title*="Einstellungen" i], button[title*="Optionen" i], button[title*="Options" i], button[title*="Manage" i]',
-      save: 'button.sp_choice_type_SAVE_AND_EXIT, button[title*="Speichern" i], button[title*="Save" i]' },
+      js: function () { if (window.UC_UI && typeof UC_UI.denyAllConsents === 'function' && UC_UI.isInitialized && UC_UI.isInitialized() && firstVisible('#usercentrics-root')) { var p = UC_UI.denyAllConsents(); try { p.then(function () { UC_UI.closeCMP(); }); } catch (e) {} return true; } return false; } },
+    { n: 'sourcepoint', sel: ['button.sp_choice_type_13', 'button.sp_choice_type_REJECT_ALL', 'button[title="Alle ablehnen" i]', 'button[title="Reject All" i]', 'button[title="Ablehnen" i]', 'button[title="Nur notwendige" i]'] },
     { n: 'didomi', sel: ['#didomi-notice-disagree-button', '.didomi-continue-without-agreeing', 'button.didomi-components-button--disagree'],
       js: function () { if (window.Didomi && typeof Didomi.setUserDisagreeToAll === 'function' && firstVisible('#didomi-host,.didomi-popup-container,#didomi-notice')) { Didomi.setUserDisagreeToAll(); return true; } return false; } },
-    { n: 'quantcast', sel: ['.qc-cmp2-summary-buttons button[mode=secondary][class*=reject i]', '.qc-cmp2-footer button[mode=secondary]', 'button.qc-cmp2-reject-all'],
-      settings: '.qc-cmp2-summary-buttons button[mode=secondary]', save: '.qc-cmp2-footer button[mode=primary], button[class*=save i]' },
-    { n: 'funding-choices', sel: ['.fc-cta-do-not-consent', '.fc-consent-root .fc-secondary-button.fc-cta-do-not-consent'],
-      settings: '.fc-cta-manage-options', save: '.fc-confirm-choices' },
-    { n: 'cookiebot', sel: ['#CybotCookiebotDialogBodyButtonDecline', '#CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll', '#CybotCookiebotDialogBodyLevelButtonDecline'],
-      settings: '#CybotCookiebotDialogBodyLevelButtonCustomize', save: '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowallSelection' },
-    { n: 'trustarc', sel: ['#truste-consent-required', 'a.rejectAll', 'button.rejectAll', '.pdynamicbutton .required'],
-      settings: '#truste-show-consent, .truste-show-consent, a.show_preferences', save: 'a.submit, button.submit' },
+    { n: 'quantcast', sel: ['.qc-cmp2-summary-buttons button[mode=secondary][class*=reject i]', '.qc-cmp2-footer button[mode=secondary]', 'button.qc-cmp2-reject-all'] },
+    { n: 'funding-choices', sel: ['.fc-cta-do-not-consent', '.fc-consent-root .fc-secondary-button.fc-cta-do-not-consent'] },
+    { n: 'cookiebot', sel: ['#CybotCookiebotDialogBodyButtonDecline', '#CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll', '#CybotCookiebotDialogBodyLevelButtonDecline'] },
+    { n: 'trustarc', sel: ['#truste-consent-required', 'a.rejectAll', 'button.rejectAll', '.pdynamicbutton .required'] },
     { n: 'consentmanager', sel: ['.cmpboxbtnno', '#cmpwelcomebtnno .cmpboxbtn', '.cmpboxbtnreject'],
       js: function () { if (typeof window.__cmp === 'function' && firstVisible('#cmpbox,#cmpbox2,.cmpwrapper')) { window.__cmp('setConsent', 0); return true; } return false; } },
     { n: 'borlabs', sel: ['._brlbs-refuse-btn a', '._brlbs-refuse-btn', '.brlbs-btn-accept-only-essential', '[data-cookie-refuse]', '#CookieBoxRejectAllButton'] },
@@ -163,8 +189,33 @@
     { n: 'cookie-law-info', sel: ['#cookie_action_close_header_reject', '.wt-cli-reject-btn', '#wt-cli-reject-btn'] },
     { n: 'iubenda', sel: ['.iubenda-cs-reject-btn'] },
     { n: 'termly', sel: ['[data-tid=banner-decline]'] },
+    { n: 'fastcmp', js: fastCmp },
     { n: 'google', sel: ['#W0wltc', 'button[aria-label="Alle ablehnen" i]', 'button[aria-label="Reject all" i]'], js: googleConsent }
   ];
+
+  // FastCMP (w3schools u. a.): same-origin iframe#fast-cmp-iframe ohne src. Eine verlässliche JS-API ist nicht bekannt,
+  // daher wird der „Ablehnen“-Knopf im iframe-Dokument angeklickt (vom Hauptframe aus oder im iframe selbst).
+  function fastCmp() {
+    var doc = null;
+    try {
+      var fr = document.getElementById('fast-cmp-iframe');
+      if (fr && fr.contentDocument && fr.contentDocument.body) { doc = fr.contentDocument; }
+    } catch (e) {}
+    if (!doc && !TOP && document.querySelector('.fast-cmp-home-refuse,.top-refuse-btn,.fast-cmp-button-secondary')) { doc = document; }
+    if (!doc) { return false; }
+    var sels = ['.fast-cmp-home-refuse', '.top-refuse-btn', '.fast-cmp-button-secondary'];
+    for (var i = 0; i < sels.length; i++) {
+      var els = doc.querySelectorAll(sels[i]);
+      for (var j = 0; j < els.length; j++) {
+        var el = els[j];
+        if (!vis(el)) { continue; }
+        var t = norm(label(el));
+        if (t && !isRejectText(t) && !/^(refuse|ablehnen|reject|decline)/.test(t)) { continue; }
+        if (click(el)) { return true; }
+      }
+    }
+    return false;
+  }
 
   // consent.google.com / consent.youtube.com: das Formular mit set_eom=true ist „Alle ablehnen“.
   function googleConsent() {
@@ -180,10 +231,10 @@
     return false;
   }
 
-  function done(cmp, action) {
+  function done(cmp, action, detail) {
     if (finished) { return true; }
     finished = true;
-    post(cmp, action);
+    post(cmp, action, detail);
     if (observer) { observer.disconnect(); observer = null; }
     timers.forEach(clearTimeout);
     setTimeout(unlockScroll, 700); setTimeout(unlockScroll, 2500);
@@ -201,22 +252,6 @@
     } catch (e) {}
   }
 
-  // ---------- Abwählen über die Einstellungen ----------
-  function uncheckAll(scopeCheck) {
-    var n = 0;
-    deepAll('input[type=checkbox],[role=switch],[role=checkbox]').forEach(function (el) {
-      try {
-        var on = el.checked === true || el.getAttribute('aria-checked') === 'true';
-        if (!on || el.disabled || el.getAttribute('aria-disabled') === 'true') { return; }
-        if (!scopeCheck(el)) { return; }
-        var t = norm(label(el.closest ? (el.closest('label') || el) : el));
-        if (/notwendig|erforderlich|essential|necessary|required|technisch/.test(t)) { return; }
-        if (click(el)) { n++; }
-      } catch (e) {}
-    });
-    return n;
-  }
-
   function trySelectors(list) {
     for (var i = 0; i < list.length; i++) {
       var el = firstVisible(list[i]);
@@ -232,47 +267,25 @@
     // 1) Gezielt: bekannte CMPs
     for (i = 0; i < CMPS.length; i++) {
       var c = CMPS[i];
-      try { if (c.js && c.js()) { return done(c.n, 'reject-api'); } } catch (e) {}
+      try { if (c.js && c.js()) { return done(c.n, 'reject-api', lastClicked); } } catch (e) {}
       el = trySelectors(c.sel || []);
-      if (el && click(el)) { return done(c.n, 'reject'); }
+      if (el && click(el)) { return done(c.n, 'reject', lastClicked); }
     }
-    // 2) Generisch: Button mit Ablehn-Text in einem Banner-Element
-    var cands = candidates(), walls = 0, settingsBtn = null;
+    // 2) Generisch: nur eindeutig ablehnender Text, sichtbar (im Viewport, nicht verdeckt), in einem Banner.
+    //    Einstellungen/„Mehr Optionen“ werden nie geöffnet; Pur-/Abo-Wände werden nicht angefasst.
+    var cands = candidates(), walls = 0, rejectEl = null;
     for (i = 0; i < cands.length; i++) {
       el = cands[i];
-      if (!vis(el) || isAccept(el)) { continue; }
-      var t = label(el);
-      if (isRejectText(t) && safeLink(el) && inBanner(el)) {
-        if (click(el)) { return done('generic', 'reject'); }
-      }
-      var nt = norm(t);
+      if (isAccept(el) || !vis(el)) { continue; }
+      var t = label(el), nt = norm(t);
       if (BAD.test(nt) && nt.length < 60 && inBanner(el)) { walls++; }
-      if (!settingsBtn && SETTINGS.test(nt) && safeLink(el) && inBanner(el)) { settingsBtn = el; }
+      if (!rejectEl && isRejectText(t) && safeLink(el) && vis(el, true) && inBanner(el)) { rejectEl = el; }
     }
     if (walls > 0 && !wallLocal) {
       wallLocal = true;
       if (!TOP) { try { parent.postMessage({ __bcPur: 1 }, '*'); } catch (e) {} }
     }
-    // 3) Einstellungen öffnen, dort ablehnen bzw. alles abwählen und speichern
-    if (settingsClicks === 0) {
-      var known = null;
-      for (i = 0; i < CMPS.length && !known; i++) { if (CMPS[i].settings) { known = trySelectors([CMPS[i].settings]); } }
-      var opener = known || settingsBtn;
-      if (opener && vis(opener) && (Date.now() - started) > 1200 && click(opener)) {
-        settingsClicks++; settingsAt = Date.now(); post('settings', 'open'); return;
-      }
-    } else if (saveTries < 2 && Date.now() - settingsAt > 1200) {
-      var unticked = uncheckAll(function (x) { return inBanner(x); });
-      var saveBtn = null;
-      for (i = 0; i < CMPS.length && !saveBtn; i++) { if (CMPS[i].save) { saveBtn = trySelectors([CMPS[i].save]); } }
-      if (!saveBtn) {
-        for (i = 0; i < cands.length; i++) {
-          if (vis(cands[i]) && !isAccept(cands[i]) && SAVE.test(norm(label(cands[i]))) && inBanner(cands[i])) { saveBtn = cands[i]; break; }
-        }
-      }
-      saveTries++;
-      if (saveBtn && click(saveBtn)) { return done('settings', 'save-' + unticked + '-off'); }
-    }
+    if (rejectEl && walls === 0 && click(rejectEl)) { return done('generic', 'reject', lastClicked); }
   }
 
   // ---------- Kosmetischer Rückfall ----------
