@@ -47,6 +47,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Nativer Videoplayer, Handover | `BrowserVideoPlaybackCoordinator.m`, `BrowserNativeVideoPlayerViewController.m`, `BrowserNativeVideoAssetLoader.m` | mittel |
 | Automatische Untertitel (whisper.cpp) | `BrowserSubtitle*.m/.h`, `vendor/whisper.xcframework`, `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | mittel (MTAudioProcessingTap, eigener HLS-Leser, Drittcode) |
 | Video-Hooks, Media-Session | `BrowserClickTargetTracker.m` (`BrowserVideoHookScript`, `BrowserMediaSessionHookScript`), `BrowserNowPlayingController.m` | mittel |
+| Untertitel in der Webseite (Web-Audio-Abgriff, Weg B) | `WebSubtitles/web_audio_tap.js`, `BrowserWebAudioCapture.m`, `BrowserWebSubtitleController.m`, `BrowserWebSubtitleOverlay.m` | mittel (Web Audio, CORS/DRM) |
 | YouTube-Erfassung/-Extraktor | `BrowserWebView.m` (`BrowserYouTubeRequestCaptureScript`), `BrowserYouTubeExtractor.m` | hoch (Extraktion ist abgeschaltet) |
 | DNS-Proxy (Cloudflare DoH) | `BrowserDNSProxy.m/.h`, `SceneDelegate.m`, `AppDelegate.m` | hoch (`nw_*`-Privacy-Context, `proxyConfigurations`) |
 | Eingabedialog für Formulare (Passwörter) | `BrowserPageActionCoordinator.m`, `BrowserDOMInteractionService.m` | niedrig bis mittel |
@@ -146,8 +147,9 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 | `BrowserVideoHookScript` | document-start, Hauptframe | ebenda |
 | `BrowserFrameVideoScript` (Manifeste und Videos in eingebetteten Frames) | document-start, alle Frames (überspringt den Hauptframe selbst) | ebenda |
 | `BrowserMediaSessionHookScript` | document-start, Hauptframe | ebenda |
+| `WebSubtitles/web_audio_tap.js` (nur wenn Untertitel in der Webseite an) | document-start, **alle** Frames | `BrowserWebAudioCapture installIntoUserContentController:` (in `commonInit` nach dem Cookie-Ablehner oder beim Einschalten) |
 
-Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
+Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner), `browserWebAudio` (Untertitel in der Webseite, Abschnitt 10.6). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`, `BrowserWebAudioMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
 
 **Die Falle.** `WKUserContentController userScripts` ist eine **Live-Ansicht** auf die interne Liste. Der Cookie-Ablehner muss sein Skript ein- und ausbauen (Schalter, Ausnahme pro Seite), WebKit kennt aber kein Einzel-Entfernen, nur `removeAllUserScripts`. Deshalb in `BrowserCookieConsentBlocker refreshController:exception:force:`:
 
@@ -425,6 +427,7 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 ## 10. Video
 
 Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Bild-in-Bild, 10.7 Untertitel, 10.8 Einhängepunkt für Erweiterungen, 10.9 Automatische Untertitel (whisper.cpp).
+Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Untertitel in der Webseite (Weg B).
 
 ### 10.1 Video-Hooks und Medienmeldungen
 **Zweck.** Vollbild-Wünsche und Videostarts der Seite abfangen, HLS/DASH-Manifeste für MSE-Videos (`blob:`) finden und melden, Media-Session-Handler der Seite sichern.
@@ -614,6 +617,67 @@ Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tea
 
 **Kaputt?** Keine `[Subtitles]`-Zeilen: Einhängepunkt fehlt. `whisper=0`: Framework nicht gefunden (Suchpfad). `Modell –`: `tools/fetch_whisper_model.sh` nicht ausgeführt bzw. Ordner nicht im Paket. Tap ohne `prepare`: Audio-Mix nicht angenommen (z. B. HLS, dann sollte die HLS-Quelle übernehmen). RTF > 0,8 auf dem Gerät: `tiny.en-q5_1` nehmen oder Metal prüfen (`[Subtitles][whisper]`-Zeilen beim Laden).
 
+### 10.6 Untertitel für Videos in der Webseite (Weg B: Tonabgriff per Web Audio)
+**Zweck.** Für Videos, die in der Seite bleiben müssen (DASH/MSE, wenn der native Player nicht geht), den Ton per Web Audio abgreifen, in der App erkennen lassen und die Untertitel als native Ebene über die WebView legen. Weg A (nativer Player, whisper-Engine) ist davon getrennt (`BrowserSubtitle*`).
+
+**Dateien.**
+
+| Datei | Aufgabe |
+|:--|:--|
+| `WebSubtitles/web_audio_tap.js` (Ordnerreferenz, Ressource) | Seiten-Skript: Web Audio ans Video, 16 kHz mono, Blöcke, Zeit/Rechteck, Zustände |
+| `BrowserWebAudioCapture.m/.h` | Rückkanal `browserWebAudio`, Base64 → Float32, Ringpuffer 30 s, Rechteck-Umrechnung, Status |
+| `BrowserSpeechRecognizing.h/.m` | Protokoll `BrowserSpeechRecognizing`, Cue-Typ `BrowserWebSubtitleCue` (start, end, text) |
+| `BrowserSpeechRecognizerStub.m/.h` | Platzhalter-Erkennung: „[Ton erkannt: 1,0 s · −18 dB]“ |
+| `BrowserWebSubtitleController.m/.h` | Verbindung: Abschnitte mit Überlappung an die Erkennung, Cues ins Overlay, Hinweise, Kennzahlen |
+| `BrowserWebSubtitleOverlay.m/.h` | native Untertitel-Ebene (Unteransicht der `BrowserWebView`), Stil nach `MACaptionAppearance` |
+| `BrowserPreferencesStore` | `webSubtitlesEnabled` (Schlüssel `WebSubtitlesEnabled`, Standard aus) |
+| `BrowserWebView` | `userContentController` (neu, öffentlich); in `commonInit` Skript und Rückkanal früh installieren, wenn `webSubtitlesEnabled` |
+| `ViewController.m` | `browserSetWebSubtitlesEnabled:` (für den Menüschalter), `startWebSubtitlesIfEnabled` (App-Start in `viewDidAppear:`, Tabwechsel in `activeWebViewChangedFrom:`), Selbsttest `websubs` |
+
+**Datenfluss.**
+1. `startForWebView:` registriert (einmal je `WKUserContentController`, per assoziiertem Objekt) den Rückkanal `browserWebAudio` mit schwachem Vermittler (`class_addProtocol` wie in Abschnitt 4), fügt das Nutzerskript hinzu (document-start, **alle Frames**) und spielt Skript plus Startbefehl sofort in die aktuelle Seite (`evaluateJavaScriptAsync:`). iframes der aktuellen Seite bekommen das Skript erst nach dem nächsten Laden; ist `webSubtitlesEnabled` beim Anlegen der WebView schon an, sofort. Nach jeder Navigation meldet das Skript `ready`, die App schickt den Startbefehl erneut.
+2. Skript (`window.__browserWebAudio.start({block,silence,mode,force})`): wählt jede Sekunde das Video (spielend vor hörbar vor größter sichtbarer Fläche; springt nicht hin und her). Ohne Video im Hauptframe gibt es den Befehl per `postMessage` an alle iframes weiter.
+3. Vorabprüfung, **bevor** das Video angefasst wird (sonst wäre es stumm): DRM (`mediaKeys`/`webkitKeys`) → `blocked drm`; natives HLS (`.m3u8` direkt als `src`, kein MSE) → `blocked hls`; fremde Herkunft ohne `crossorigin` → `blocked cors`. `blob:`-Quellen (MSE) laufen durch.
+4. `AudioContext` anlegen und `resume()`; `createMediaElementSource()` erst, wenn der Kontext `running` ist. Gesperrt → Zustand `suspended gesture`, Fortsetzen beim nächsten `pointerdown`/`click`/`keydown`/`play`. Im Simulator (tvOS 27.2) lief der Kontext ohne Geste nach wenigen Millisekunden, vermutlich weil die WebView `mediaTypesRequiringUserActionForPlayback = 0` setzt.
+5. Kette: `source → destination` (Ton zu den Lautsprechern, bleibt für immer) und `source → Abgriff → Gain 0 → destination`. Abgriff = `AudioWorkletNode` (Modul als `blob:`-URL), sonst `ScriptProcessorNode(4096)` (wenn Worklet fehlt oder CSP `blob:` verbietet). Im Abgriff: Downmix auf mono (Kanalzahl 2, `speakers`, Mitte geht mit ein), Butterworth-Tiefpass 7 kHz, Mittelung auf 16 kHz.
+6. Je Block (Standard 0,5 s = 8000 Werte): RMS/Spitze, `t` = Medienzeit des ersten Werts (aus `video.currentTime` minus Verzug im Graphen), Base64 der Float32-Bytes (reine Nullen ohne Daten, `zero:1`). Bei Pause, Spulen, Puffern keine Blöcke. Alle 250 ms und bei `play/pause/seeking/seeked/ratechange` eine `time`-Meldung mit `currentTime`, Rate, Pause, Rechteck (CSS-Pixel), `innerWidth`, fixiert, Vollbild. iframes melden das Rechteck an den Elternframe, der es um die Lage des iframes verschiebt.
+7. App: Blöcke auf der seriellen `sampleQueue` dekodieren → Ringpuffer (30 s) mit zusammenhängenden Abschnitten (neuer Abschnitt bei mehr als 0,3 s Abweichung, `segmentGeneration`) → `sampleHandler`. Rechteck wie die übrigen Video-Rechtecke umrechnen: `× viewWidth / innerWidth`, `+ topObscuredInset`, plus seit der Meldung gescrollte Strecke (KVO auf `contentOffset`, nicht bei fixierten Videos).
+8. `BrowserWebSubtitleController`: Sind `windowDuration − overlapDuration` neue Sekunden da, geht der letzte Abschnitt (`windowDuration`) an die Erkennung (eigene serielle Queue). Nie zwei gleichzeitig; ist die Erkennung beschäftigt, wird übersprungen (Zähler `übersprungen`), nicht gestaut. Bei Pause wird der angefangene Abschnitt sofort ausgewertet. Nach Spulen oder Seitenwechsel verfallen laufende Ergebnisse (`generation`), die Erkennung bekommt `reset`. Neue Cues ersetzen im Overlay alle Cues ab Abschnittsbeginn.
+9. Overlay: Zeit = letzte gemeldete `currentTime` + vergangene Zeit × Rate (höchstens 1,5 s ohne Meldung weiterzählen), `CADisplayLink` mit 10–15 Hz. Gezeigt wird der neueste Cue mit `start ≤ t`, bis `holdDuration` (Abschnitt + 1,5 s) nach seinem Ende, weil die Erkennung erst nach dem Abschnittsende liefert (sonst wäre der Text abgelaufen, bevor er ankommt). Bei Pause bleibt der Text stehen. Position: unten im sichtbaren Teil des Video-Rechtecks (6 % Abstand), zentriert, höchstens 90 % Breite, 3 Zeilen. Größe: 6,2 % der Videohöhe, 34–72 pt, mal `MACaptionAppearanceGetRelativeCharacterSize`. Farben, Schrift, Kantenstil aus `MACaptionAppearance` (Domäne Nutzer), Hintergrund halbtransparent (0,6), außer in den Einstellungen ist ausdrücklich eine Deckkraft gewählt. Bei Element-Vollbild legt sich das Overlay über das oberste Fenster der Szene (nicht getestet).
+10. Hinweise im Untertitel-Stil (6 s): CORS, DRM, HLS, Stille, stumm, Klick nötig, Fehler; „Kein Video“ nur direkt nach dem Einschalten (`startForWebView:userInitiated:YES`).
+
+**Zustände** (`BrowserWebAudioCaptureStatus`, Detail in Klammern): `Starting`, `WaitingForInteraction` (gesture), `Running`, `Silent` (cors, muted, hls, silence; nach 4 s reiner Nullen bei laufendem Video), `NoVideo` (iframes:N), `Blocked` (cors, hls, drm), `Unsupported`, `Error` (source:InvalidStateError = Seite hängt das Video selbst an Web Audio; script), `Stopped`.
+
+**Ausschalten.** `stop` trennt nur den Abgriff (`source.disconnect(tap)`, sonst alles trennen und wieder an `destination`). Die Quelle bleibt an den Lautsprechern, der `AudioContext` wird nie angehalten: `createMediaElementSource` geht pro Element nur einmal, danach hört man das Video nur noch über Web Audio.
+
+**Erkennung anschließen (whisper).** Eine Klasse mit `BrowserSpeechRecognizing` bauen (16 kHz mono Float32, Werte während des Aufrufs kopieren, `completion` genau einmal, Cue-Zeiten = `startTime` + Versatz), optional `preferredWindowDuration`/`preferredOverlapDuration` (z. B. 3,0/0,5), `reset`, `recognizerName`. Dann in `ViewController` (`browserSetWebSubtitlesEnabled:`, `startWebSubtitlesIfEnabled`, Selbsttest) `[[BrowserWebSubtitleController alloc] initWithRecognizer:…]` statt `new`.
+
+**Fragil/Grenzen.**
+- Fremde Herkunft ohne CORS, DRM und natives HLS liefern nur Nullen (im Simulator für CORS und HLS nachgewiesen). Vorab abgefangen; greift die Prüfung nicht (z. B. Umleitung auf einen anderen Server), ist das Video stumm, bis die Seite neu geladen wird (Hinweis erscheint).
+- Seiten, die ihr Video selbst an Web Audio hängen: `createMediaElementSource` wirft, Zustand `Error source:…`.
+- Lippensynchronität: Der Ton läuft durch den Web-Audio-Graphen (Simulator: `baseLatency` 2,7 ms); auf dem Gerät nicht gemessen.
+- Ist „Native Player automatisch“ an, übernimmt bei MP4/HLS der native Player (Weg A); Weg B betrifft dann nur Videos, die in der Seite bleiben.
+- Im tvOS-Simulator (27.2) gibt es weder `MediaSource` noch `ManagedMediaSource` (die dash.js-Beispielseite lädt nicht). MSE-Seiten (Mediatheken, DASH) sind also nur auf dem Gerät testbar. `blob:`-Quellen werden wie gleiche Herkunft behandelt.
+- Zeitzuordnung: In der ersten Sekunde nach dem Anhängen weichen Blockzeiten um bis zu 0,3 s ab (gepufferter Ton), danach stabil (Abstand 0,50 s).
+- Nur der aktive Tab.
+
+**Kaputt?** Logzeilen `[WebAudio] Zustand …`, `[WebAudio] Block #N 0.50 s t=… rms=… (… dB) peak=… Weg=… ms` (DEBUG, jeder Block), `[WebSubs] Abschnitt … erkannt in N ms`, `[WebSubs] Anzeige „…“ … Verzug … s`. Im Skript: `js:window.__browserWebAudio.status()` (JSON mit Zustand, Modus, `ctx`, Abtastrate, Latenzen, Blöcke, Video). `[WebAudio] Startbefehl ohne Erfolg: missing` = Skript fehlt im Paket (Ordnerreferenz `WebSubtitles`).
+
+**Test.** Selbsttest-Schritt `websubs` (Abschnitt 14.2). Für Tests „Native Player automatisch“ ausschalten. Beispiele (kein `;` in `js:`, Komma-Ausdrücke nutzen):
+```
+# gleiche Herkunft: Block-Log, Overlay (Screenshot nach ~20 s)
+POINTER_SELFTEST='url:<Seite mit MP4 gleicher Herkunft>;js:document.querySelector("video").play()&&1;websubs;wait;wait;websubs:status'
+# Fallback ScriptProcessor, Pause, Spulen, Ausschalten (Video läuft weiter)
+… websubs:sp;wait;js:document.querySelector("video").pause()||1;wait;js:(document.querySelector("video").currentTime=20)&&document.querySelector("video").play()&&1;websubs:status;websubs:off;video
+# CORS: erst blocked cors, mit force die Stille-Erkennung (silent cors nach 4 s)
+… websubs;wait;websubs:force;wait;wait;websubs:status
+# whisper-ähnlicher Takt (3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit)
+… websubs:slow;wait;wait;wait;websubs:status
+```
+Messwerte im Simulator (Mac, tvOS 27.2, Stub): Weg Skript → App 0,7–1,6 ms je Block, Base64 im Skript 0,05–0,09 ms, Dekodieren in der App 0,2 ms, Verzug im Graphen 0–9 ms. Anzeige-Verzug = Abschnittslänge + Rechenzeit (Stub 1 s: Ø 0,9–1,1 s; 3 s + 1,2 s Rechenzeit: rund 4,3 s nach Abschnittsbeginn). CPU (ps): App etwa +0,7, WebContent etwa +1,1 Prozentpunkte gegenüber Wiedergabe ohne Abgriff.
+
+**Menüeintrag** (noch nicht eingebaut, gehört in `BrowserMenuCoordinator.m`, `extensionMenuItems`): Host-Protokoll um `- (void)browserSetWebSubtitlesEnabled:(BOOL)enabled;` erweitern (in `ViewController` vorhanden) und einen Eintrag `webSubtitlesMenuItem` nach dem Muster von `autoOpenNativePlayerMenuItem` anlegen.
+
 ---
 
 ## 11. DNS-Proxy (`BrowserDNSProxy`)
@@ -734,6 +798,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `zoom` | Zoom-Zustand (`zoomScale`, `min/max`, `_viewScale`, `contentSize`, `bounds`, `pageZoom`) | `zoom zoomScale=… viewScale=…` |
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
 | `js:<Code>` | JavaScript ausführen, Ergebnis loggen | `js <Ergebnis>` |
+| `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (Stub-Erkennung). Optionen: `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
+| `wait` (jeder unbekannte Schritt) | nichts tun, 3 s warten | – |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
 | `native` | Video der Seite im nativen Player öffnen (wie Menü „Im Player öffnen“, Zeigerposition zählt) | `native hasVideo=…`, danach `[NativeVideoPlayer]`-Zeilen |
 | `nplayer` | Zustand des nativen Players (`debugStateLine`) | `nplayer t=… dur=… rate=… status=… live=… hls=… loader=… pipAllowed=… pipSupported=… pip=… legible=N/<Spur> sidecar=… cues=… meta=… art=…` oder `kein Player` |
@@ -776,6 +842,8 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
 | `[Reader] check/toggle/exit -> a|y|n|e:…` | `BrowserReaderMode` | ja |
+| `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
+| `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
 | `[Command] <name> arg=… quelle=diktat\|siri\|selbsttest ok\|nicht möglich\|unbekannt`, `[Command] Diktat "…" -> …` | `BrowserCommandRouter`, `ViewController handleEnteredAddressText:` | nein |
 | `[Siri] Befehl …`, `[Siri] Intent -> Befehl …` | `ViewController`, `BrowserAppIntents.swift` | nein |

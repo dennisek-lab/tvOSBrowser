@@ -23,6 +23,7 @@ static NSString * const kLiquidGlassAnimationsEnabledDefaultsKey = @"LiquidGlass
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
+static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -270,6 +271,15 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setAutoSubtitlesLanguage:(NSString *)autoSubtitlesLanguage {
     [[self defaults] setObject:autoSubtitlesLanguage.length > 0 ? autoSubtitlesLanguage : @"en" forKey:kAutoSubtitlesLanguageDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)webSubtitlesEnabled {
+    return [[self defaults] boolForKey:kWebSubtitlesEnabledDefaultsKey];
+}
+
+- (void)setWebSubtitlesEnabled:(BOOL)webSubtitlesEnabled {
+    [[self defaults] setBool:webSubtitlesEnabled forKey:kWebSubtitlesEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

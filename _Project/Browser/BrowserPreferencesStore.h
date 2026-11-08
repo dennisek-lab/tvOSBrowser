@@ -42,6 +42,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
 @property (nonatomic) NSUInteger cursorStyle;
+/// Untertitel für Videos in der Webseite (Tonabgriff per Web Audio, Weg B). Standard: aus.
+@property (nonatomic) BOOL webSubtitlesEnabled;
 
 - (void)ensureUserAgentConsistency;
 
