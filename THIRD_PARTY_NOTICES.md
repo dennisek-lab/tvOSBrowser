@@ -16,3 +16,7 @@
 - Lizenz: Apache License 2.0, Text in `_Project/Browser/Reader/LICENSE.md`
 - Beigelegt: `_Project/Browser/Reader/Readability.js` und `Readability-readerable.js` (aus dem npm-Paket, unverändert).
 - `_Project/Browser/Reader/reader.js` ist eine eigene, kleine Datei der App und kein Teil von Readability.
+
+## Zeigerbilder (SF Symbols, optionaler Stil)
+
+- Der Zeigerstil „SF Symbols“ (`BrowserCursorRenderer`, Einstellung `CursorStyle` = 2) nutzt die Systemsymbole `cursorarrow` und `hand.point.up.left.fill` zur Laufzeit; Nutzung in Apps auf Apple-Plattformen laut SF-Symbols-Lizenz erlaubt. Die Standardzeiger sind eigene Vektorzeichnungen, kein Material von Apple oder Dritten.

@@ -38,6 +38,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
 
+/// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
+@property (nonatomic) NSUInteger cursorStyle;
+
 - (void)ensureUserAgentConsistency;
 
 @end

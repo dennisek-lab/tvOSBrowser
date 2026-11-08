@@ -2,23 +2,14 @@
 #import <objc/message.h>
 #import "BrowserRemoteInputController.h"
 #import "BrowserPreferencesStore.h"
+#import "BrowserCursorRenderer.h"
 
 static UIImage *BrowserDefaultCursor(void) {
-    static UIImage *image;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        image = [UIImage imageNamed:@"Cursor"];
-    });
-    return image;
+    return [BrowserCursorRenderer imageForKind:BrowserCursorKindArrow];
 }
 
 static UIImage *BrowserPointerCursor(void) {
-    static UIImage *image;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        image = [UIImage imageNamed:@"Pointer"];
-    });
-    return image;
+    return [BrowserCursorRenderer imageForKind:BrowserCursorKindHand];
 }
 
 #pragma mark - Abstimmung
@@ -371,7 +362,7 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
         CGRect screen = [UIScreen mainScreen].bounds;
         _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
         [self observeGameControllers];
-        _cursorView = [[UIImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
+        _cursorView = [[BrowserCursorImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
         _cursorView.image = BrowserDefaultCursor();
         _cursorView.userInteractionEnabled = NO;
 

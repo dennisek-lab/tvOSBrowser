@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B49AC12D710000001D58A1 /* BrowserCursorRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */; };
 		3A2A7C1621E7805D0083CB13 /* go-back-left-arrow.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1121E7805D0083CB13 /* go-back-left-arrow.png */; };
 		3A2A7C1721E7805D0083CB13 /* house-outline.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1221E7805D0083CB13 /* house-outline.png */; };
 		3A2A7C1821E7805D0083CB13 /* right-arrow-forward.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1321E7805D0083CB13 /* right-arrow-forward.png */; };
@@ -73,6 +74,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B49ABF2D710000001D58A1 /* BrowserCursorRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCursorRenderer.h; sourceTree = "<group>"; };
+		A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCursorRenderer.m; sourceTree = "<group>"; };
 		3A2A7C1121E7805D0083CB13 /* go-back-left-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "go-back-left-arrow.png"; sourceTree = "<group>"; };
 		3A2A7C1221E7805D0083CB13 /* house-outline.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "house-outline.png"; sourceTree = "<group>"; };
 		3A2A7C1321E7805D0083CB13 /* right-arrow-forward.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "right-arrow-forward.png"; sourceTree = "<group>"; };
@@ -273,6 +276,8 @@
 				A1B49A4C2D680900001D58A1 /* BrowserNavigationService.h */,
 				A1B49A4D2D680900001D58A1 /* BrowserNavigationService.m */,
 				A1B49A872D700000001D58A1 /* BrowserPreferencesStore.h */,
+				A1B49ABF2D710000001D58A1 /* BrowserCursorRenderer.h */,
+				A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */,
 				A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */,
 				A1B49A562D6828D4001D58A1 /* BrowserSessionStore.h */,
 				A1B49A572D6828D4001D58A1 /* BrowserSessionStore.m */,
@@ -553,6 +558,7 @@
 				A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */,
 				A1B49A4E2D680900001D58A1 /* BrowserNavigationService.m in Sources */,
 				A1B49A892D700000001D58A1 /* BrowserPreferencesStore.m in Sources */,
+				A1B49AC12D710000001D58A1 /* BrowserCursorRenderer.m in Sources */,
 				A1B49A582D6828D4001D58A1 /* BrowserSessionStore.m in Sources */,
 				A1B49A5B2D684000001D58A1 /* BrowserTopBarView.m in Sources */,
 				A1B49A6C2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m in Sources */,
