@@ -73,3 +73,14 @@ _Project/Browser/WhisperModels/*.bin
 _Project/Browser/WhisperModels/*.part
 ## Eigene Simulator-Builds der Agenten (-derivedDataPath ../build-sim-…)
 build-sim-*/
+
+## Lokale Build-Ordner und Werkzeugdaten (nie einchecken; können Testdaten enthalten)
+/build/
+/build*/
+.claude/
+
+## Browserdaten: Verlauf, Cookies, gespeicherte Seiten werden nie mitgeliefert
+*.binarycookies
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
