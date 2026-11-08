@@ -72,6 +72,9 @@
 		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
 		232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */ = {isa = PBXBuildFile; fileRef = 48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */; };
 		C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */; };
+		DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */ = {isa = PBXBuildFile; fileRef = 6157FC5AB882D846E726CD36 /* BrowserCommand.m */; };
+		A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 6194890DB589857E8304FBAE /* BrowserCommandParser.m */; };
+		02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */ = {isa = PBXBuildFile; fileRef = 0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -183,6 +186,12 @@
 		48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressPanelView.m; sourceTree = "<group>"; };
 		D1FF718DE4E2144091280B37 /* BrowserMotion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserMotion.h; sourceTree = "<group>"; };
 		7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserMotion.m; sourceTree = "<group>"; };
+		FD094D3775E8B8BF7B0BE4F6 /* BrowserCommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommand.h; sourceTree = "<group>"; };
+		6157FC5AB882D846E726CD36 /* BrowserCommand.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommand.m; sourceTree = "<group>"; };
+		73CF1E9C8FEACC09478DBC89 /* BrowserCommandParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommandParser.h; sourceTree = "<group>"; };
+		6194890DB589857E8304FBAE /* BrowserCommandParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommandParser.m; sourceTree = "<group>"; };
+		BEE1F6A58F9C800C3D2057A2 /* BrowserCommandRouter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommandRouter.h; sourceTree = "<group>"; };
+		0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommandRouter.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -355,6 +364,12 @@
 				48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */,
 				D1FF718DE4E2144091280B37 /* BrowserMotion.h */,
 				7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */,
+				FD094D3775E8B8BF7B0BE4F6 /* BrowserCommand.h */,
+				6157FC5AB882D846E726CD36 /* BrowserCommand.m */,
+				73CF1E9C8FEACC09478DBC89 /* BrowserCommandParser.h */,
+				6194890DB589857E8304FBAE /* BrowserCommandParser.m */,
+				BEE1F6A58F9C800C3D2057A2 /* BrowserCommandRouter.h */,
+				0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -572,6 +587,9 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */,
+				A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */,
+				DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */,
 				87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */,
 				B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */,
 				13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */,

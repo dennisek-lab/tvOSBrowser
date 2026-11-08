@@ -7,6 +7,9 @@
 //
 
 #import "BrowserAddressPanelView.h"
+#import "BrowserCommandParser.h"
+#import "BrowserCommandRouter.h"
+#import "BrowserContentBlocker.h"
 #import "BrowserGuideViewController.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
@@ -32,8 +35,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 /// Spike Siri-Steuerung: BrowserAppIntents.swift schickt Befehle über diese Notification (siehe docs/SIRI_STEUERUNG.md).
 static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNotification";
 
-@interface ViewController () <BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
+@interface ViewController () <BrowserCommandHost, BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
 
+@property (nonatomic) BrowserCommandRouter *commandRouter;
 @property (nonatomic) BrowserDOMInteractionService *domInteractionService;
 @property (nonatomic) BrowserMenuCoordinator *menuCoordinator;
 @property (nonatomic) BrowserNavigationService *navigationService;
@@ -77,6 +81,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     self.viewModel.textFontSize = self.preferencesStore.textFontSize;
     self.viewModel.fullscreenVideoPlaybackEnabled = self.preferencesStore.fullscreenVideoPlaybackEnabled;
 
+    self.commandRouter = [[BrowserCommandRouter alloc] initWithHost:self];
     self.domInteractionService = [BrowserDOMInteractionService new];
     self.navigationService = [[BrowserNavigationService alloc] initWithPreferencesStore:self.preferencesStore];
     self.sessionStore = [BrowserSessionStore new];
@@ -228,6 +233,27 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     }
                     NSLog(@"[SelfTest] siri %@", info[@"command"]);
                     [NSNotificationCenter.defaultCenter postNotificationName:kBrowserSiriCommandNotification object:nil userInfo:info];
+                    return;
+                }
+                if ([step hasPrefix:@"cmd:"]) {
+                    // Befehl direkt über den Router: cmd:<name> oder cmd:<name>|<argument>
+                    NSArray<NSString *> *parts = [[step substringFromIndex:4] componentsSeparatedByString:@"|"];
+                    NSLog(@"[SelfTest] cmd %@", step.length > 4 ? [step substringFromIndex:4] : @"");
+                    [self.commandRouter performCommandNamed:parts.firstObject ?: @"" argument:parts.count > 1 ? parts[1] : nil source:BrowserCommandSourceSelfTest];
+                    return;
+                }
+                if ([step hasPrefix:@"parse:"]) {
+                    // Parser prüfen, ohne auszuführen: parse:<text>|<text>|…
+                    for (NSString *text in [[step substringFromIndex:6] componentsSeparatedByString:@"|"]) {
+                        NSLog(@"[SelfTest] parse \"%@\" -> %@", text, [BrowserCommandParser describeParseOfText:text]);
+                    }
+                    return;
+                }
+                if ([step hasPrefix:@"enter:"]) {
+                    // Text wie aus dem Adressfeld bestätigt: Parser, dann Befehl oder Suche.
+                    NSString *text = [step substringFromIndex:6];
+                    NSLog(@"[SelfTest] enter %@", text);
+                    [self handleEnteredAddressText:text];
                     return;
                 }
                 if ([step hasPrefix:@"dictate:"]) {
@@ -437,40 +463,15 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [self.tabCoordinator persistSession];
 }
 
-/// Spike: Befehl aus einem App Intent (Siri) oder dem Selbsttest. Nur vorhandene Aktionen,
-/// „reader“ wird bis zum Reader-Knopf nur geloggt. Später ersetzt durch die Befehlstabelle BrowserCommand.
+/// Befehl aus einem App Intent (Siri) oder dem Selbsttest (siri:): geht an die Befehlstabelle (BrowserCommandRouter).
 - (void)handleSiriCommandNotification:(NSNotification *)notification {
     NSString *command = [notification.userInfo[@"command"] isKindOfClass:NSString.class] ? notification.userInfo[@"command"] : @"";
     NSString *argument = [notification.userInfo[@"argument"] isKindOfClass:NSString.class] ? notification.userInfo[@"argument"] : nil;
-    NSLog(@"[Siri] Befehl %@ arg=%@ quelle=%@", command, argument ?: @"-", notification.userInfo[@"source"] ?: @"-");
-    if (self.presentedViewController != nil) {
-        [self dismissViewControllerAnimated:NO completion:nil];
-    }
-    if ([command isEqualToString:@"back"]) {
-        [self performTopBarAction:BrowserTopBarActionBack];
-    } else if ([command isEqualToString:@"forward"]) {
-        [self performTopBarAction:BrowserTopBarActionForward];
-    } else if ([command isEqualToString:@"reload"]) {
-        [self performTopBarAction:BrowserTopBarActionRefresh];
-    } else if ([command isEqualToString:@"home"]) {
-        [self performTopBarAction:BrowserTopBarActionHome];
-    } else if ([command isEqualToString:@"tabs"]) {
-        [self performTopBarAction:BrowserTopBarActionTabs];
-    } else if ([command isEqualToString:@"favorite"]) {
-        [self performTopBarAction:BrowserTopBarActionFavorite];
-    } else if ([command isEqualToString:@"newtab"]) {
-        [self browserCreateNewTabLoadingHomePage:YES];
-    } else if ([command isEqualToString:@"address"]) {
-        if (argument.length > 0) {
-            [self openAddressOrSearch:argument];
-        } else {
-            [self browserRemoteInputControllerOpenAddressBar];
-        }
-    } else if ([command isEqualToString:@"reader"]) {
-        [self performTopBarAction:BrowserTopBarActionReader];
-    } else {
-        NSLog(@"[Siri] unbekannter Befehl %@", command);
-    }
+    NSString *source = [notification.userInfo[@"source"] isKindOfClass:NSString.class] ? notification.userInfo[@"source"] : @"-";
+    NSLog(@"[Siri] Befehl %@ arg=%@ quelle=%@", command, argument ?: @"-", source);
+    [self.commandRouter performCommandNamed:command
+                                   argument:argument
+                                     source:[source isEqualToString:@"selftest"] ? BrowserCommandSourceSelfTest : BrowserCommandSourceSiri];
 }
 
 - (void)handleGlobalSelectPressEndedNotification:(NSNotification *)notification {
@@ -666,6 +667,17 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     }
 }
 
+/// Eingabe aus dem Adressfeld (Diktat oder Tastatur): erst die Befehlstabelle fragen, dann Adresse oder Suche.
+- (void)handleEnteredAddressText:(NSString *)text {
+    BrowserParsedCommand *parsed = [BrowserCommandParser parseText:text ?: @""];
+    if (parsed != nil) {
+        NSLog(@"[Command] Diktat \"%@\" -> %@%@%@", text, parsed.name, parsed.argument != nil ? @"|" : @"", parsed.argument ?: @"");
+        [self.commandRouter performCommandNamed:parsed.name argument:parsed.argument source:BrowserCommandSourceDictation];
+        return;
+    }
+    [self openAddressOrSearch:text];
+}
+
 - (void)searchFieldDidEndOnExit:(UITextField *)textField {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(submitSearchAlert) object:nil];
     [self submitSearchAlert];
@@ -696,7 +708,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [alert.textFields.firstObject resignFirstResponder];
     __weak typeof(self) weakSelf = self;
     [alert dismissViewControllerAnimated:YES completion:^{
-        [weakSelf openAddressOrSearch:text];
+        [weakSelf handleEnteredAddressText:text];
     }];
 }
 
@@ -714,8 +726,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self dismissViewControllerAnimated:NO completion:nil];
     }
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:dictation ? @"Sprechen, um zu diktieren" : @"Suchen oder Adresse eingeben"
-                                                                             message:dictation ? @"Siri-Taste gedrückt halten und Suchbegriff oder Adresse sagen – oder tippen."
-                                                                                               : @"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
+                                                                             message:dictation ? @"Siri-Taste gedrückt halten und sprechen – z. B. „Reader“, „zurück“ oder „suche Wetter“."
+                                                                                               : @"Tipp: Siri-Taste gedrückt halten und sprechen, z. B. „suche Wetter“ oder „Reader“."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
@@ -723,7 +735,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         textField.keyboardType = dictation ? UIKeyboardTypeDefault : UIKeyboardTypeWebSearch;
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
-        textField.placeholder = @"Suchbegriff oder z. B. computerbase.de";
+        // Auf tvOS steht der Platzhalter groß über der Tastatur (der Dialogtext nicht): Beispiel für einen Sprachbefehl.
+        textField.placeholder = @"Suchbegriff, Adresse oder z. B. „Reader“";
         textField.returnKeyType = UIReturnKeySearch;
         [textField addTarget:weakSelf action:@selector(searchFieldDidEndOnExit:) forControlEvents:UIControlEventEditingDidEndOnExit];
     }];
@@ -731,7 +744,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         weakSelf.searchAlert = nil;
-        [weakSelf openAddressOrSearch:alertController.textFields.firstObject.text];
+        [weakSelf handleEnteredAddressText:alertController.textFields.firstObject.text];
     }]];
     [alertController addAction:[UIAlertAction actionWithTitle:@"Mit Google suchen"
                                                         style:UIAlertActionStyleDefault
@@ -1138,6 +1151,198 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 
 - (void)browserTopBarView:(__unused BrowserTopBarView *)topBarView didTriggerAction:(BrowserTopBarAction)action {
     [self performTopBarAction:action];
+}
+
+#pragma mark - BrowserCommandHost (Befehlstabelle: Siri, Diktat, Selbsttest)
+
+- (void)browserCommandPrepare {
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    if (self.tabOverviewController.visible) {
+        [self browserRemoteInputControllerDismissTabOverview];
+    }
+    [self endAddressEditingAnimated:YES];
+    [self deactivateTopBarFocusMode];
+}
+
+- (UIView *)browserCommandFeedbackContainerView {
+    // Fenster statt eigener Ansicht: liegt so auch über Tab-Übersicht und Zeiger.
+    return self.view.window ?: self.view;
+}
+
+- (BOOL)browserCommandReaderAvailable {
+    return self.topMenuView.readerAvailable;
+}
+
+- (BOOL)browserCommandReaderActive {
+    return self.topMenuView.readerActive;
+}
+
+- (void)browserCommandToggleReader {
+    [self toggleReaderMode];
+}
+
+- (void)browserCommandBeginAddressEditing {
+    [self beginAddressEditing];
+}
+
+- (void)browserCommandOpenAddressOrSearch:(NSString *)text {
+    [self openAddressOrSearch:text];
+}
+
+- (void)browserCommandSearch:(NSString *)query {
+    NSURLRequest *request = [self.navigationService googleSearchRequestForQuery:query];
+    if (request != nil) {
+        [self.webview loadRequest:request];
+    }
+}
+
+- (BOOL)browserCommandOpenAddress:(NSString *)address {
+    NSString *withScheme = [address containsString:@"://"] ? address : [@"https://" stringByAppendingString:address];
+    NSURLRequest *request = [self.navigationService requestForEnteredAddressString:withScheme];
+    if (request == nil) {
+        return NO;
+    }
+    [self.webview loadRequest:request];
+    return YES;
+}
+
+- (BOOL)browserCommandGoBack {
+    if (!self.webview.canGoBack) {
+        return NO;
+    }
+    [self.webview goBack];
+    return YES;
+}
+
+- (BOOL)browserCommandGoForward {
+    if (!self.webview.canGoForward) {
+        return NO;
+    }
+    [self.webview goForward];
+    return YES;
+}
+
+- (BOOL)browserCommandReload {
+    if (self.webview.request.URL == nil) {
+        return NO;
+    }
+    [self.webview reload];
+    return YES;
+}
+
+- (void)browserCommandGoHome {
+    [self loadHomePage];
+}
+
+- (void)browserCommandNewTab {
+    [self browserCreateNewTabLoadingHomePage:YES];
+}
+
+- (void)browserCommandCloseTab {
+    [self browserTabOverviewControllerCloseTabAtIndex:self.viewModel.activeTabIndex];
+}
+
+- (void)browserCommandShowTabs {
+    [self browserShowTabOverview];
+}
+
+- (NSNumber *)browserCommandSetFavorite:(NSNumber *)desired {
+    NSURL *url = self.webview.request.URL;
+    NSString *scheme = url.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) {
+        return nil;
+    }
+    BOOL current = [BrowserHistoryStore.sharedStore isFavoriteURL:url];
+    BOOL target = desired != nil ? desired.boolValue : !current;
+    if (target != current) {
+        [self toggleFavoriteForCurrentPage];
+    }
+    return @([BrowserHistoryStore.sharedStore isFavoriteURL:url]);
+}
+
+- (NSString *)browserCommandAdBlockSiteName {
+    return [BrowserContentBlocker exceptionKeyForURL:self.webview.request.URL];
+}
+
+- (BOOL)browserCommandAdBlockActiveForSite {
+    return ![[BrowserContentBlocker sharedBlocker] isExceptionForURL:self.webview.request.URL];
+}
+
+- (void)browserCommandSetAdBlockActiveForSite:(BOOL)active {
+    // Wie der Menüpunkt „Werbeblocker hier“ (BrowserMenuCoordinator adBlockSiteMenuItem): Ausnahme setzen, neu laden.
+    NSURL *url = self.webview.request.URL;
+    [[BrowserContentBlocker sharedBlocker] setException:!active forURL:url];
+    [self.webview reload];
+}
+
+/// Animiert zu einem Scrollstand und aktualisiert danach Zeiger und Sitzung.
+- (BOOL)scrollActivePageToOffsetY:(CGFloat)targetY {
+    UIScrollView *scrollView = self.webview.scrollView;
+    if (scrollView == nil) {
+        return NO;
+    }
+    CGFloat minOffsetY = -scrollView.contentInset.top;
+    CGFloat maxOffsetY = MAX(minOffsetY, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds) + scrollView.contentInset.bottom);
+    CGPoint offset = scrollView.contentOffset;
+    CGFloat clamped = MIN(MAX(targetY, minOffsetY), maxOffsetY);
+    if (fabs(clamped - offset.y) < 1.0) {
+        return NO;
+    }
+    offset.y = clamped;
+    [UIView animateWithDuration:0.35 delay:0.0
+                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{ [scrollView setContentOffset:offset animated:NO]; }
+                     completion:^(__unused BOOL finished) {
+        [self.remoteInputController pointerTargetsDidChange];
+        [self.tabCoordinator persistSession];
+    }];
+    return YES;
+}
+
+- (BOOL)browserCommandScrollToTop {
+    UIScrollView *scrollView = self.webview.scrollView;
+    return [self scrollActivePageToOffsetY:-scrollView.contentInset.top];
+}
+
+- (BOOL)browserCommandScrollPageByFraction:(CGFloat)fraction {
+    UIScrollView *scrollView = self.webview.scrollView;
+    CGFloat delta = (CGRectGetHeight(scrollView.bounds) - scrollView.contentInset.top) * fraction;
+    return [self scrollActivePageToOffsetY:scrollView.contentOffset.y + delta];
+}
+
+- (void)browserCommandShowMenu {
+    [self showAdvancedMenu];
+}
+
+- (void)browserCommandShowHelp {
+    [self showHintsAlert];
+}
+
+- (BOOL)browserCommandPageHasVideo {
+    return [self.videoPlaybackCoordinator pageHasVideo];
+}
+
+- (void)browserCommandOpenVideoInPlayer {
+    [self.videoPlaybackCoordinator openPageVideoInNativePlayer];
+}
+
+- (void)browserCommandSendVideoCommand:(NSString *)command {
+    // Video unter dem Zeiger, sonst das erste sichtbare Video der Seite (ohne Punkt findet das Skript
+    // nur ein laufendes oder das einzige <video>, Seiten haben aber oft versteckte weitere).
+    BrowserWebView *webView = self.webview;
+    if ([self pointerIsOverVideo]) {
+        [webView sendVideoCommand:command atPoint:[self pointerPointInWebView]];
+        return;
+    }
+    NSValue *firstVideo = webView.videoRects.firstObject;
+    if (!webView.videoPlaying && firstVideo != nil) {
+        CGRect rect = firstVideo.CGRectValue;
+        [webView sendVideoCommand:command atPoint:CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect))];
+        return;
+    }
+    [webView sendVideoCommand:command];
 }
 
 #pragma mark - BrowserMenuCoordinatorHost

@@ -62,6 +62,7 @@
         @[@"playpause", @"Play/Pause", @"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü."],
         @[@"chevron.backward", @"Zurück", @"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück."],
         @[@"text.page", @"Reader und mehr", @"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••."],
+        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“ oder „suche Wetter“ sagen."],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self rowWithSymbol:item[0] title:item[1] text:item[2]]];
