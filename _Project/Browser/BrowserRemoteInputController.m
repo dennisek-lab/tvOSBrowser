@@ -93,6 +93,9 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @interface BrowserGlowView : UIView
 @property (nonatomic, strong) CAShapeLayer *maskLayer;
 @property (nonatomic) BOOL rainbow;
+@property (nonatomic, strong) CALayer *haloContainer;
+@property (nonatomic, strong) CAGradientLayer *haloGradient;
+@property (nonatomic, strong) CAShapeLayer *haloMask;
 @property (nonatomic, strong) CALayer *bloomContainer;
 @property (nonatomic, strong) CALayer *edgeContainer;
 @property (nonatomic, strong) CAGradientLayer *bloomGradient;
@@ -105,7 +108,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
 @implementation BrowserGlowView
 
-static CGFloat const kGlowMargin = 60.0;
+static CGFloat const kGlowMargin = 110.0;
 
 + (NSArray *)rainbowColors {
     // Farben angelehnt an das erste Apple-Intelligence-Leuchten: Violett, Pink, Orange, Gelb, Blau – und zurück.
@@ -163,9 +166,16 @@ static CGFloat const kGlowMargin = 60.0;
         _bloomContainer = [CALayer layer];
         _bloomGradient = [self newRainbowGradient];
         [_bloomContainer addSublayer:_bloomGradient];
-        _bloomMask = [self newRingMaskWithLineWidth:10.0 softness:15.0];
+        _bloomMask = [self newRingMaskWithLineWidth:16.0 softness:22.0];
         _bloomContainer.mask = _bloomMask;
-        _bloomContainer.opacity = 0.9;
+
+        // Weiter Hof: breiter, weich auslaufender Schein in den Regenbogenfarben (das eigentliche Leuchten).
+        _haloContainer = [CALayer layer];
+        _haloGradient = [self newRainbowGradient];
+        [_haloContainer addSublayer:_haloGradient];
+        _haloMask = [self newRingMaskWithLineWidth:34.0 softness:42.0];
+        _haloContainer.mask = _haloMask;
+        _haloContainer.opacity = 0.75;
 
         _edgeContainer = [CALayer layer];
         _edgeGradient = [self newRainbowGradient];
@@ -173,6 +183,7 @@ static CGFloat const kGlowMargin = 60.0;
         _edgeMask = [self newRingMaskWithLineWidth:4.0 softness:1.5];
         _edgeContainer.mask = _edgeMask;
 
+        [self.layer addSublayer:_haloContainer];
         [self.layer addSublayer:_bloomContainer];
         [self.layer addSublayer:_edgeContainer];
         self.rainbow = YES;
@@ -182,6 +193,7 @@ static CGFloat const kGlowMargin = 60.0;
 
 - (void)setRainbow:(BOOL)rainbow {
     _rainbow = rainbow;
+    self.haloContainer.hidden = !rainbow;
     self.bloomContainer.hidden = !rainbow;
     self.edgeContainer.hidden = !rainbow;
     // Einfarbig: wie bisher über den Schatten der Ebene. Regenbogen: Schatten aus, die Ringe leuchten selbst.
@@ -189,13 +201,14 @@ static CGFloat const kGlowMargin = 60.0;
     if (rainbow) {
         [self startRotation];
     } else {
+        [self.haloGradient removeAnimationForKey:@"spin"];
         [self.bloomGradient removeAnimationForKey:@"spin"];
         [self.edgeGradient removeAnimationForKey:@"spin"];
     }
 }
 
 - (void)startRotation {
-    for (CAGradientLayer *gradient in @[self.bloomGradient, self.edgeGradient]) {
+    for (CAGradientLayer *gradient in @[self.haloGradient, self.bloomGradient, self.edgeGradient]) {
         if ([gradient animationForKey:@"spin"] != nil) {
             continue;
         }
@@ -208,16 +221,16 @@ static CGFloat const kGlowMargin = 60.0;
         [gradient addAnimation:spin forKey:@"spin"];
     }
     // Leichtes Atmen des Scheins, wie beim Original.
-    if ([self.bloomContainer animationForKey:@"breathe"] == nil) {
+    if ([self.haloContainer animationForKey:@"breathe"] == nil) {
         CABasicAnimation *breathe = [CABasicAnimation animationWithKeyPath:@"opacity"];
-        breathe.fromValue = @0.65;
-        breathe.toValue = @1.0;
+        breathe.fromValue = @0.55;
+        breathe.toValue = @0.95;
         breathe.duration = 1.6;
         breathe.autoreverses = YES;
         breathe.repeatCount = HUGE_VALF;
         breathe.removedOnCompletion = NO;
         breathe.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-        [self.bloomContainer addAnimation:breathe forKey:@"breathe"];
+        [self.haloContainer addAnimation:breathe forKey:@"breathe"];
     }
 }
 
@@ -248,11 +261,11 @@ static CGFloat const kGlowMargin = 60.0;
     // damit beim Drehen keine Ecke frei bleibt.
     CGRect container = CGRectInset(shape, -kGlowMargin, -kGlowMargin);
     CGFloat diagonal = ceil(hypot(container.size.width, container.size.height));
-    for (CALayer *layer in @[self.bloomContainer, self.edgeContainer]) {
+    for (CALayer *layer in @[self.haloContainer, self.bloomContainer, self.edgeContainer]) {
         layer.frame = container;
     }
     CGRect square = CGRectMake((container.size.width - diagonal) / 2.0, (container.size.height - diagonal) / 2.0, diagonal, diagonal);
-    for (CAGradientLayer *gradient in @[self.bloomGradient, self.edgeGradient]) {
+    for (CAGradientLayer *gradient in @[self.haloGradient, self.bloomGradient, self.edgeGradient]) {
         gradient.bounds = CGRectMake(0, 0, diagonal, diagonal);
         gradient.position = CGPointMake(CGRectGetMidX(square), CGRectGetMidY(square));
     }
@@ -260,6 +273,8 @@ static CGFloat const kGlowMargin = 60.0;
     CGRect inContainer = CGRectOffset(shape, kGlowMargin, kGlowMargin);
     self.bloomMask.frame = CGRectMake(0, 0, container.size.width, container.size.height);
     self.edgeMask.frame = self.bloomMask.frame;
+    self.haloMask.frame = self.bloomMask.frame;
+    self.haloMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(inContainer, -8.0, -8.0) cornerRadius:radius + 8.0].CGPath;
     self.bloomMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(inContainer, -3.0, -3.0) cornerRadius:radius + 3.0].CGPath;
     self.edgeMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(inContainer, -1.5, -1.5) cornerRadius:radius + 1.5].CGPath;
     [CATransaction commit];
@@ -602,7 +617,9 @@ static CGFloat const kGlowMargin = 60.0;
 - (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius {
     UIView *container = self.lensContainer;
     UIView *source = nil;
-    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)]) {
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)] &&
+        (![self.host respondsToSelector:@selector(browserRemoteInputControllerLensAllowedForTarget:)] ||
+         [self.host browserRemoteInputControllerLensAllowedForTarget:frame])) {
         source = [self.host browserRemoteInputControllerLensSourceView];
     }
     CGRect inSource = source != nil ? [source convertRect:frame fromView:self.rootView] : CGRectNull;

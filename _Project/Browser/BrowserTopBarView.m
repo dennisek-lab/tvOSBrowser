@@ -612,8 +612,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         CGFloat textX = groupX + kTopBarIconSize + starGap;
         labelFrame = CGRectMake(textX, 0.0, textWidth, CGRectGetHeight(chromeFrame));
         labelCenter = CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
-        CGFloat targetX = CGRectGetMaxX(self.homeImageView.frame) + 4.0;
-        self.URLTargetFrame = CGRectMake(targetX, 0.0, MAX(120.0, labelTrailingX - targetX), CGRectGetHeight(chromeFrame));
+        // Ganzer Adressbereich zwischen Tab-Knopf und Kreisel ist wählbar (wie Safaris Adressfeld), nicht nur
+        // rechts vom Stern. Der Stern bleibt trotzdem treffbar: Beim Einrasten gewinnt das kleinste Ziel.
+        self.URLTargetFrame = CGRectMake(labelOriginX, 0.0, MAX(120.0, labelTrailingX - labelOriginX), CGRectGetHeight(chromeFrame));
     } else {
         self.homeImageView.center = labelCenter;
     }

@@ -1486,6 +1486,17 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     return self.addressPanel != nil ? nil : self.webview;
 }
 
+- (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target {
+    // Ziele in der oberen Leiste: Die Linse würde die Webseite darunter zeigen und Titel bzw. Symbole verdecken.
+    if (self.topMenuView != nil && !self.topMenuView.hidden) {
+        CGRect chrome = [self.view convertRect:self.topMenuView.chromeFrame fromView:self.topMenuView];
+        if (CGRectIntersectsRect(CGRectInset(chrome, -8.0, -8.0), target)) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
 - (BOOL)browserRemoteInputControllerAddressPanelActive {
     return self.addressPanel != nil && self.presentedViewController == nil;
 }
