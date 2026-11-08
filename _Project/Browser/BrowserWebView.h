@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
 /// Leuchtfarbe des Elements am Punkt (Koordinaten dieser Ansicht), nil = keine eigene Farbe (Grau, Weiß, Schwarz).
 - (nullable UIColor *)glowColorAtPoint:(CGPoint)point;
+/// YES, wenn das Ziel unter dem Punkt ein reines Textziel ist (s. BrowserClickTargetTracker).
+- (BOOL)isTextTargetAtPoint:(CGPoint)point;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)videoRects;
 /// Läuft auf der Seite gerade ein Video?

@@ -21,6 +21,7 @@
 #import "BrowserIntelligence.h"
 #import "BrowserIntelligenceController.h"
 #import "BrowserMenuCoordinator.h"
+#import "BrowserMotion.h"
 #import "BrowserDOMInteractionService.h"
 #import "BrowserNavigationService.h"
 #import "BrowserNowPlayingController.h"
@@ -446,7 +447,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                         }
                     };
                     dumpLayer(self.view.window.layer, YES, @"Fenster");
-                    NSLog(@"[SelfTest] anims %lu Ebenen mit Animationen", (unsigned long)count);
+                    NSLog(@"[SelfTest] anims %lu Ebenen mit Animationen (Glow-Animation=%d, Bewegung reduzieren=%d)", (unsigned long)count,
+                          BrowserMotion.glowAnimationEnabled, UIAccessibilityIsReduceMotionEnabled());
                     return;
                 }
                 if ([step isEqualToString:@"views"]) {
@@ -2430,6 +2432,18 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         }
     }
     return [webView glowColorAtPoint:center];
+}
+
+- (BOOL)browserRemoteInputControllerTargetIsText:(CGRect)target {
+    BrowserWebView *webView = self.webview;
+    if (self.addressPanel != nil || webView == nil || webView.window == nil) {
+        return NO;
+    }
+    CGPoint center = [webView convertPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) fromView:self.view];
+    if (!CGRectContainsPoint(webView.bounds, center) || ![self browserRemoteInputControllerLensAllowedForTarget:target]) {
+        return NO; // Knöpfe der oberen Leiste
+    }
+    return [webView isTextTargetAtPoint:center];
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {

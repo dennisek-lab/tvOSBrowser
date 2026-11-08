@@ -49,7 +49,7 @@ Beim ersten Start führt eine kurze Einrichtung durch Favoriten, Startseite, Sch
 Funktionen
 =============
 
-- **Magnetic Buttons:** das Herzstück dieser Fassung. Der Zeiger zieht sich auf Links und Knöpfe, sobald er in ihre Nähe kommt, und bleibt dort mit spürbarem Halt (Hysterese), bis man deutlich weiterwischt. Das gewählte Element hebt sich als Glasfläche mit feiner Lichtkante ab und wird von einem weichen, wandernden Regenbogen-Leuchten umrahmt; die Form folgt dem Element (Kapsel bei Knöpfen, abgerundetes Rechteck bei Bildern und Karten), Größenwechsel federn. Über kleinem Text erscheint eine Lupe. So lässt sich eine für Maus und Touch gebaute Webseite mit dem Clickpad bedienen wie eine tvOS-App.
+- **Magnetic Buttons:** das Herzstück dieser Fassung. Der Zeiger zieht sich auf Links und Knöpfe, sobald er in ihre Nähe kommt, und bleibt dort mit spürbarem Halt. Wischt man heraus, springt er zum nächsten Link in dieser Richtung, ein Ziel pro Wischgeste (nur lange, schnelle Wischer laufen weiter); frei wird er erst, wenn dort nichts mehr kommt. Das gewählte Element hebt sich als Glasfläche mit feiner Lichtkante und Glasbrechung am Rand ab, ohne Vergrößerung, und wird von einem weichen, wandernden Regenbogen-Leuchten umrahmt (unter „Glow-Animation“ auch stehend); die Form folgt dem Element (Kapsel bei Knöpfen, abgerundetes Rechteck bei Bildern und Karten). Beim Wechsel ploppt die Hervorhebung am neuen Ziel auf, statt hinüberzugleiten. So lässt sich eine für Maus und Touch gebaute Webseite mit dem Clickpad bedienen wie eine tvOS-App.
 - **Oberfläche:** Leiste, Seitenleiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben (kontinuierlich, konzentrisch, Kapseln), animiertes Regenbogen-Leuchten um das gewählte Element. Seitenleiste in zwei Spalten mit großen Schaltflächen, Symbolen und Schaltern. Neue App-Icons mit Parallax-Ebenen.
 - **Was ist neu:** Beim ersten Start nach einem Update zeigt die App alle Neuerungen dieser Fassung, jederzeit unter *••• → Hilfe → Was ist neu*.
 - **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), moderne Zeigerbilder in drei Stilen.
@@ -72,7 +72,7 @@ Einstellungen (•••)
 | Diese Seite | Startseite öffnen, Zusammenfassen, Übersetzen, als Startseite setzen, Werbeblocker hier, Cookie-Banner hier ablehnen |
 | Navigation | Tabs, Neuer Tab, Favoriten, Verlauf |
 | Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitel (Webseite), Cloudflare-DNS |
-| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt: Leiste, Symbole und Zeiger wie im Original, ohne Glas), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
+| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt: Leiste, Symbole und Zeiger wie im Original, ohne Glas), Glow-Animation (aus: stehender Verlauf; bei „Bewegung reduzieren“ immer stehend), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
 | Daten | Cache leeren, Cookies löschen |
 | Hilfe | Bedienung, Was ist neu |
 | Erweitert | Browser-Kennung (Desktop/Mobil), Medien-Diagnose, WebKit-Medieneinstellungen |
