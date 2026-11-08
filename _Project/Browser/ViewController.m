@@ -2320,8 +2320,13 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 - (void)browserRemoteInputControllerHandlePlayPausePress {
-    // Hinweis „Übersetzen?“ sichtbar: Play/Pause nimmt ihn an.
-    if (self.presentedViewController == nil && self.addressPanel == nil && [self.intelligenceController handlePlayPausePress]) {
+    // Antwort-/Zusammenfassungskarte und Hinweis „Übersetzen?“ nehmen Play/Pause, der Hinweis aber nicht, wenn der
+    // Zeiger auf einem Video steht oder eines läuft (sonst übersetzte Play/Pause auf englischen Videoseiten die
+    // Seite, statt das Video zu starten).
+    BrowserIntelligenceController *intelligence = self.intelligenceController;
+    BOOL videoFirst = self.webview != nil && (self.webview.videoPlaying || [self pointerIsOverVideo]);
+    BOOL cardFirst = intelligence.answerVisible || intelligence.summaryVisible || (intelligence.translationHintVisible && !videoFirst);
+    if (self.presentedViewController == nil && self.addressPanel == nil && cardFirst && [intelligence handlePlayPausePress]) {
         return;
     }
     if (self.presentedViewController != nil) {
@@ -2336,6 +2341,14 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     if (self.webview != nil && (self.webview.videoPlaying || [self pointerIsOverVideo])) {
         [self.webview sendVideoCommand:@"toggle" atPoint:[self pointerPointInWebView]];
         return;
+    }
+    // Player, die die Zielmeldung nicht als Video kennt: Video im Shadow DOM, Player, der sein <video> erst beim
+    // Klick anlegt (dann dessen Play-Knopf), iframe, dessen Meldung noch aussteht. Nur am Zeiger (strict).
+    if (self.webview != nil) {
+        NSString *result = [self.webview playerCommand:@"toggle" atPoint:[self pointerPointInWebView] strict:YES];
+        if (result.length > 0 && ![result isEqualToString:@"none"]) {
+            return;
+        }
     }
     [self requestURLorSearchInput];
 }

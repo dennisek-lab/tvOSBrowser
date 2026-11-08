@@ -312,6 +312,12 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
     if ([self handleTargetBlankLinkAtDOMPoint:point webView:webView]) {
         return YES;
     }
+    // Ziel in einem fremden iframe (eingebettete Player wie Vimeo, Dailymotion, YouTube) oder im Shadow DOM:
+    // Der Klick unten erreicht es nicht (er träfe nur das iframe-Element), die Player-Brücke reicht ihn hinein.
+    NSString *bridged = [webView playerBridgeClickAtCSSPoint:point];
+    if ([bridged isEqualToString:@"frame"] || [bridged isEqualToString:@"shadow"] || [bridged isEqualToString:@"click"]) {
+        return YES;
+    }
 
     NSString *fieldType = [self.domInteractionService evaluateResolvedElementJavaScriptAtPoint:point
                                                                                         webView:webView

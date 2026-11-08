@@ -45,6 +45,24 @@ NS_ASSUME_NONNULL_BEGIN
 /// Liegt dort kein Video, trifft der Befehl das laufende Video der Seite.
 + (NSString *)videoCommandScriptWithCSSPoint:(CGPoint)point command:(NSString *)command;
 
+#pragma mark Player-Brücke (alle Frames, eigene Content World)
+
+/// `WKContentWorld` der Player-Brücke, nil wenn WebKit keine Content Worlds kann (dann läuft die Brücke in der
+/// Seitenwelt, ohne Klicks in fremde Frames). Skripte für die Brücke mit dieser Welt im Hauptframe ausführen.
++ (nullable id)playerBridgeContentWorld;
+
+/// Videobefehl über die Brücke (Hauptframe, Shadow DOM, iframes). Punkt in CSS-Pixeln, (-1, -1) = ohne Punkt.
+/// strict: nur ein Video/Player am Punkt oder ein laufendes Video. Ergebnis des Skripts: play, pause, seek,
+/// click, frame, none bzw. nobridge (Brücke fehlt).
++ (NSString *)playerBridgeCommandScript:(NSString *)command cssPoint:(CGPoint)point strict:(BOOL)strict;
+
+/// Klick über die Brücke: in fremde iframes und Shadow DOM. Ergebnis `page` = Ziel liegt im Hauptdokument,
+/// dort klickt der bisherige Weg (`BrowserPageActionCoordinator`).
++ (NSString *)playerBridgeClickScriptAtCSSPoint:(CGPoint)point;
+
+/// Befehl an den Frame mit dieser Adresse (z. B. nach der Übergabe an den nativen Player).
++ (NSString *)playerBridgeScriptForFrameURL:(NSString *)frameURL command:(NSString *)command;
+
 /// Ist auf der Seite gerade ein Element oder Video im Vollbild?
 @property (nonatomic, readonly) BOOL pageFullscreen;
 

@@ -762,14 +762,95 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     return self.clickTargetTracker.videoPlaying;
 }
 
-- (void)sendVideoCommand:(NSString *)command atPoint:(CGPoint)point {
+- (CGPoint)cssPointForViewPoint:(CGPoint)point {
     CGFloat scale = [self.clickTargetTracker cssScaleForViewWidth:CGRectGetWidth(self.bounds)];
-    CGPoint cssPoint = CGPointMake(point.x / scale, (point.y - self.topObscuredInset) / scale);
-    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:cssPoint command:command]];
+    return CGPointMake(point.x / scale, (point.y - self.topObscuredInset) / scale);
+}
+
+- (void)sendVideoCommand:(NSString *)command atPoint:(CGPoint)point {
+    [self sendVideoCommand:command cssPoint:[self cssPointForViewPoint:point]];
 }
 
 - (void)sendVideoCommand:(NSString *)command {
-    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:CGPointMake(-1, -1) command:command]];
+    [self sendVideoCommand:command cssPoint:CGPointMake(-1, -1)];
+}
+
+/// Über die Player-Brücke (erreicht auch iframes und Shadow DOM); fehlt sie, das bisherige Skript im Hauptframe.
+/// `action:` (Media-Session-Handler der Seite) liegt in der Seitenwelt, also immer dort.
+- (void)sendVideoCommand:(NSString *)command cssPoint:(CGPoint)cssPoint {
+    NSString *fallback = [BrowserClickTargetTracker videoCommandScriptWithCSSPoint:cssPoint command:command];
+    if ([command hasPrefix:@"action:"]) {
+        [self evaluateJavaScriptAsync:fallback];
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self evaluatePlayerBridgeScript:[BrowserClickTargetTracker playerBridgeCommandScript:command cssPoint:cssPoint strict:NO]
+                          completion:^(id result) {
+        NSString *answer = [result isKindOfClass:NSString.class] ? result : nil;
+        NSLog(@"[PlayerBridge] %@ -> %@", command, answer ?: @"(kein Ergebnis)");
+        if (answer == nil || [answer isEqualToString:@"nobridge"]) {
+            [weakSelf evaluateJavaScriptAsync:fallback];
+        }
+    }];
+}
+
+- (NSString *)playerCommand:(NSString *)command atPoint:(CGPoint)point strict:(BOOL)strict {
+    CGPoint cssPoint = [self cssPointForViewPoint:point];
+    NSString *answer = [self stringByEvaluatingPlayerBridgeScript:[BrowserClickTargetTracker playerBridgeCommandScript:command cssPoint:cssPoint strict:strict]];
+    NSLog(@"[PlayerBridge] %@ (%.0f, %.0f) strict=%d -> %@", command, cssPoint.x, cssPoint.y, strict, answer ?: @"(kein Ergebnis)");
+    return [answer isEqualToString:@"nobridge"] ? nil : answer;
+}
+
+- (NSString *)playerBridgeClickAtCSSPoint:(CGPoint)cssPoint {
+    NSString *answer = [self stringByEvaluatingPlayerBridgeScript:[BrowserClickTargetTracker playerBridgeClickScriptAtCSSPoint:cssPoint]];
+    if (answer != nil && ![answer isEqualToString:@"page"]) {
+        NSLog(@"[PlayerBridge] Klick (%.0f, %.0f) -> %@", cssPoint.x, cssPoint.y, answer);
+    }
+    return [answer isEqualToString:@"nobridge"] ? nil : answer;
+}
+
+- (void)sendVideoCommand:(NSString *)command toFrameURL:(NSString *)frameURL {
+    [self evaluatePlayerBridgeScript:[BrowserClickTargetTracker playerBridgeScriptForFrameURL:frameURL command:command] completion:nil];
+}
+
+/// Skript in der Welt der Player-Brücke im Hauptframe (ohne eigene Content World: Seitenwelt).
+- (void)evaluatePlayerBridgeScript:(NSString *)script completion:(void (^)(id result))completion {
+    id world = [BrowserClickTargetTracker playerBridgeContentWorld];
+    SEL selector = NSSelectorFromString(@"evaluateJavaScript:inFrame:inContentWorld:completionHandler:");
+    if (world == nil || ![self.runtimeWebView respondsToSelector:selector]) {
+        [self evaluateJavaScriptAsync:script completion:completion];
+        return;
+    }
+    void (^handler)(id, NSError *) = ^(id result, NSError *error) {
+        if (error != nil) {
+            NSLog(@"[PlayerBridge] Skriptfehler: %@", error.userInfo[@"WKJavaScriptExceptionMessage"] ?: error.localizedDescription);
+        }
+        if (completion != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(result);
+            });
+        }
+    };
+    ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(self.runtimeWebView, selector, script, nil, world, handler);
+}
+
+- (NSString *)stringByEvaluatingPlayerBridgeScript:(NSString *)script {
+    id world = [BrowserClickTargetTracker playerBridgeContentWorld];
+    SEL selector = NSSelectorFromString(@"evaluateJavaScript:inFrame:inContentWorld:completionHandler:");
+    if (world == nil || ![self.runtimeWebView respondsToSelector:selector]) {
+        return [self stringByEvaluatingJavaScriptFromString:script];
+    }
+    __block id evaluationResult = nil;
+    __block BOOL finished = NO;
+    ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(self.runtimeWebView, selector, script, nil, world, ^(id result, NSError *error) {
+        if (error != nil) {
+            NSLog(@"[PlayerBridge] Skriptfehler: %@", error.userInfo[@"WKJavaScriptExceptionMessage"] ?: error.localizedDescription);
+        }
+        evaluationResult = result;
+        finished = YES;
+    });
+    BrowserPumpRunLoopUntil(&finished);
+    return BrowserStringFromJavaScriptResult(evaluationResult);
 }
 
 - (BOOL)pageFullscreen {
