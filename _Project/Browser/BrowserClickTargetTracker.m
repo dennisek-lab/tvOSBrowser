@@ -778,11 +778,6 @@ static NSString *BrowserBridgeSafeArgument(NSString *value) {
     return best;
 }
 
-- (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
-    NSInteger best = [self smallestTargetIndexAtViewPoint:point viewWidth:viewWidth];
-    return best >= 0 && self.rawTargets[best].count >= 7 && self.rawTargets[best][6].integerValue == 1;
-}
-
 - (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
     NSArray<NSValue *> *rects = [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
     CGRect probe = CGRectInset(rect, 2.0, 2.0); // Rundung der Umrechnung

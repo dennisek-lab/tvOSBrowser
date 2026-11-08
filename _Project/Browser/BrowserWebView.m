@@ -755,11 +755,6 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
                                                viewWidth:CGRectGetWidth(self.bounds)];
 }
 
-- (BOOL)isTextTargetAtPoint:(CGPoint)point {
-    return [self.clickTargetTracker isTextTargetAtViewPoint:CGPointMake(point.x, point.y - self.topObscuredInset)
-                                                  viewWidth:CGRectGetWidth(self.bounds)];
-}
-
 - (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
     return [self.clickTargetTracker shapeForViewRect:CGRectOffset(rect, 0.0, -self.topObscuredInset)
                                            viewWidth:CGRectGetWidth(self.bounds)

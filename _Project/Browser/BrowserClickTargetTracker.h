@@ -27,12 +27,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Leuchtfarbe des Ziels unter dem Punkt (Koordinaten der WebView ohne Leisteneinschub), nil = keine eigene Farbe.
 - (nullable UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
-/// YES, wenn das Ziel unter dem Punkt ein reines Textziel ist (Textlink ohne Bild, Fläche oder Feld; Feld 7 der Meldung).
-- (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
 
 /// Form des Ziels, aus dem `rect` stammt (Koordinaten der WebView ohne Leisteneinschub, ggf. auf den sichtbaren Bereich
 /// beschnitten): das kleinste gemeldete Ziel, das `rect` enthält. `cornerRadius` in Punkten (Eckenradius des sichtbaren
-/// Elements), `surface` YES bei eigener sichtbarer Fläche (Hintergrund, Rahmen, Schatten, Bild), `text` wie oben.
+/// Elements), `surface` YES bei eigener sichtbarer Fläche (Hintergrund, Rahmen, Schatten, Bild), `text` YES bei reinem
+/// Textziel (Textlink ohne Bild, Fläche oder Feld; Feld 7 der Meldung).
 /// NO, wenn kein Ziel passt. Nur Zwischenspeicher, kein JavaScript.
 - (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat * _Nullable)cornerRadius surface:(BOOL * _Nullable)surface text:(BOOL * _Nullable)text;
 
