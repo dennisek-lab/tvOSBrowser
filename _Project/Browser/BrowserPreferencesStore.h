@@ -50,6 +50,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Untertitel für Videos in der Webseite (Tonabgriff per Web Audio, Weg B). Standard: aus.
 @property (nonatomic) BOOL webSubtitlesEnabled;
 
+/// Altes Design: Leiste und Bedienelemente wie in der ursprünglichen Fassung (jvanakker/tvOSBrowser) statt Liquid Glass. Standard: aus.
+@property (nonatomic) BOOL classicDesignEnabled;
+/// Ersteinrichtung (Favoriten, Startseite, Schutz, Design) abgeschlossen. Standard: nein.
+@property (nonatomic) BOOL setupCompleted;
+
 - (void)ensureUserAgentConsistency;
 
 @end

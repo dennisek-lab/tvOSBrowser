@@ -26,6 +26,8 @@ static NSString * const kPointerGlideEnabledDefaultsKey = @"PointerGlideEnabled"
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
 static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
+static NSString * const kClassicDesignEnabledDefaultsKey = @"ClassicDesign";
+static NSString * const kSetupCompletedDefaultsKey = @"SetupCompleted";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -234,6 +236,24 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
     [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)classicDesignEnabled {
+    return [[self defaults] boolForKey:kClassicDesignEnabledDefaultsKey];
+}
+
+- (void)setClassicDesignEnabled:(BOOL)classicDesignEnabled {
+    [[self defaults] setBool:classicDesignEnabled forKey:kClassicDesignEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)setupCompleted {
+    return [[self defaults] boolForKey:kSetupCompletedDefaultsKey];
+}
+
+- (void)setSetupCompleted:(BOOL)setupCompleted {
+    [[self defaults] setBool:setupCompleted forKey:kSetupCompletedDefaultsKey];
     [[self defaults] synchronize];
 }
 
