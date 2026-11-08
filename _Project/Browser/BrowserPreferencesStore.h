@@ -22,6 +22,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// Werbeblocker (Standard: an) und Seiten, für die er abgeschaltet ist (Hosts ohne „www.“).
 @property (nonatomic) BOOL adBlockEnabled;
 @property (nonatomic, copy) NSArray<NSString *> *adBlockExceptionHosts;
+/// Werbeblocker bei erkannter Adblock-Sperre automatisch für die Seite pausieren (Standard: an) und die so gesetzten Hosts
+/// (Teilmenge von adBlockExceptionHosts, zur Unterscheidung von Ausnahmen des Nutzers).
+@property (nonatomic) BOOL adBlockAutoPauseOnWall;
+@property (nonatomic, copy) NSArray<NSString *> *adBlockAutoExceptionHosts;
 /// Automatisches Ablehnen von Cookie-Bannern (Standard: an) und Seiten, für die es abgeschaltet ist (Hosts ohne „www.“).
 @property (nonatomic) BOOL cookieBannerBlockEnabled;
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;

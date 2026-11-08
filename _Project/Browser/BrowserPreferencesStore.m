@@ -13,6 +13,8 @@ static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLau
 static NSString * const kHomepageDefaultsKey = @"homepage";
 static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
 static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
+static NSString * const kAdBlockAutoPauseDefaultsKey = @"AdBlockAutoPauseOnWall";
+static NSString * const kAdBlockAutoExceptionHostsDefaultsKey = @"AdBlockAutoExceptionHosts";
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
@@ -164,6 +166,26 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setAdBlockExceptionHosts:(NSArray<NSString *> *)adBlockExceptionHosts {
     [[self defaults] setObject:adBlockExceptionHosts ?: @[] forKey:kAdBlockExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)adBlockAutoPauseOnWall {
+    NSNumber *value = [[self defaults] objectForKey:kAdBlockAutoPauseDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setAdBlockAutoPauseOnWall:(BOOL)adBlockAutoPauseOnWall {
+    [[self defaults] setBool:adBlockAutoPauseOnWall forKey:kAdBlockAutoPauseDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSArray<NSString *> *)adBlockAutoExceptionHosts {
+    NSArray *value = [[self defaults] arrayForKey:kAdBlockAutoExceptionHostsDefaultsKey];
+    return [value isKindOfClass:NSArray.class] ? value : @[];
+}
+
+- (void)setAdBlockAutoExceptionHosts:(NSArray<NSString *> *)adBlockAutoExceptionHosts {
+    [[self defaults] setObject:adBlockAutoExceptionHosts ?: @[] forKey:kAdBlockAutoExceptionHostsDefaultsKey];
     [[self defaults] synchronize];
 }
 
