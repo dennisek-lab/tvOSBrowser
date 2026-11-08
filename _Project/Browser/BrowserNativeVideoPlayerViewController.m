@@ -68,6 +68,11 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 /// Hat die Wiedergabe je begonnen (timeControlStatus „playing“)? Sonst greift der Startwächter.
 @property (nonatomic) BOOL didStartPlayback;
 @property (nonatomic) BOOL didSelectStreamSubtitles;
+/// Startfenster für Erweiterungen (z. B. erste Untertitel): Name → höchste Wartezeit in s.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *startHolds;
+@property (nonatomic) BOOL waitingForStartHolds;
+@property (nonatomic) BOOL didRequestPlayback;
+@property (nonatomic) CFTimeInterval startHoldBegan;
 
 @property (nonatomic, readwrite, getter=isPictureInPictureActive) BOOL pictureInPictureActive;
 @property (nonatomic) BOOL pictureInPictureStarting;
@@ -205,7 +210,7 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
         return;
     }
     [self log:@"viewDidAppear play"];
-    [self.player play];
+    [self startPlaybackRespectingHolds];
     [self armStartWatchdog];
 }
 
@@ -312,6 +317,64 @@ static const NSTimeInterval kBrowserNativePlayerStartTimeout = 15.0;
 - (void)playIfWaiting {
     if (self.playWhenReady && !self.didEndSession) {
         self.playWhenReady = NO;
+        [self startPlaybackRespectingHolds];
+    }
+}
+
+#pragma mark - Startfenster für Erweiterungen
+
+- (void)holdPlaybackStart:(NSString *)reason timeout:(NSTimeInterval)timeout {
+    if (self.didRequestPlayback || self.didEndSession || reason.length == 0) {
+        return;  // läuft schon: nicht nachträglich anhalten
+    }
+    if (self.startHolds == nil) {
+        self.startHolds = [NSMutableDictionary dictionary];
+    }
+    self.startHolds[reason] = @(MAX(0.0, MIN(timeout, 3.0)));
+}
+
+- (void)releasePlaybackStartHold:(NSString *)reason {
+    if (reason.length == 0 || self.startHolds[reason] == nil) {
+        return;
+    }
+    [self.startHolds removeObjectForKey:reason];
+    if (self.waitingForStartHolds && self.startHolds.count == 0) {
+        [self finishStartHoldTimedOut:NO];
+    }
+}
+
+/// `play` erst, wenn alle Startfenster frei sind (höchstens bis zur längsten Wartezeit).
+- (void)startPlaybackRespectingHolds {
+    if (self.startHolds.count == 0) {
+        self.didRequestPlayback = YES;
+        [self.player play];
+        return;
+    }
+    NSTimeInterval timeout = 0.0;
+    for (NSNumber *value in self.startHolds.allValues) {
+        timeout = MAX(timeout, value.doubleValue);
+    }
+    self.waitingForStartHolds = YES;
+    CFTimeInterval began = CACurrentMediaTime();
+    self.startHoldBegan = began;
+    [self log:@"Start wartet auf %@ (höchstens %.1f s)", [self.startHolds.allKeys componentsJoinedByString:@","], timeout];
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf != nil && strongSelf.waitingForStartHolds && strongSelf.startHoldBegan == began) {
+            [strongSelf finishStartHoldTimedOut:YES];
+        }
+    });
+}
+
+- (void)finishStartHoldTimedOut:(BOOL)timedOut {
+    NSString *pending = [self.startHolds.allKeys componentsJoinedByString:@","];
+    self.waitingForStartHolds = NO;
+    [self.startHolds removeAllObjects];
+    [self log:@"Start nach %.2f s Warten (%@)", CACurrentMediaTime() - self.startHoldBegan,
+     timedOut ? [@"Zeit abgelaufen: " stringByAppendingString:pending] : @"frei"];
+    if (!self.didEndSession) {
+        self.didRequestPlayback = YES;
         [self.player play];
     }
 }

@@ -6,28 +6,20 @@
 #import "BrowserSubtitleEngine.h"
 #import "BrowserSubtitleHLSAudioSource.h"
 #import "BrowserSubtitleOverlayView.h"
+#import "BrowserSubtitlePipeline.h"
+#import "BrowserSubtitleProgressiveAudioSource.h"
 
 #import <objc/runtime.h>
 
 static NSString * const kSubtitleControllerLogPrefix = @"[Subtitles]";
 static NSString * const kSubtitleMenuIdentifier = @"io.github.tvosbrowser.app.autoSubtitles";
-static const double kSampleRate = 16000.0;
-static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
+static NSString * const kSubtitleStartHoldReason = @"Untertitel";
+/// Höchstens so lange wartet der Start auf die ersten Untertitel (vorauslesende Quellen). Der Player puffert in der
+/// Zeit ohnehin; am Gerät waren die ersten 4 s nach 0,4–0,7 s fertig.
+static const NSTimeInterval kSubtitleStartHoldTimeout = 1.0;
 static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssociationKey;
 
-/// Ein Auswertungsabschnitt.
-@interface BrowserSubtitleWindow : NSObject
-@property (nonatomic, strong) NSData *samples;
-@property (nonatomic) NSTimeInterval start;
-@property (nonatomic) NSTimeInterval end;
-@property (nonatomic) NSTimeInterval acceptFrom;
-@property (nonatomic) NSTimeInterval acceptUntil;
-@end
-
-@implementation BrowserSubtitleWindow
-@end
-
-@interface BrowserSubtitleController () <BrowserSubtitleAudioSourceDelegate>
+@interface BrowserSubtitleController ()
 @property (nonatomic, weak) AVPlayerViewController *playerViewController;
 @property (nonatomic, strong) NSURL *playbackURL;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *requestHeaders;
@@ -39,7 +31,10 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 @property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *cues;  // Hauptthread, nach Start sortiert
 @property (nonatomic, strong, nullable) id<BrowserSubtitleAudioSource> source;
 @property (nonatomic, strong, nullable) BrowserSubtitleEngine *engine;
-@property (nonatomic) BOOL triedHLSFallback;
+@property (nonatomic, strong) BrowserSubtitlePipeline *pipeline;
+@property (nonatomic, strong) dispatch_queue_t engineQueue;
+/// Schon versuchte Quellen („mp4“, „tap“, „hls“), damit jede Rückfallstufe nur einmal kommt.
+@property (nonatomic, strong) NSMutableSet<NSString *> *triedSources;
 @property (nonatomic) BOOL suppressedByExistingSubtitles;
 @property (nonatomic) BOOL userForcedOn;  // im Player-Menü eingeschaltet: auch neben vorhandenen Untertiteln
 /// Bei „auto“: für dieses Video festgelegte Sprache (überlebt Neustarts der Erkennung, z. B. Tonquellenwechsel).
@@ -47,26 +42,14 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 @property (nonatomic) BOOL streamingPlaylist;
 @property (nonatomic, readwrite, getter=isRunning) BOOL running;
 @property (nonatomic) BOOL detached;
+@property (nonatomic) BOOL holdingStart;
 @property (nonatomic) NSTimeInterval lastSourceUpdate;
 @property (nonatomic) NSTimeInterval lastSummary;
 @property (nonatomic) NSTimeInterval lastMenuCheck;
 @property (nonatomic) float lastRate;
-// Verarbeitung (nur auf processingQueue)
-@property (nonatomic, strong) dispatch_queue_t processingQueue;
-@property (nonatomic, strong) dispatch_queue_t engineQueue;
-@property (nonatomic, weak, nullable) id<BrowserSubtitleAudioSource> processingSource;
-@property (nonatomic, strong, nullable) BrowserSubtitleEngine *processingEngine;
-@property (nonatomic, strong) NSMutableData *buffer;
-@property (nonatomic) NSTimeInterval bufferStart;
-@property (nonatomic) BOOL hasBuffer;
-@property (nonatomic) NSTimeInterval windowSeconds;
-@property (nonatomic) NSTimeInterval overlapSeconds;
-@property (nonatomic) BOOL dropStaleWindows;
-@property (nonatomic, strong) NSMutableArray<BrowserSubtitleWindow *> *pendingWindows;
-@property (nonatomic) BOOL engineBusy;
-@property (nonatomic, strong) NSMutableIndexSet *covered;
-@property (nonatomic) NSUInteger droppedWindows;
-@property (nonatomic) NSUInteger processedWindows;
+// Versatzmessung (Hauptthread): Anzeigezeitpunkt − Sprechbeginn laut whisper, je neu eingeblendetem Satz.
+@property (nonatomic, strong) NSMutableArray<NSNumber *> *offsets;
+@property (nonatomic) NSTimeInterval lastMeasuredStart;
 @end
 
 @implementation BrowserSubtitleController
@@ -124,19 +107,36 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     if (self) {
         _preferences = [BrowserPreferencesStore new];
         _cues = [NSMutableArray array];
-        _processingQueue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.processing", DISPATCH_QUEUE_SERIAL);
+        _offsets = [NSMutableArray array];
+        _lastMeasuredStart = -INFINITY;
+        _triedSources = [NSMutableSet set];
         _engineQueue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.whisper",
                                              dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
-        _buffer = [NSMutableData data];
-        _pendingWindows = [NSMutableArray array];
-        _covered = [NSMutableIndexSet indexSet];
+        __weak typeof(self) weakSelf = self;
+        dispatch_queue_t engineQueue = _engineQueue;
+        _pipeline = [[BrowserSubtitlePipeline alloc] initWithTranscriber:^(NSData *samples, NSTimeInterval startTime,
+                                                                           void (^completion)(NSArray<BrowserSubtitleCue *> *)) {
+            BrowserSubtitleEngine *engine = weakSelf.engine;
+            dispatch_async(engineQueue, ^{
+                completion(engine != nil ? [engine transcribeSamples:samples.bytes count:samples.length / sizeof(float) startTime:startTime] : nil);
+            });
+        }];
+        _pipeline.cueHandler = ^(NSArray<BrowserSubtitleCue *> *cues, NSTimeInterval replaceFrom, NSTimeInterval windowStart, NSTimeInterval windowEnd) {
+            [weakSelf addCues:cues replacingTentativeFrom:replaceFrom];
+        };
+        _pipeline.firstWindowHandler = ^(NSTimeInterval windowStart, NSTimeInterval windowEnd) {
+            [weakSelf firstWindowReadyFrom:windowStart to:windowEnd];
+        };
+        _pipeline.failureHandler = ^(id<BrowserSubtitleAudioSource> source, NSString *reason) {
+            [weakSelf source:source didFailWithReason:reason];
+        };
     }
     return self;
 }
 
 - (void)dealloc {
-    // Die letzte Referenz kann in einem Block der processingQueue liegen: dann kein detach (dispatch_sync auf die
-    // eigene Queue, UIKit abseits des Main-Threads). Quelle und Engine dürfen von jedem Thread gestoppt werden.
+    // Die letzte Referenz kann in einem Block einer Hintergrund-Queue liegen: dann kein detach (UIKit abseits des
+    // Main-Threads). Quelle und Engine dürfen von jedem Thread gestoppt werden.
     if (_detached) {
         return;
     }
@@ -210,8 +210,8 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     if (playerViewController != nil) {
         playerViewController.transportBarCustomMenuItems = [self menuItemsWithoutOwn:playerViewController.transportBarCustomMenuItems];
     }
-    NSLog(@"%@ ausgehängt, %lu Untertitel, Speicher %.0f MB", kSubtitleControllerLogPrefix,
-          (unsigned long)self.cues.count, [BrowserSubtitleEngine currentMemoryFootprintMB]);
+    NSLog(@"%@ ausgehängt, %lu Untertitel, Speicher %.0f MB, %@", kSubtitleControllerLogPrefix,
+          (unsigned long)self.cues.count, [BrowserSubtitleEngine currentMemoryFootprintMB], [self offsetSummary]);
 }
 
 - (void)observePlayer:(AVPlayer *)player {
@@ -220,7 +220,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     self.observedPlayer = player;
     __weak typeof(self) weakSelf = self;
-    self.timeObserver = [player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(0.1, NSEC_PER_SEC)
+    self.timeObserver = [player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(0.05, NSEC_PER_SEC)
                                                              queue:dispatch_get_main_queue()
                                                         usingBlock:^(CMTime time) {
         [weakSelf playerTimeDidChange:time];
@@ -365,7 +365,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         return;
     }
     self.running = YES;
-    self.triedHLSFallback = NO;
+    [self.triedSources removeAllObjects];
     BrowserSubtitleEngine *engine = [[BrowserSubtitleEngine alloc] initWithModelPath:modelPath language:language];
     self.engine = engine;
     __weak typeof(self) weakSelf = self;
@@ -389,6 +389,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     [self installMenu];  // „wird erkannt …“ im Menü
     [self.overlay showStatus:@"Untertitel werden vorbereitet …" duration:10.0];
+    // Modell zuerst in die whisper-Queue (der erste Abschnitt wartet dort darauf), Quelle sofort: Netz und Laden parallel.
     dispatch_async(self.engineQueue, ^{
         NSError *error = nil;
         BOOL loaded = [engine loadModel:&error];
@@ -408,9 +409,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
             [strongSelf.overlay showStatus:[NSString stringWithFormat:@"Automatische Untertitel an (%@)", languageText] duration:3.0];
             NSLog(@"%@ Erkennung mit %@, Sprache %@ (eingestellt %@)", kSubtitleControllerLogPrefix, engine.modelName,
                   engine.lockedLanguage ?: engine.language, language);
-            [strongSelf startSourcePreferringHLS:[strongSelf playbackURLLooksLikeHLS]];
         });
     });
+    [self startNextSource];
 }
 
 - (BOOL)playbackURLLooksLikeHLS {
@@ -418,50 +419,105 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     return self.streamingPlaylist || [string containsString:@".m3u8"] || [string containsString:@"format=m3u8"] || [string containsString:@"/hls/"];
 }
 
-- (void)startSourcePreferringHLS:(BOOL)hls {
+/// Reihenfolge: HLS → eigene Segmente; Datei über HTTP(S) → MP4-Vorauslesen, sonst bzw. bei Fehler Audio-Tap;
+/// findet der Tap keine Audiospur, noch einmal die HLS-Quelle (HLS ohne .m3u8 in der Adresse).
+- (void)startNextSource {
+    NSString *kind = nil;
+    if ([self playbackURLLooksLikeHLS] && ![self.triedSources containsObject:@"hls"]) {
+        kind = @"hls";
+    } else if (![self playbackURLLooksLikeHLS] && [BrowserSubtitleProgressiveAudioSource canHandleURL:self.playbackURL] &&
+               ![self.triedSources containsObject:@"mp4"]) {
+        kind = @"mp4";
+    } else if (![self.triedSources containsObject:@"tap"]) {
+        kind = @"tap";
+    } else if (![self.triedSources containsObject:@"hls"]) {
+        kind = @"hls";
+    }
     AVPlayerItem *item = self.playerViewController.player.currentItem;
     id<BrowserSubtitleAudioSource> source = nil;
-    if (hls) {
+    if ([kind isEqualToString:@"hls"]) {
         BrowserSubtitleHLSAudioSource *hlsSource = [[BrowserSubtitleHLSAudioSource alloc] initWithPlaylistURL:self.playbackURL
                                                                                                 requestHeaders:self.requestHeaders
                                                                                                        cookies:self.cookies];
         NSString *language = self.preferences.autoSubtitlesLanguage;
         hlsSource.preferredLanguage = [language isEqualToString:@"auto"] ? nil : language;
         source = hlsSource;
-    } else if (item != nil) {
+    } else if ([kind isEqualToString:@"mp4"]) {
+        source = [[BrowserSubtitleProgressiveAudioSource alloc] initWithURL:self.playbackURL requestHeaders:self.requestHeaders cookies:self.cookies];
+    } else if ([kind isEqualToString:@"tap"] && item != nil) {
         source = [[BrowserSubtitleAudioTapSource alloc] initWithPlayerItem:item];
     }
     if (source == nil) {
+        [self releaseStartHold];
         [self stopRecognitionClearing:NO];
         return;
     }
-    if (hls) {
-        self.triedHLSFallback = YES;
-    }
-    BOOL ahead = source.deliversAhead;
-    BrowserSubtitleEngine *engine = self.engine;
-    dispatch_sync(self.processingQueue, ^{
-        self.processingSource = source;
-        self.processingEngine = engine;
-        // Vorauslesende Quellen: längere Abschnitte (genauer, weniger Aufrufe). Echtzeit: kurz für wenig Verzug.
-        self.windowSeconds = ahead ? 12.0 : 5.0;
-        self.overlapSeconds = ahead ? 1.5 : 1.0;
-        self.dropStaleWindows = !ahead;
-        [self resetBufferLocked];
-        [self.pendingWindows removeAllObjects];
-    });
+    [self.triedSources addObject:kind];
     self.source = source;
-    source.delegate = self;
+    [self.pipeline attachSource:source];
+    if (source.deliversAhead) {
+        [self holdStartIfPossible];
+    } else {
+        [self releaseStartHold];  // der Tap braucht die Wiedergabe, um Ton zu bekommen
+    }
     NSLog(@"%@ Tonquelle %@ für %@", kSubtitleControllerLogPrefix, source.kindName, self.playbackURL.absoluteString);
     [source start];
-    CMTime now = self.playerViewController.player.currentTime;
-    [source updatePlaybackTime:CMTIME_IS_NUMERIC(now) ? CMTimeGetSeconds(now) : 0.0 rate:self.playerViewController.player.rate];
+    [self pushPlaybackTimeToSource];
+}
+
+/// Start der Wiedergabe kurz aufhalten, bis die ersten Sekunden erkannt sind (höchstens 1 s, nur vor dem ersten play).
+- (void)holdStartIfPossible {
+    AVPlayerViewController *playerViewController = self.playerViewController;
+    if (self.holdingStart || ![playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class] ||
+        playerViewController.player.rate > 0.0f) {
+        return;
+    }
+    self.holdingStart = YES;
+    [(BrowserNativeVideoPlayerViewController *)playerViewController holdPlaybackStart:kSubtitleStartHoldReason timeout:kSubtitleStartHoldTimeout];
+}
+
+- (void)releaseStartHold {
+    if (!self.holdingStart) {
+        return;
+    }
+    self.holdingStart = NO;
+    AVPlayerViewController *playerViewController = self.playerViewController;
+    if ([playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class]) {
+        [(BrowserNativeVideoPlayerViewController *)playerViewController releasePlaybackStartHold:kSubtitleStartHoldReason];
+    }
+}
+
+- (void)firstWindowReadyFrom:(NSTimeInterval)start to:(NSTimeInterval)end {
+    NSLog(@"%@ erster Abschnitt %.2f–%.2f s fertig", kSubtitleControllerLogPrefix, start, end);
+    [self releaseStartHold];
+}
+
+- (void)source:(id<BrowserSubtitleAudioSource>)source didFailWithReason:(NSString *)reason {
+    if (source != self.source) {
+        return;
+    }
+    NSLog(@"%@ Tonquelle %@ fehlgeschlagen: %@", kSubtitleControllerLogPrefix, source.kindName, reason);
+    self.source = nil;
+    source.delegate = nil;
+    [source stop];
+    [self.pipeline detachSource];
+    BOOL fallback = ([source.kindName isEqualToString:@"mp4"] && ![self.triedSources containsObject:@"tap"]) ||
+                    ([source.kindName isEqualToString:@"tap"] && ![self.triedSources containsObject:@"hls"]);
+    if (fallback) {
+        [self startNextSource];
+        return;
+    }
+    [self releaseStartHold];
+    [self.overlay showStatus:[NSString stringWithFormat:@"Automatische Untertitel: %@", reason] duration:6.0];
+    [self stopRecognitionClearing:NO];
 }
 
 - (void)stopRecognitionClearing:(BOOL)clearCues {
+    [self releaseStartHold];
     if (!self.running && self.source == nil && self.engine == nil) {
         if (clearCues) {
             [self.cues removeAllObjects];
+            [self.pipeline clearCoverage];
         }
         return;
     }
@@ -470,216 +526,94 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     self.source = nil;
     source.delegate = nil;
     [source stop];
+    [self.pipeline detachSource];
     BrowserSubtitleEngine *engine = self.engine;
     self.engine = nil;
     [engine cancel];
-    dispatch_sync(self.processingQueue, ^{
-        self.processingSource = nil;
-        self.processingEngine = nil;
-        [self.pendingWindows removeAllObjects];
-        [self resetBufferLocked];
-        if (clearCues) {
-            [self.covered removeAllIndexes];
-        }
-    });
+    if (clearCues) {
+        [self.pipeline clearCoverage];
+        [self.cues removeAllObjects];
+    }
     // Modell auf der whisper-Queue freigeben, nachdem eine laufende Auswertung abgebrochen ist.
     dispatch_async(self.engineQueue, ^{
         (void)engine;
     });
-    if (clearCues) {
-        [self.cues removeAllObjects];
-    }
     [self.overlay setSubtitleText:nil];
-    NSLog(@"%@ Erkennung gestoppt (RTF Schnitt %.2f)", kSubtitleControllerLogPrefix, engine.averageRealTimeFactor);
+    NSLog(@"%@ Erkennung gestoppt (RTF Schnitt %.2f) – %@", kSubtitleControllerLogPrefix, engine.averageRealTimeFactor, [self offsetSummary]);
     [self installMenu];  // „wird erkannt …“ entfernen
 }
 
-#pragma mark Tonquelle (Hintergrund)
+#pragma mark Zeitachse
 
-- (void)resetBufferLocked {
-    self.buffer = [NSMutableData data];
-    self.hasBuffer = NO;
-    self.bufferStart = 0.0;
-}
-
-- (NSTimeInterval)bufferedSecondsLocked {
-    return (double)(self.buffer.length / sizeof(float)) / kSampleRate;
-}
-
-- (void)audioSource:(id<BrowserSubtitleAudioSource>)source didProduceSamples:(NSData *)samples atTime:(NSTimeInterval)mediaTime discontinuity:(BOOL)discontinuity {
-    dispatch_async(self.processingQueue, ^{
-        if (source != self.processingSource || samples.length == 0) {
-            return;
-        }
-        NSTimeInterval expectedEnd = self.bufferStart + [self bufferedSecondsLocked];
-        if (discontinuity || !self.hasBuffer || fabs(mediaTime - expectedEnd) > 0.3) {
-            if (self.hasBuffer && [self bufferedSecondsLocked] >= 1.5) {
-                [self submitWindowFromBufferLength:self.buffer.length final:YES];
-            }
-            [self resetBufferLocked];
-            self.bufferStart = mediaTime;
-            self.hasBuffer = YES;
-        } else {
-            // An die Zeit der Quelle anlehnen, damit sich Rundungen nicht aufsummieren.
-            self.bufferStart += mediaTime - expectedEnd;
-        }
-        [self.buffer appendData:samples];
-        NSUInteger windowBytes = (NSUInteger)(self.windowSeconds * kSampleRate) * sizeof(float);
-        NSUInteger stepBytes = (NSUInteger)((self.windowSeconds - self.overlapSeconds) * kSampleRate) * sizeof(float);
-        while (self.buffer.length >= windowBytes) {
-            [self submitWindowFromBufferLength:windowBytes final:NO];
-            [self.buffer replaceBytesInRange:NSMakeRange(0, stepBytes) withBytes:NULL length:0];
-            self.bufferStart += (double)(stepBytes / sizeof(float)) / kSampleRate;
-        }
-    });
-}
-
-- (void)flushPartialWindow {
-    dispatch_async(self.processingQueue, ^{
-        if (self.processingSource == nil || !self.hasBuffer || [self bufferedSecondsLocked] < 1.5) {
-            return;
-        }
-        [self submitWindowFromBufferLength:self.buffer.length final:YES];
-        NSTimeInterval end = self.bufferStart + [self bufferedSecondsLocked];
-        [self resetBufferLocked];
-        self.bufferStart = end;
-    });
-}
-
-- (void)audioSource:(id<BrowserSubtitleAudioSource>)source didFailWithReason:(NSString *)reason {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (source != self.source) {
-            return;
-        }
-        NSLog(@"%@ Tonquelle %@ fehlgeschlagen: %@", kSubtitleControllerLogPrefix, source.kindName, reason);
-        if (!self.triedHLSFallback && [source isKindOfClass:BrowserSubtitleAudioTapSource.class]) {
-            // Kein Tap möglich (z. B. HLS ohne .m3u8 in der Adresse): Segmentweg versuchen.
-            self.source = nil;
-            source.delegate = nil;
-            [source stop];
-            [self startSourcePreferringHLS:YES];
-            return;
-        }
-        [self.overlay showStatus:[NSString stringWithFormat:@"Automatische Untertitel: %@", reason] duration:6.0];
-        [self stopRecognitionClearing:NO];
-    });
-}
-
-- (NSTimeInterval)audioSourcePendingSeconds:(id<BrowserSubtitleAudioSource>)source {
-    __block NSTimeInterval pending = 0.0;
-    dispatch_sync(self.processingQueue, ^{
-        pending = [self bufferedSecondsLocked] + self.pendingWindows.count * (self.windowSeconds - self.overlapSeconds) +
-                  (self.engineBusy ? self.windowSeconds : 0.0);
-    });
-    return pending;
-}
-
-- (BOOL)audioSource:(id<BrowserSubtitleAudioSource>)source isRangeCoveredFrom:(NSTimeInterval)start to:(NSTimeInterval)end {
-    __block BOOL covered = NO;
-    dispatch_sync(self.processingQueue, ^{
-        NSUInteger first = (NSUInteger)ceil(MAX(0.0, start) / kCoverageUnit);
-        NSUInteger last = (NSUInteger)floor(MAX(0.0, end) / kCoverageUnit);
-        covered = last > first && [self.covered containsIndexesInRange:NSMakeRange(first, last - first)];
-    });
-    return covered;
-}
-
-#pragma mark Abschnitte (processingQueue)
-
-- (void)submitWindowFromBufferLength:(NSUInteger)length final:(BOOL)final {
-    BrowserSubtitleWindow *window = [BrowserSubtitleWindow new];
-    window.samples = [self.buffer subdataWithRange:NSMakeRange(0, length)];
-    window.start = self.bufferStart;
-    window.end = self.bufferStart + (double)(length / sizeof(float)) / kSampleRate;
-    window.acceptFrom = window.start;
-    window.acceptUntil = final ? window.end : window.end - self.overlapSeconds / 2.0;
-
-    NSUInteger first = (NSUInteger)ceil(MAX(0.0, window.acceptFrom) / kCoverageUnit);
-    NSUInteger last = (NSUInteger)floor(MAX(0.0, window.acceptUntil) / kCoverageUnit);
-    if (last > first && [self.covered containsIndexesInRange:NSMakeRange(first, last - first)]) {
-        return;  // schon ausgewertet (z. B. nach Zurückspulen)
+/// Abspielposition auf der Zeitachse der Quelle: Medienzeit, bei Live-HLS mit PROGRAM-DATE-TIME das Datum.
+- (NSTimeInterval)timelinePositionForTime:(CMTime)time {
+    if (!CMTIME_IS_NUMERIC(time)) {
+        return NAN;
     }
-    if (self.dropStaleWindows && self.pendingWindows.count > 0) {
-        // Echtzeitquelle und whisper kommt nicht nach: alte Abschnitte verwerfen, sonst wächst der Verzug.
-        self.droppedWindows += self.pendingWindows.count;
-        NSLog(@"%@ %lu Abschnitt(e) verworfen (Erkennung zu langsam)", kSubtitleControllerLogPrefix, (unsigned long)self.pendingWindows.count);
-        [self.pendingWindows removeAllObjects];
+    id<BrowserSubtitleAudioSource> source = self.source;
+    if ([source respondsToSelector:@selector(usesDateTimeline)] && source.usesDateTimeline) {
+        NSDate *date = self.observedPlayer.currentItem.currentDate;
+        return date != nil ? date.timeIntervalSince1970 : NAN;
     }
-    [self.pendingWindows addObject:window];
-    [self pumpLocked];
+    return CMTimeGetSeconds(time);
 }
 
-- (void)pumpLocked {
-    if (self.engineBusy || self.pendingWindows.count == 0 || self.processingEngine == nil) {
+- (void)pushPlaybackTimeToSource {
+    id<BrowserSubtitleAudioSource> source = self.source;
+    AVPlayer *player = self.playerViewController.player;
+    if (source == nil || player == nil) {
         return;
     }
-    BrowserSubtitleWindow *window = self.pendingWindows.firstObject;
-    [self.pendingWindows removeObjectAtIndex:0];
-    self.engineBusy = YES;
-    BrowserSubtitleEngine *engine = self.processingEngine;
-    __weak typeof(self) weakSelf = self;
-    dispatch_async(self.engineQueue, ^{
-        NSArray<BrowserSubtitleCue *> *cues = [engine transcribeSamples:window.samples.bytes
-                                                                  count:window.samples.length / sizeof(float)
-                                                              startTime:window.start];
-        typeof(self) strongSelf = weakSelf;
-        if (strongSelf == nil) {
-            return;
+    CMTime now = player.currentTime;
+    NSTimeInterval seconds = CMTIME_IS_NUMERIC(now) ? CMTimeGetSeconds(now) : 0.0;
+    // Vor dem ersten Abspielen steht der Player noch bei 0, springt aber gleich zur Startposition der Seite.
+    if (seconds < 0.5 && [self.playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class]) {
+        NSTimeInterval initial = ((BrowserNativeVideoPlayerViewController *)self.playerViewController).initialPlaybackTime;
+        if (initial > 1.0) {
+            seconds = initial;
         }
-        dispatch_async(strongSelf.processingQueue, ^{
-            strongSelf.engineBusy = NO;
-            if (engine == strongSelf.processingEngine && cues != nil) {
-                strongSelf.processedWindows++;
-                [strongSelf acceptCues:cues fromWindow:window];
-            }
-            [strongSelf pumpLocked];
-        });
-    });
-}
-
-- (void)acceptCues:(NSArray<BrowserSubtitleCue *> *)cues fromWindow:(BrowserSubtitleWindow *)window {
-    NSMutableArray<BrowserSubtitleCue *> *accepted = [NSMutableArray array];
-    for (BrowserSubtitleCue *cue in cues) {
-        NSTimeInterval middle = (cue.start + cue.end) / 2.0;
-        if (middle < window.acceptFrom || middle >= window.acceptUntil) {
-            continue;  // gehört zum Nachbarabschnitt (Überlappung)
-        }
-        if ([self.covered containsIndex:(NSUInteger)floor(MAX(0.0, middle) / kCoverageUnit)]) {
-            continue;  // schon von einem früheren Abschnitt
-        }
-        [accepted addObject:cue];
     }
-    NSUInteger first = (NSUInteger)ceil(MAX(0.0, window.acceptFrom) / kCoverageUnit);
-    NSUInteger last = (NSUInteger)floor(MAX(0.0, window.acceptUntil) / kCoverageUnit);
-    if (last > first) {
-        [self.covered addIndexesInRange:NSMakeRange(first, last - first)];
+    NSDate *date = player.currentItem.currentDate;
+    if ([source respondsToSelector:@selector(updatePlaybackTime:date:rate:)]) {
+        [source updatePlaybackTime:seconds date:date != nil ? date.timeIntervalSince1970 : NAN rate:player.rate];
+    } else {
+        [source updatePlaybackTime:seconds rate:player.rate];
     }
-    if (accepted.count == 0) {
-        return;
-    }
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self addCues:accepted];
-    });
 }
 
 #pragma mark Anzeige (Hauptthread)
 
-- (void)addCues:(NSArray<BrowserSubtitleCue *> *)cues {
+static NSString *BrowserSubtitleNormalizedText(NSString *text) {
+    NSCharacterSet *drop = NSCharacterSet.alphanumericCharacterSet.invertedSet;
+    return [[[text lowercaseString] componentsSeparatedByCharactersInSet:drop] componentsJoinedByString:@""];
+}
+
+- (void)addCues:(NSArray<BrowserSubtitleCue *> *)cues replacingTentativeFrom:(NSTimeInterval)replaceFrom {
     if (self.detached) {
         return;
     }
-    CMTime currentTime = self.observedPlayer.currentTime;
-    NSTimeInterval now = CMTIME_IS_NUMERIC(currentTime) ? CMTimeGetSeconds(currentTime) : 0.0;
+    NSTimeInterval now = [self timelinePositionForTime:self.observedPlayer.currentTime];
+    if (!isnan(replaceFrom)) {
+        // Mithören: vorläufige Untertitel des letzten Durchlaufs durch die neuen ersetzen.
+        NSIndexSet *old = [self.cues indexesOfObjectsPassingTest:^BOOL(BrowserSubtitleCue *cue, NSUInteger index, BOOL *stop) {
+            return cue.tentative && cue.start >= replaceFrom;
+        }];
+        for (BrowserSubtitleCue *replaced in [self.cues objectsAtIndexes:old]) {
+            for (BrowserSubtitleCue *cue in cues) {
+                if (fabs(cue.start - replaced.start) < 0.5 && !isnan(replaced.shownAt)) {
+                    cue.shownAt = replaced.shownAt;   // gleicher Satz, schon sichtbar: kein neuer Messpunkt
+                }
+            }
+        }
+        [self.cues removeObjectsAtIndexes:old];
+    }
     for (BrowserSubtitleCue *cue in cues) {
         if ([self isRepeatedCue:cue]) {
             continue;  // whisper wiederholt sich gern (gleicher Satz doppelt, „directional“ in Musik)
         }
-        NSTimeInterval duration = cue.end - cue.start;
-        cue.visibleUntil = cue.end + 0.6;
-        if (now > cue.end - 0.3 && now - cue.end < 8.0) {
-            // Kam zu spät (Echtzeit-Tap): ab jetzt noch eine Lesezeit lang zeigen.
-            cue.visibleUntil = MAX(cue.visibleUntil, now + MIN(4.0, MAX(1.5, duration)));
-        }
+        // Kam der Untertitel nach seinem Sprechbeginn an (Mithören), steht er ab jetzt mindestens eine Lesezeit lang.
+        NSTimeInterval reading = MIN(4.0, MAX(1.2, cue.text.length * 0.06));
+        cue.visibleUntil = isfinite(now) && now > cue.start + 0.3 ? MAX(cue.end + 0.8, now + reading) : cue.end + 0.8;
         NSUInteger index = [self.cues indexOfObject:cue inSortedRange:NSMakeRange(0, self.cues.count)
                                             options:NSBinarySearchingInsertionIndex
                                     usingComparator:^NSComparisonResult(BrowserSubtitleCue *a, BrowserSubtitleCue *b) {
@@ -687,12 +621,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         }];
         [self.cues insertObject:cue atIndex:index];
     }
-    [self updateOverlayAtTime:now];
-}
-
-static NSString *BrowserSubtitleNormalizedText(NSString *text) {
-    NSCharacterSet *drop = NSCharacterSet.alphanumericCharacterSet.invertedSet;
-    return [[[text lowercaseString] componentsSeparatedByCharactersInSet:drop] componentsJoinedByString:@""];
+    if (isfinite(now)) {
+        [self updateOverlayAtTime:now];
+    }
 }
 
 - (BOOL)isRepeatedCue:(BrowserSubtitleCue *)cue {
@@ -708,38 +639,74 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
     return NO;
 }
 
+/// Sichtbar ist ein Untertitel ab seinem Sprechbeginn bis kurz nach seinem Ende; beginnt der nächste, löst dieser ab
+/// (außer der alte kam verspätet an und braucht noch Lesezeit). Höchstens zwei gleichzeitig.
 - (void)updateOverlayAtTime:(NSTimeInterval)time {
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-    for (NSInteger i = (NSInteger)self.cues.count - 1; i >= 0 && lines.count < 2; i--) {
+    NSMutableArray<BrowserSubtitleCue *> *visible = [NSMutableArray array];
+    BrowserSubtitleCue *following = nil;   // der nächstspätere schon begonnene Untertitel
+    for (NSInteger i = (NSInteger)self.cues.count - 1; i >= 0 && visible.count < 2; i--) {
         BrowserSubtitleCue *cue = self.cues[(NSUInteger)i];
-        if (cue.start > time + 0.1) {
+        if (cue.start > time + 0.05) {
             continue;
         }
         if (cue.start < time - 30.0) {
             break;
         }
-        if (cue.visibleUntil > time) {
-            [lines insertObject:cue.text atIndex:0];
+        BOOL late = cue.visibleUntil > cue.end + 0.85;   // kam nach dem Sprechbeginn an
+        NSTimeInterval until = cue.visibleUntil;
+        if (following != nil && !late) {
+            until = MIN(until, MAX(following.start, cue.start + 1.0));
+        }
+        if (until > time) {
+            [visible insertObject:cue atIndex:0];
+        }
+        following = cue;
+    }
+    for (BrowserSubtitleCue *cue in visible) {
+        if (isnan(cue.shownAt)) {
+            cue.shownAt = time;
+            [self measureOffsetOfCue:cue atTime:time];
         }
     }
-    [self.overlay setSubtitleText:lines.count > 0 ? [lines componentsJoinedByString:@"\n"] : nil];
+    [self.overlay setSubtitleText:visible.count > 0 ? [[visible valueForKey:@"text"] componentsJoinedByString:@"\n"] : nil];
+}
+
+/// Versatz = Medienzeit beim Einblenden − Sprechbeginn laut whisper (positiv: zu spät).
+- (void)measureOffsetOfCue:(BrowserSubtitleCue *)cue atTime:(NSTimeInterval)time {
+    if (fabs(cue.start - self.lastMeasuredStart) <= 0.3) {
+        return;
+    }
+    self.lastMeasuredStart = cue.start;
+    double offset = time - cue.start;
+    if (fabs(offset) > 30.0) {
+        return;  // Spulen
+    }
+    [self.offsets addObject:@(offset)];
+    NSLog(@"%@ Anzeige Δ=%+.2f s (Sprechbeginn %.2f, eingeblendet %.2f, Ende %.2f, %@%@) „%@“", kSubtitleControllerLogPrefix, offset,
+          cue.start, time, cue.end, self.source.kindName ?: @"-", cue.tentative ? @", vorläufig" : @"", cue.text);
+}
+
+- (NSString *)offsetSummary {
+    return BrowserSubtitleOffsetSummary(self.offsets);
 }
 
 - (void)playerTimeDidChange:(CMTime)time {
     if (self.detached || !CMTIME_IS_NUMERIC(time)) {
         return;
     }
-    NSTimeInterval seconds = CMTimeGetSeconds(time);
-    [self updateOverlayAtTime:seconds];
+    NSTimeInterval position = [self timelinePositionForTime:time];
+    if (isfinite(position)) {
+        [self updateOverlayAtTime:position];
+    }
 
     NSTimeInterval wall = CACurrentMediaTime();
     float rate = self.observedPlayer.rate;
     if (self.source != nil && (wall - self.lastSourceUpdate > 0.5 || rate != self.lastRate)) {
         self.lastSourceUpdate = wall;
-        [self.source updatePlaybackTime:seconds rate:rate];
+        [self pushPlaybackTimeToSource];
     }
     if (self.source != nil && !self.source.deliversAhead && self.lastRate > 0.0f && rate == 0.0f) {
-        [self flushPartialWindow];  // Pause: angefangenen Satz trotzdem auswerten
+        [self.pipeline flushPartial];  // Pause: angefangenen Satz trotzdem auswerten
     }
     self.lastRate = rate;
     if (wall - self.lastMenuCheck > 2.0) {
@@ -751,16 +718,11 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
     }
     if (self.running && wall - self.lastSummary > 30.0) {
         self.lastSummary = wall;
-        __block NSUInteger processed = 0, dropped = 0, pending = 0;
-        dispatch_sync(self.processingQueue, ^{
-            processed = self.processedWindows;
-            dropped = self.droppedWindows;
-            pending = self.pendingWindows.count;
-        });
-        NSLog(@"%@ Stand t=%.1f s: %lu Untertitel, %lu Abschnitte, %lu verworfen, %lu wartend, RTF Schnitt %.2f, Speicher %.0f MB",
-              kSubtitleControllerLogPrefix, seconds, (unsigned long)self.cues.count, (unsigned long)processed,
-              (unsigned long)dropped, (unsigned long)pending, self.engine.averageRealTimeFactor,
-              [BrowserSubtitleEngine currentMemoryFootprintMB]);
+        NSLog(@"%@ Stand t=%.1f s: %lu Untertitel, %lu Abschnitte, %lu verworfen, %lu wartend, RTF Schnitt %.2f, Speicher %.0f MB, %@",
+              kSubtitleControllerLogPrefix, CMTimeGetSeconds(time), (unsigned long)self.cues.count,
+              (unsigned long)self.pipeline.processedWindows, (unsigned long)self.pipeline.droppedWindows,
+              (unsigned long)self.pipeline.pendingWindowCount, self.engine.averageRealTimeFactor,
+              [BrowserSubtitleEngine currentMemoryFootprintMB], [self offsetSummary]);
     }
 }
 

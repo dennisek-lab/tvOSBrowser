@@ -9,6 +9,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, readonly) NSString *text;
 /// Bis wann der Untertitel sichtbar bleibt (wird von der Anzeige gesetzt, z. B. verlängert, wenn er spät ankam).
 @property (nonatomic) NSTimeInterval visibleUntil;
+/// Vorläufig (Mithören: Satz noch nicht zu Ende, wird durch den nächsten Durchlauf ersetzt).
+@property (nonatomic) BOOL tentative;
+/// Medienzeit, zu der der Untertitel zum ersten Mal sichtbar wurde (NAN = noch nie). Für die Versatzmessung.
+@property (nonatomic) NSTimeInterval shownAt;
 - (instancetype)initWithStart:(NSTimeInterval)start end:(NSTimeInterval)end text:(NSString *)text;
 @end
 

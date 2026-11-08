@@ -66,6 +66,8 @@
 		68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */ = {isa = PBXBuildFile; fileRef = 738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */; };
 		6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */ = {isa = PBXBuildFile; fileRef = 7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */; };
 		13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */ = {isa = PBXBuildFile; fileRef = E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */; };
+		E01CCF2A23F3C37ABE810405 /* BrowserSubtitleProgressiveAudioSource.m in Sources */ = {isa = PBXBuildFile; fileRef = 95C0B440A684C3489BA24FC2 /* BrowserSubtitleProgressiveAudioSource.m */; };
+		03DBEE619B0CC8A818BB26C5 /* BrowserSubtitlePipeline.m in Sources */ = {isa = PBXBuildFile; fileRef = D2926EB22449E26DFD3DA52B /* BrowserSubtitlePipeline.m */; };
 		B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */ = {isa = PBXBuildFile; fileRef = 835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */; };
 		87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */; };
 		BC7377FCB96ADE6D0703EE8F /* Reader in Resources */ = {isa = PBXBuildFile; fileRef = 02AB7C306633303A188E18EE /* Reader */; };
@@ -193,6 +195,10 @@
 		7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleAudioTapSource.m; sourceTree = "<group>"; };
 		101AA9CE01C303808066F135 /* BrowserSubtitleHLSAudioSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleHLSAudioSource.h; sourceTree = "<group>"; };
 		E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleHLSAudioSource.m; sourceTree = "<group>"; };
+		5D0030BFD1ADCA414B3D2D98 /* BrowserSubtitleProgressiveAudioSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleProgressiveAudioSource.h; sourceTree = "<group>"; };
+		95C0B440A684C3489BA24FC2 /* BrowserSubtitleProgressiveAudioSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleProgressiveAudioSource.m; sourceTree = "<group>"; };
+		988A03778593940750A278F2 /* BrowserSubtitlePipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitlePipeline.h; sourceTree = "<group>"; };
+		D2926EB22449E26DFD3DA52B /* BrowserSubtitlePipeline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitlePipeline.m; sourceTree = "<group>"; };
 		6667D3AD6471CF9FA5795A21 /* BrowserSubtitleOverlayView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleOverlayView.h; sourceTree = "<group>"; };
 		835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleOverlayView.m; sourceTree = "<group>"; };
 		C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleController.h; sourceTree = "<group>"; };
@@ -404,6 +410,10 @@
 				7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */,
 				101AA9CE01C303808066F135 /* BrowserSubtitleHLSAudioSource.h */,
 				E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */,
+				5D0030BFD1ADCA414B3D2D98 /* BrowserSubtitleProgressiveAudioSource.h */,
+				95C0B440A684C3489BA24FC2 /* BrowserSubtitleProgressiveAudioSource.m */,
+				988A03778593940750A278F2 /* BrowserSubtitlePipeline.h */,
+				D2926EB22449E26DFD3DA52B /* BrowserSubtitlePipeline.m */,
 				6667D3AD6471CF9FA5795A21 /* BrowserSubtitleOverlayView.h */,
 				835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */,
 				C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */,
@@ -684,6 +694,8 @@
 				87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */,
 				B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */,
 				13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */,
+				E01CCF2A23F3C37ABE810405 /* BrowserSubtitleProgressiveAudioSource.m in Sources */,
+				03DBEE619B0CC8A818BB26C5 /* BrowserSubtitlePipeline.m in Sources */,
 				6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */,
 				68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */,
 				C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */,
