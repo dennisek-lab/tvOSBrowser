@@ -1345,6 +1345,19 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Design: Liquid Glass (Standard) oder das alte Design der ursprünglichen Fassung (graue Leiste, Originalsymbole,
+/// volle Adresse, kein Glas). Wirkt sofort: BrowserTopBarView folgt der Einstellung über NSUserDefaultsDidChangeNotification,
+/// alle übrigen Flächen fragen BrowserMotion beim nächsten Öffnen.
+- (BrowserAdvancedMenuItem *)designMenuItem {
+    BOOL classic = self.preferencesStore.classicDesignEnabled;
+    return [self advancedMenuItemWithTitle:@"Design"
+                                    detail:classic ? @"Alt" : @"Liquid Glass"
+                                   handler:^{
+        self.preferencesStore.classicDesignEnabled = !classic;
+        [self.host browserBringCursorToFront];
+    }];
+}
+
 /// Liquid-Glass-Animationen (Federn, materialisierendes Glas) oder schlichte Überblendungen, s. BrowserMotion.
 - (BrowserAdvancedMenuItem *)liquidGlassAnimationsMenuItem {
     BOOL enabled = self.preferencesStore.liquidGlassAnimationsEnabled;
@@ -1580,6 +1593,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                                items:@[
             [self topNavigationVisibilityMenuItem],
             [self rainbowGlowMenuItem],
+            [self designMenuItem],
             [self liquidGlassAnimationsMenuItem],
             [self cursorStyleMenuItem],
             [self pointerSpeedMenuItem],
