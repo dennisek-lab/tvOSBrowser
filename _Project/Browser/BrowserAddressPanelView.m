@@ -196,7 +196,7 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
 
         _dimView = [[UIView alloc] initWithFrame:self.bounds];
         _dimView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        _dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.5];
+        _dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.28];
         _dimView.alpha = 0.0;
         [self addSubview:_dimView];
 
@@ -209,9 +209,10 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
         _cardView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         [self addSubview:_cardView];
 
-        // Wie bei der Leiste: klares Glas mit leichter Abdunkelung, damit Schrift auf jeder Seite lesbar bleibt.
+        // Liquid Glass: das Glas selbst trägt die Fläche (Seite scheint durch). Nur ein Hauch Tönung für die Lesbarkeit
+        // der hellen Schrift; die Abdunkelung der Seite dahinter (dimView) übernimmt den Rest.
         _cardTintView = [UIView new];
-        _cardTintView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.42];
+        _cardTintView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.10];
         _cardTintView.alpha = 0.0;
         [_cardView.contentView addSubview:_cardTintView];
 

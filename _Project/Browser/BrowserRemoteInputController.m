@@ -89,24 +89,26 @@ static const CGFloat kGlideMaxDistance = 140.0;
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.16];
-        self.layer.borderWidth = 0.75;
-        self.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
+        // Keine Aufhellung der Fläche: das Ziel bleibt unverändert sichtbar, markiert wird nur durch Leuchten und
+        // eine feine Lichtkante (Wunsch: keine zusätzliche Belichtung in den Magnetic Buttons).
+        self.backgroundColor = UIColor.clearColor;
+        self.layer.borderWidth = 0.0;
 
         _glossLayer = [CAGradientLayer layer];
-        _glossLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.34].CGColor,
+        _glossLayer.hidden = YES;
+        _glossLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
                                (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor];
         _glossLayer.locations = @[@0.0, @0.55];
         [self.layer addSublayer:_glossLayer];
 
         // Lichtkante: oben hell, unten schwächer, als 1,5-pt-Ring maskiert.
         _rimLayer = [CAGradientLayer layer];
-        _rimLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.95].CGColor,
-                             (id)[UIColor colorWithWhite:1.0 alpha:0.35].CGColor];
+        _rimLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.75].CGColor,
+                             (id)[UIColor colorWithWhite:1.0 alpha:0.25].CGColor];
         _rimMask = [CAShapeLayer layer];
         _rimMask.fillColor = UIColor.clearColor.CGColor;
         _rimMask.strokeColor = UIColor.blackColor.CGColor;
-        _rimMask.lineWidth = 3.0;
+        _rimMask.lineWidth = 2.0;
         _rimLayer.mask = _rimMask;
         [self.layer addSublayer:_rimLayer];
     }
