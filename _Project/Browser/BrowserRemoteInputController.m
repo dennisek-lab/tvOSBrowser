@@ -562,19 +562,22 @@ typedef struct {
     BrowserMagneticMark mark;
 } BrowserMagneticStyle;
 
-/// Variante A, die Darstellung im Release: kein Zoom (Mitte 1,0; Nutzerwunsch 8. November 2026, „der Zoom ist
-/// verwirrend“), Brechung nur im 6-pt-Randband, Lichtkante, Fläche 6 pt größer als das Ziel.
+/// Standard für alle Ziele (Variante B, Nutzerwunsch 8. November 2026): keine Refraktion, kein Zoom, Lichtkante.
+/// Die Linse verdoppelte am Rand Inhalte (im Fließtext „iiTunes“, bei Google-Treffern ein doppelter schmaler Streifen
+/// am linken Rand). `padding` ist die Vorgabe für Ziele unbekannter Form; Knöpfe mit eigener Fläche liegen enger an
+/// (showHighlightForTarget:).
 static BrowserMagneticStyle BrowserMagneticStyleStandard(void) {
-    return (BrowserMagneticStyle){YES, 1.0, 1.13, 6.0, YES, 6.0, BrowserMagneticMarkNone};
+    return (BrowserMagneticStyle){NO, 1.0, 1.13, 6.0, YES, 6.0, BrowserMagneticMarkNone};
 }
 
 #if DEBUG
 /// Vergleich der Darstellungen (docs/magnetic-varianten/): NSUserDefaults-Schlüssel „MagneticVariant“, im Selbsttest
-/// `pref:MagneticVariant=B`. Z vorher (Mitte 1,04-fach vergrößert), A aktuell, B ohne Refraktion, C ohne Highlights,
-/// D ohne beides; nur für Textziele: E eng (3 pt), F eng ohne Refraktion, G getönte Fläche, H Kontur, I Unterstreichung.
+/// `pref:MagneticVariant=B`, leer = Standard. Z alte Linse mit vergrößerter Mitte (1,04-fach), A alte Linse ohne Zoom,
+/// B ohne Refraktion (Text wie früher 6 pt), C Linse ohne Highlights, D ohne beides; nur für Textziele: E eng (3 pt) mit
+/// Linse, F eng ohne Refraktion (= Standard), G getönte Fläche, H Kontur, I Unterstreichung.
 static NSString *BrowserMagneticVariant(void) {
     NSString *value = [NSUserDefaults.standardUserDefaults stringForKey:@"MagneticVariant"];
-    return value.length > 0 ? value.uppercaseString : @"A";
+    return value.length > 0 ? value.uppercaseString : @"";
 }
 
 static BOOL BrowserMagneticVariantIsTextOnly(NSString *variant) {
@@ -585,51 +588,57 @@ static BOOL BrowserMagneticVariantIsTextOnly(NSString *variant) {
 static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
     BrowserMagneticStyle style = BrowserMagneticStyleStandard();
     if (text) {
-        // Standard für Textlinks (Variante F): eng (3 pt) und ohne Kantenbrechung. Die Linse verdoppelte im
-        // Fließtext Buchstaben am Rand („iiTunes“, docs/magnetic-varianten/kontaktabzug.png). Knöpfe/Bilder: A.
-        style.lens = NO;
-        style.padding = 3.0;
+        style.padding = 3.0; // Textlinks eng (früher Variante F)
     }
 #if DEBUG
     NSString *variant = BrowserMagneticVariant();
-    if (text && ![variant isEqualToString:@"A"] && !BrowserMagneticVariantIsTextOnly(variant)) {
-        style = BrowserMagneticStyleStandard(); // Z/B/C/D zum Vergleich auch für Text vom alten Standard aus
+    if (variant.length == 0 || (BrowserMagneticVariantIsTextOnly(variant) && !text)) {
+        return style;
     }
-    if (text && [variant isEqualToString:@"A"] && [NSUserDefaults.standardUserDefaults stringForKey:@"MagneticVariant"].length > 0) {
-        style = BrowserMagneticStyleStandard(); // ausdrücklich A: alte Textdarstellung mit Linse
+    if (!BrowserMagneticVariantIsTextOnly(variant)) {
+        style.padding = 6.0; // Z/A/B/C/D: auch Text mit dem früheren Rand
     }
     if ([variant isEqualToString:@"Z"]) {
+        style.lens = YES;
         style.lensCenterScale = 1.04;
-    } else if ([variant isEqualToString:@"B"]) {
-        style.lens = NO;
+    } else if ([variant isEqualToString:@"A"]) {
+        style.lens = YES;
     } else if ([variant isEqualToString:@"C"]) {
+        style.lens = YES;
         style.highlights = NO;
     } else if ([variant isEqualToString:@"D"]) {
-        style.lens = NO;
         style.highlights = NO;
-    } else if (text && [variant isEqualToString:@"E"]) {
-        style = BrowserMagneticStyleStandard();
-        style.padding = 3.0;
+    } else if ([variant isEqualToString:@"E"]) {
+        style.lens = YES;
         style.lensBand = 3.0;
-    } else if (text && [variant isEqualToString:@"F"]) {
-        style.lens = NO;
-        style.padding = 3.0;
-    } else if (text && [variant isEqualToString:@"G"]) {
-        style.lens = NO;
+    } else if ([variant isEqualToString:@"G"]) {
         style.mark = BrowserMagneticMarkTint;
-    } else if (text && [variant isEqualToString:@"H"]) {
-        style.lens = NO;
+    } else if ([variant isEqualToString:@"H"]) {
         style.highlights = NO;
         style.mark = BrowserMagneticMarkContour;
-    } else if (text && [variant isEqualToString:@"I"]) {
-        style.lens = NO;
+    } else if ([variant isEqualToString:@"I"]) {
         style.highlights = NO;
         style.mark = BrowserMagneticMarkUnderline;
     }
-#else
-    (void)text;
 #endif
     return style;
+}
+
+/// Abstand der Hervorhebung bei Knöpfen mit eigener Fläche oder eigener Rundung: liegt eng an, Glow direkt am Knopf.
+static const CGFloat kMagneticTightPadding = 2.5;
+/// Eckenradius für Seitenziele ohne eigene Rundung (Textlinks, Symbole, Treffer, Karten): iOS-typisch mit
+/// kontinuierlicher Kurve (Squircle: cornerCurve continuous auf Hervorhebung und Fläche, UIBezierPath im Glow),
+/// keine Pille als Vorgabe (Nutzerwunsch 8. November 2026).
+static const CGFloat kMagneticDefaultCornerRadius = 12.0;
+/// Eckige Flächen (Radius 0, z. B. Bilder, eckige Knöpfe): Abstand plus so viel Rundung, dass die spitze Ecke des
+/// Elements nicht in den Glow ragt; die Hervorhebung bleibt erkennbar eckig.
+static const CGFloat kMagneticSquareExtraRadius = 4.0;
+
+/// Vorgabe-Rundung für Ziele ohne Formangabe (Knöpfe der oberen Leiste; frühere Regel): Knöpfe, Links und Textzeilen als Kapsel, größere
+/// Flächen mit großer, kontinuierlicher Rundung. Mehrzeilige Ziele (ab 80 pt, etwa ein Google-Treffer mit Kopfzeile
+/// und Titel) keine Kapsel: deren Halbkreise würden Favicon und Titelanfang an der linken Kante anschneiden.
+static CGFloat BrowserMagneticDefaultRadius(CGFloat height) {
+    return height <= 80.0 ? height / 2.0 : MIN(34.0, height / 2.0);
 }
 
 @interface BrowserRemoteInputController ()
@@ -1214,26 +1223,52 @@ enum { kHistoryCount = 32 };
     highlight.transform = CGAffineTransformIdentity;
     [self.rootView insertSubview:highlight belowSubview:self.cursorView];
 
+    // Form des Ziels: Ziele der eigenen Oberfläche (Aufklapp-Bereich, Adressfeld) liefern ihren Radius direkt,
+    // Seitenziele Rundung, eigene Fläche und Textziel aus der letzten Meldung der Seite (ohne JavaScript).
+    CGFloat appRadius = -1.0;
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerCornerRadiusForTarget:)]) {
+        appRadius = [self.host browserRemoteInputControllerCornerRadiusForTarget:target];
+    }
+    CGFloat elementRadius = -1.0;
+    BOOL surface = NO;
     BOOL textTarget = NO;
+    BOOL shapeKnown = NO;
+    if (appRadius < 0.0 && [self.host respondsToSelector:@selector(browserRemoteInputControllerShapeForTarget:cornerRadius:surface:text:)]) {
+        shapeKnown = [self.host browserRemoteInputControllerShapeForTarget:target cornerRadius:&elementRadius surface:&surface text:&textTarget];
+    }
+    BrowserMagneticStyle style = BrowserMagneticStyleForTarget(shapeKnown && textTarget);
+    CGFloat padding = style.padding;
+    // Seitenziele: Hat das Element eine eigene Rundung (border-radius), übernimmt die Hervorhebung sie (Radius plus
+    // Abstand: Pille bleibt Pille, Kreis bleibt Kreis, 4-px-Ecken bleiben fast eckig). Ohne eigene Rundung gilt der
+    // iOS-typische Radius. Knöpfe mit eigener Fläche oder Rundung liegen eng an (2,5 pt), Textlinks mit 3 pt.
+    // Früher wurde jedes Ziel unter 80 pt Höhe zur Kapsel mit 6 pt Abstand, auch Knöpfe mit 4-px-Ecken.
+    BOOL ownRadius = shapeKnown && elementRadius > 0.5;
+    if (shapeKnown && !textTarget && (surface || ownRadius)) {
+        padding = kMagneticTightPadding;
+    }
+    CGRect frame = CGRectInset(target, -padding, -padding);
+    CGFloat height = CGRectGetHeight(frame);
+    CGFloat halfSide = MIN(height, CGRectGetWidth(frame)) / 2.0;
+    CGFloat radius = BrowserMagneticDefaultRadius(height);
+    if (appRadius >= 0.0) {
+        radius = MIN(appRadius + padding, height / 2.0);
+    } else if (ownRadius) {
+        radius = MIN(elementRadius + padding, halfSide);
+    } else if (shapeKnown && surface && !textTarget) {
+        radius = MIN(padding + kMagneticSquareExtraRadius, halfSide);
+    } else if (shapeKnown) {
+        radius = MIN(kMagneticDefaultCornerRadius, halfSide);
+    }
 #if DEBUG
-    if (BrowserMagneticVariantIsTextOnly(BrowserMagneticVariant()) &&
-        [self.host respondsToSelector:@selector(browserRemoteInputControllerTargetIsText:)]) {
-        textTarget = [self.host browserRemoteInputControllerTargetIsText:target];
+    static CGRect loggedTarget;
+    if (!CGRectEqualToRect(loggedTarget, target)) {
+        loggedTarget = target;
+        NSLog(@"[Magnet] Ziel %.0f,%.0f %.0f×%.0f Form %@ Radius %.1f Fläche %d Text %d → Rand %.1f Ecken %.1f",
+              CGRectGetMinX(target), CGRectGetMinY(target), CGRectGetWidth(target), CGRectGetHeight(target),
+              appRadius >= 0.0 ? @"App" : (shapeKnown ? @"Seite" : @"unbekannt"), appRadius >= 0.0 ? appRadius : elementRadius,
+              surface, textTarget, padding, radius);
     }
 #endif
-    BrowserMagneticStyle style = BrowserMagneticStyleForTarget(textTarget);
-    CGRect frame = CGRectInset(target, -style.padding, -style.padding);
-    // Ecken nach Liquid Glass: Knöpfe, Links und Textzeilen als Kapsel, größere Flächen (Karten, Bilder) mit
-    // großer, kontinuierlicher Rundung statt kantiger 16 pt. Mehrzeilige Ziele (ab 80 pt, etwa ein Google-Treffer mit
-    // Kopfzeile und Titel) keine Kapsel: deren Halbkreise würden Favicon und Titelanfang an der linken Kante anschneiden.
-    CGFloat height = CGRectGetHeight(frame);
-    CGFloat radius = height <= 80.0 ? height / 2.0 : MIN(34.0, height / 2.0);
-    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerCornerRadiusForTarget:)]) {
-        CGFloat targetRadius = [self.host browserRemoteInputControllerCornerRadiusForTarget:target];
-        if (targetRadius >= 0.0) {
-            radius = MIN(targetRadius + style.padding, CGRectGetHeight(frame) / 2.0);
-        }
-    }
     BrowserGlowView *glow = highlight.glowView;
     UIColor *glowColor = nil;
     if ([self.host respondsToSelector:@selector(browserRemoteInputControllerGlowColorForTarget:)]) {

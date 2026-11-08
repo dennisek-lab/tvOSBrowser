@@ -363,14 +363,70 @@ static NSString *BrowserClickTargetScript(void) {
         "if (!grew) { return r; }"
         "return {left:L,top:T,right:R,bottom:B,width:R-L,height:B-T};"
     "}"
+    // Form des sichtbaren Elements (Felder 8/9 der Meldung): größter Eckenradius in CSS-px (auf die halbe kürzere
+    // Seite begrenzt, Prozentwerte umgerechnet) und ob es eine eigene sichtbare Fläche hat.
+    "function px(v,w,h){ v=String(v||'').split(' ')[0]; var n=parseFloat(v); if (!isFinite(n)||n<0) { return 0; } if (v.indexOf('%')>0) { n=Math.min(w,h)*n/100; } return n; }"
+    "function rad(s,r){"
+        "var w=r.width, h=r.height;"
+        "var m=Math.max(px(s.borderTopLeftRadius,w,h),px(s.borderTopRightRadius,w,h),px(s.borderBottomLeftRadius,w,h),px(s.borderBottomRightRadius,w,h));"
+        "return Math.round(Math.min(m,Math.min(w,h)/2)*2)/2;"
+    "}"
+    // Hintergrund unter dem Element (erster deckender Vorfahre), um gleichfarbige, also unsichtbare Flächen zu erkennen.
+    "function under(el){ for (var n=el.parentElement, i=0; n && i<8; n=n.parentElement, i++){ var c=rgba(getComputedStyle(n).backgroundColor); if (c && c[3]>0.5) { return c; } } return [255,255,255,1]; }"
+    "function surf(el,s){"
+        "var t=el.tagName; if (t==='IMG'||t==='VIDEO'||t==='CANVAS'||t==='PICTURE') { return 1; }"
+        "var b=rgba(s.backgroundColor);"
+        "if (b && b[3]>0.1) { var u=under(el); if (b[3]<0.9 || Math.abs(b[0]-u[0])+Math.abs(b[1]-u[1])+Math.abs(b[2]-u[2])>12) { return 1; } }"
+        "var bi=s.backgroundImage||'none'; if (bi.indexOf('gradient')>=0 || (bi!=='none' && s.backgroundSize==='cover')) { return 1; }"
+        "if (s.boxShadow && s.boxShadow!=='none') { return 1; }"
+        "var sides=0, nm=['Top','Right','Bottom','Left'];"
+        "for (var k=0;k<4;k++){ var bc=rgba(s['border'+nm[k]+'Color']); if (parseFloat(s['border'+nm[k]+'Width'])>0.4 && s['border'+nm[k]+'Style']!=='none' && bc && bc[3]>0.1) { sides++; } }"
+        "return sides>=3 ? 1 : 0;"
+    "}"
+    // Sichtbarer Knopf zum Ziel: das Element selbst, sonst ein eng anliegender Vorfahre mit Fläche, der kein anderes
+    // Ziel enthält (z. B. <li class=chip><a>), sonst ein Nachfahre mit Fläche, der das Ziel fast ganz ausfüllt
+    // (z. B. Vorschaubild in einem Link). Ergebnis {r: Rechteck, s: Stil, f: Fläche 0/1}.
+    "function visual(el,r,s){"
+        "if (surf(el,s)) { return {r:r,s:s,f:1}; }"
+        "for (var n=el.parentElement, i=0; n && i<3 && n!==document.body && n!==document.documentElement; n=n.parentElement, i++){"
+            "var nr=n.getBoundingClientRect();"
+            "if (nr.left>r.left+1||nr.top>r.top+1||nr.right<r.right-1||nr.bottom<r.bottom-1) { continue; }"
+            "if (nr.width-r.width>32||nr.height-r.height>24||nr.height>120) { break; }"
+            "var ns=getComputedStyle(n); if (!surf(n,ns)) { continue; }"
+            "if (n.querySelectorAll(SEL).length!==1+el.querySelectorAll(SEL).length) { break; }"
+            "return {r:nr,s:ns,f:1};"
+        "}"
+        "var kids=el.querySelectorAll('*'), a=r.width*r.height;"
+        "for (var k=0;k<kids.length && k<16;k++){"
+            "var kr=kids[k].getBoundingClientRect();"
+            "if (kr.width*kr.height<a*0.8||kr.left<r.left-2||kr.top<r.top-2||kr.right>r.right+2||kr.bottom>r.bottom+2) { continue; }"
+            "var ks=getComputedStyle(kids[k]); if (!surf(kids[k],ks)) { continue; }"
+            // Rundung oft am umschließenden Rahmen mit overflow:hidden (YouTube-Vorschaubild: img eckig, Hülle 12 px).
+            "var kRad=rad(ks,kr);"
+            "for (var p=kids[k].parentElement; p && p!==el.parentElement; p=p.parentElement){"
+                "var pr=p.getBoundingClientRect(); if (pr.width*pr.height>kr.width*kr.height*1.25) { break; }"
+                "kRad=Math.max(kRad,rad(getComputedStyle(p),kr));"
+            "}"
+            "return {r:kr,s:ks,f:1,rd:kRad};"
+        "}"
+        "return {r:r,s:s,f:0};"
+    "}"
     "function collect(){"
         "pending=false;"
         "if (!document.documentElement) { return; }"
-        "var out=[], els=document.querySelectorAll(SEL);"
+        "var out=[], seen=new Map(), els=document.querySelectorAll(SEL);"
         "for (var i=0; i<els.length && out.length<500; i++){"
             "var el=els[i], cs=getComputedStyle(el), r0=el.getBoundingClientRect(), r=boxOf(el,r0,cs);"
             "if (!usable(el,r)) { if (r===r0 || !usable(el,r0)) { continue; } r=r0; }"
-            "out.push([Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height),fixedLike(el),glow(cs),textLike(el,cs)]);"
+            // Inneres Ziel (span, img mit tabindex/role …) in einem kaum größeren äußeren Ziel: das äußere ist der
+            // sichtbare Knopf, das innere fiele sonst als kleinstes Ziel unter dem Zeiger an.
+            "var up=el.parentElement && el.parentElement.closest(SEL), ui=up ? seen.get(up) : undefined;"
+            "if (ui!==undefined) { var o=out[ui];"
+                "if (o[0]<=r.left+1 && o[1]<=r.top+1 && o[0]+o[2]>=r.right-1 && o[1]+o[3]>=r.bottom-1 && o[2]-r.width<=40 && o[3]-r.height<=24) { seen.set(el,ui); continue; }"
+            "}"
+            "var vis=visual(el,r,cs), vr=vis.r, txt=vis.f ? 0 : textLike(el,cs);"
+            "seen.set(el,out.length);"
+            "out.push([Math.round(vr.left),Math.round(vr.top),Math.round(vr.width),Math.round(vr.height),fixedLike(el),glow(vis.f?vis.s:cs),txt,vis.rd!==undefined?vis.rd:rad(vis.s,vr),vis.f]);"
         "}"
         "var vids=[], playing=false, vs=document.querySelectorAll('video');"
         "for (var j=0; j<vs.length && vids.length<20; j++){"
@@ -729,9 +785,37 @@ static NSString *BrowserBridgeSafeArgument(NSString *value) {
     return best;
 }
 
-- (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
-    NSInteger best = [self smallestTargetIndexAtViewPoint:point viewWidth:viewWidth];
-    return best >= 0 && self.rawTargets[best].count >= 7 && self.rawTargets[best][6].integerValue == 1;
+- (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
+    NSArray<NSValue *> *rects = [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
+    CGRect probe = CGRectInset(rect, 2.0, 2.0); // Rundung der Umrechnung
+    if (CGRectIsEmpty(probe)) {
+        probe = rect;
+    }
+    NSInteger best = -1;
+    CGFloat bestArea = CGFLOAT_MAX;
+    for (NSUInteger i = 0; i < rects.count; i++) {
+        CGRect candidate = rects[i].CGRectValue;
+        CGFloat area = CGRectGetWidth(candidate) * CGRectGetHeight(candidate);
+        if (CGRectContainsRect(candidate, probe) && area < bestArea) {
+            best = (NSInteger)i;
+            bestArea = area;
+        }
+    }
+    if (best < 0) {
+        return NO;
+    }
+    NSArray<NSNumber *> *entry = self.rawTargets[best];
+    CGFloat scale = [self cssScaleForViewWidth:viewWidth];
+    if (cornerRadius != NULL) {
+        *cornerRadius = entry.count >= 9 ? entry[7].doubleValue * scale : -1.0;
+    }
+    if (surface != NULL) {
+        *surface = entry.count >= 9 && entry[8].integerValue == 1;
+    }
+    if (text != NULL) {
+        *text = entry.count >= 7 && entry[6].integerValue == 1;
+    }
+    return YES;
 }
 
 - (UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
