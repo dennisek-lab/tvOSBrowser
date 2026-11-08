@@ -92,7 +92,7 @@ static UIColor *BrowserMenuTintForSection(NSString *title) {
 // Symbol oben links, Schalter oben rechts, Titel und Wert darunter.
 static CGFloat const kMenuTileHeight = 150.0;
 static CGFloat const kMenuTilePadding = 20.0;
-static CGFloat const kMenuTileSpacing = 14.0;
+static CGFloat const kMenuTileSpacing = 18.0;
 static CGFloat const kMenuIconSide = 50.0;
 static CGFloat const kMenuSwitchWidth = 64.0;
 static CGFloat const kMenuSwitchHeight = 38.0;
@@ -160,6 +160,8 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     UIView *_switchTrack;
     UIView *_switchKnob;
     NSLayoutConstraint *_knobLeading;
+    BOOL _destructive;
+    BOOL _switchOn;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -173,7 +175,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 
         _platter = [UIView new];
         _platter.translatesAutoresizingMaskIntoConstraints = NO;
-        _platter.layer.borderWidth = 1.0;
+        _platter.layer.borderWidth = 1.5;
         _platter.layer.shadowColor = UIColor.blackColor.CGColor;
         _platter.layer.shadowRadius = 18.0;
         _platter.layer.shadowOffset = CGSizeMake(0.0, 10.0);
@@ -256,7 +258,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 - (void)configureWithItem:(BrowserAdvancedMenuItem *)item tint:(UIColor *)tint {
     BOOL destructive = item.style == UIAlertActionStyleDestructive;
     _titleLabel.text = item.title;
-    _titleLabel.textColor = destructive ? UIColor.systemRedColor : UIColor.labelColor;
+    _destructive = destructive;
     _iconCircle.backgroundColor = destructive ? UIColor.systemRedColor : tint;
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:23.0 weight:UIImageSymbolWeightSemibold];
     _iconView.image = [UIImage systemImageNamed:BrowserMenuSymbolForTitle(item.title) withConfiguration:config]
@@ -268,14 +270,22 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     _switchTrack.hidden = !isSwitch;
     _detailLabel.text = item.detail;
     _detailLabel.hidden = isSwitch || item.detail.length == 0;
-    _switchTrack.backgroundColor = isOn ? UIColor.systemGreenColor : [UIColor colorWithWhite:1.0 alpha:0.22];
+    _switchOn = isOn;
     _knobLeading.constant = isOn ? kMenuSwitchWidth - kMenuSwitchHeight + 3.0 : 3.0;
+    [self applyFocused:self.isFocused];
 }
 
 - (void)applyFocused:(BOOL)focused {
-    _platter.backgroundColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.2 : 0.07];
-    _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.32 : 0.08].CGColor;
-    _platter.layer.shadowOpacity = focused ? 0.3 : 0.0;
+    // Ruhend: eigene, klar abgegrenzte Glasfläche mit Kante. Fokus wie in tvOS üblich: helle Fläche,
+    // dunkle Schrift, angehoben mit Schatten – so ist die gewählte Kachel sofort zu erkennen.
+    _platter.backgroundColor = focused ? [UIColor colorWithWhite:0.96 alpha:1.0] : [UIColor colorWithWhite:1.0 alpha:0.13];
+    _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.0 : 0.16].CGColor;
+    _platter.layer.shadowOpacity = focused ? 0.45 : 0.0;
+    _titleLabel.textColor = _destructive ? UIColor.systemRedColor
+        : (focused ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor);
+    _switchTrack.backgroundColor = _switchOn ? UIColor.systemGreenColor
+        : (focused ? [UIColor colorWithWhite:0.0 alpha:0.16] : [UIColor colorWithWhite:1.0 alpha:0.22]);
+    _detailLabel.textColor = focused ? [UIColor colorWithWhite:0.08 alpha:0.6] : [UIColor colorWithWhite:1.0 alpha:0.6];
     self.contentView.transform = focused ? CGAffineTransformMakeScale(1.05, 1.05) : CGAffineTransformIdentity;
 }
 
