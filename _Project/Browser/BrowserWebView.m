@@ -2,6 +2,7 @@
 #import "BrowserDNSProxy.h"
 #import "BrowserClickTargetTracker.h"
 #import "BrowserContentBlocker.h"
+#import "BrowserCookieConsentBlocker.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -566,6 +567,7 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     BrowserInstallYouTubeCaptureUserScript(configuration);
     self.contentController = BrowserUserContentController(configuration);
     [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
+    [[BrowserCookieConsentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     self.clickTargetTracker = [BrowserClickTargetTracker new];
     [self.clickTargetTracker installIntoConfiguration:configuration];
     __weak typeof(self) weakSelf = self;
@@ -1173,6 +1175,9 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
         // Werbeblocker: Regelsätze für Seiten mit Ausnahme wegnehmen bzw. wieder anhängen, bevor geladen wird
         [[BrowserContentBlocker sharedBlocker] updateUserContentController:self.contentController
                                                         forNavigationToURL:request.URL];
+        // Cookie-Banner-Ablehner: Skript für Ausnahme-Seiten herausnehmen bzw. wieder einsetzen
+        [[BrowserCookieConsentBlocker sharedBlocker] updateUserContentController:self.contentController
+                                                              forNavigationToURL:request.URL];
     }
 
     if (decisionHandler != nil) {

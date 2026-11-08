@@ -2,6 +2,7 @@
 #import "BrowserPreferencesStore.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserContentBlocker.h"
+#import "BrowserCookieConsentBlocker.h"
 #import "BrowserWebView.h"
 
 static UIColor *MenuTextColor(void) {
@@ -1026,6 +1027,37 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)cookieBannerMenuItem {
+    BOOL enabled = self.preferencesStore.cookieBannerBlockEnabled;
+    NSString *title = enabled ? @"Cookie-Banner ablehnen: Ein" : @"Cookie-Banner ablehnen: Aus";
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        self.preferencesStore.cookieBannerBlockEnabled = !enabled;
+        [[BrowserCookieConsentBlocker sharedBlocker] preferencesDidChange];
+        [[self.host browserWebView] reload];
+    }];
+}
+
+/// Lässt Cookie-Banner für den Host der aktuellen Seite zu bzw. lehnt sie wieder ab.
+- (BrowserAdvancedMenuItem *)cookieBannerSiteMenuItem {
+    NSURL *url = [[self.host browserWebView] request].URL;
+    NSString *host = [BrowserCookieConsentBlocker exceptionKeyForURL:url];
+    BOOL excepted = [[BrowserCookieConsentBlocker sharedBlocker] isExceptionForURL:url];
+    NSString *title = host == nil ? @"Cookie-Banner für diese Seite zulassen" :
+        [NSString stringWithFormat:excepted ? @"Cookie-Banner für %@ wieder ablehnen" : @"Cookie-Banner für %@ zulassen", host];
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        if (host == nil) {
+            return;
+        }
+        [[BrowserCookieConsentBlocker sharedBlocker] setException:!excepted forURL:url];
+        // Das Neuladen ist eine Hauptframe-Navigation und setzt das Skript passend zur Ausnahme
+        [[self.host browserWebView] reload];
+    }];
+}
+
 /// Schaltet den Grundzoom reihum durch feste Stufen und merkt ihn sich für alle Tabs.
 - (BrowserAdvancedMenuItem *)pageZoomMenuItem {
     NSArray<NSNumber *> *steps = @[@1.0, @1.25, @1.5, @1.75, @2.0, @2.5];
@@ -1156,6 +1188,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             [self cloudflareDNSMenuItem],
             [self adBlockMenuItem],
             [self adBlockSiteMenuItem],
+            [self cookieBannerMenuItem],
+            [self cookieBannerSiteMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Diagnostics"
                                                items:@[
