@@ -4,9 +4,9 @@
 
 #import <CommonCrypto/CommonDigest.h>
 
-/// Feste Quelle (GitHub-Release, siehe .github/workflows/filterlisten.yml). Weiterleitung auf
+/// Feste Quelle (GitHub-Release im öffentlichen Repo dennisek-lab/tvos-browser-filterlisten). Weiterleitung auf
 /// release-assets.githubusercontent.com ist erlaubt, aber nur über HTTPS.
-static NSString * const kFilterListManifestURL = @"https://github.com/dennisek-lab/tvos-browser/releases/download/filterlisten-latest/manifest.json";
+static NSString * const kFilterListManifestURL = @"https://github.com/dennisek-lab/tvos-browser-filterlisten/releases/download/filterlisten-latest/manifest.json";
 /// Erhöhen, wenn die App ein neues Listenformat versteht; das Manifest nennt in minAppFormat die nötige Version.
 static const NSInteger kFilterListAppFormat = 1;
 

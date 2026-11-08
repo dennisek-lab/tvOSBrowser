@@ -7,7 +7,7 @@ typedef void (^BrowserFilterListCheckCompletion)(BOOL updated, NSString *message
 
 /// Aktualisiert die Werbeblocker-Listen (WebKit-Regelsätze und Scriptlets) ohne App-Update.
 ///
-/// Quelle ist das GitHub-Release „filterlisten-latest“ (Workflow .github/workflows/filterlisten.yml). Nach dem ersten
+/// Quelle ist das GitHub-Release „filterlisten-latest“ (Workflow im öffentlichen Repo dennisek-lab/tvos-browser-filterlisten). Nach dem ersten
 /// Seitenaufbau wird höchstens einmal am Tag `manifest.json` geladen; bei neuerem Stand werden die genannten Dateien
 /// geladen, per SHA-256 geprüft, in Library/Caches/FilterLists abgelegt und erst nach erfolgreichem Kompilieren
 /// (Regelsätze) bzw. Einlesen (Scriptlets) umgeschaltet. Bei jedem Fehler bleiben die bisherigen Listen aktiv.

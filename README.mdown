@@ -98,5 +98,5 @@ Für Entwickler
 - `docs/ERWEITERUNGEN.md` – alle Eigenbauten, Risiken, Selbsttests, Logpräfixe
 - `docs/BERICHT-STABILITAET-LEISTUNG.md` – Stabilitäts- und Leistungsprüfung vom 8. November 2026 mit Messwerten am Apple TV
 - `docs/SIRI_STEUERUNG.md`, `docs/APPLE_INTELLIGENCE.md` – Befunde zu Siri und Apple Intelligence auf tvOS
-- `.github/workflows/filterlisten.yml` – baut die Werbeblocker-Listen täglich und veröffentlicht sie am Release `filterlisten-latest` (Abschnitt 6.10 in `docs/ERWEITERUNGEN.md`)
+- Werbeblocker-Listen ohne App-Update: Das öffentliche Repo [`dennisek-lab/tvos-browser-filterlisten`](https://github.com/dennisek-lab/tvos-browser-filterlisten) baut sie täglich und veröffentlicht sie am Release `filterlisten-latest` (Abschnitt 6.10 in `docs/ERWEITERUNGEN.md`)
 - `THIRD_PARTY_NOTICES.md` – Lizenzen (u. a. uBlock-Origin-Filterlisten, autoconsent, Readability, AdGuard Scriptlets, whisper.cpp)
