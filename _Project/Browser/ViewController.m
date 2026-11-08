@@ -790,6 +790,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             [weakSelf.videoPlaybackCoordinator handlePageVideoEvent:event];
         }
     };
+    webView.loadingProgressDidChange = ^(double progress, BOOL loading) {
+        if (weakSelf.webview == weakWebView) {
+            [weakSelf.topMenuView setLoadingProgress:progress loading:loading];
+        }
+    };
     webView.scrollOffsetDidChange = ^(CGFloat offsetFromTop) {
         if (weakSelf.webview == weakWebView) {
             [weakSelf pageDidScrollToOffset:offsetFromTop];

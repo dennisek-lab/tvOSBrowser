@@ -13,6 +13,8 @@ static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLau
 static NSString * const kHomepageDefaultsKey = @"homepage";
 static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
 static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
+static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
+static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -161,6 +163,26 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setAdBlockExceptionHosts:(NSArray<NSString *> *)adBlockExceptionHosts {
     [[self defaults] setObject:adBlockExceptionHosts ?: @[] forKey:kAdBlockExceptionHostsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)cookieBannerBlockEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kCookieBannerBlockEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setCookieBannerBlockEnabled:(BOOL)cookieBannerBlockEnabled {
+    [[self defaults] setBool:cookieBannerBlockEnabled forKey:kCookieBannerBlockEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSArray<NSString *> *)cookieBannerExceptionHosts {
+    NSArray *value = [[self defaults] arrayForKey:kCookieBannerExceptionHostsDefaultsKey];
+    return [value isKindOfClass:NSArray.class] ? value : @[];
+}
+
+- (void)setCookieBannerExceptionHosts:(NSArray<NSString *> *)cookieBannerExceptionHosts {
+    [[self defaults] setObject:cookieBannerExceptionHosts ?: @[] forKey:kCookieBannerExceptionHostsDefaultsKey];
     [[self defaults] synchronize];
 }
 

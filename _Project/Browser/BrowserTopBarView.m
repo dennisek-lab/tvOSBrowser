@@ -69,6 +69,10 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, nullable) UIColor *pageForegroundColor;
 @property (nonatomic, strong, nullable) id scrollEdgeInteraction;
 @property (nonatomic) UIView *glassDimmingView;
+@property (nonatomic) UIView *progressView;
+@property (nonatomic) double loadingProgress;
+@property (nonatomic) CGRect URLTargetFrame;
+@property (nonatomic) BOOL progressVisible;
 @property (nonatomic, copy, nullable) NSString *displayTitle;
 @property (nonatomic, copy, nullable) NSString *displayDomain;
 @property (nonatomic) BOOL displaySecure;
@@ -135,6 +139,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.glassDimmingView = [[UIView alloc] initWithFrame:CGRectZero];
     self.glassDimmingView.userInteractionEnabled = NO;
     [self.chromeEffectView.contentView addSubview:self.glassDimmingView];
+
+    self.progressView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.progressView.userInteractionEnabled = NO;
+    self.progressView.backgroundColor = UIColor.systemBlueColor;
+    self.progressView.layer.cornerRadius = 1.5;
+    self.progressView.alpha = 0.0;
+    [self.chromeEffectView.contentView addSubview:self.progressView];
 
     self.focusHighlightView = [[UIView alloc] initWithFrame:CGRectZero];
     self.focusHighlightView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.18];
@@ -305,6 +316,52 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.homeImageView.tintColor = self.favorite ? UIColor.systemYellowColor : (self.pageForegroundColor ?: UIColor.whiteColor);
 }
 
+- (CGRect)progressFrameForValue:(double)value {
+    CGRect bounds = self.chromeEffectView.bounds;
+    CGFloat inset = CGRectGetHeight(bounds) / 2.0;
+    CGFloat available = MAX(0.0, CGRectGetWidth(bounds) - 2.0 * inset);
+    return CGRectMake(inset, CGRectGetHeight(bounds) - 6.0, available * MAX(0.0, MIN(1.0, value)), 3.0);
+}
+
+- (void)setLoadingProgress:(double)progress loading:(BOOL)loading {
+    if (loading) {
+        // Kleiner Startwert, damit sofort sichtbar ist, dass etwas passiert.
+        double value = MAX(progress, 0.08);
+        BOOL wasVisible = self.progressVisible;
+        self.progressVisible = YES;
+        if (!wasVisible) {
+            [self.progressView.layer removeAllAnimations];
+            self.loadingProgress = 0.0;
+            self.progressView.frame = [self progressFrameForValue:0.0];
+        }
+        if (value < self.loadingProgress) {
+            return;
+        }
+        self.loadingProgress = value;
+        [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut animations:^{
+            self.progressView.alpha = 1.0;
+            self.progressView.frame = [self progressFrameForValue:value];
+        } completion:nil];
+        return;
+    }
+    if (!self.progressVisible) {
+        return;
+    }
+    self.progressVisible = NO;
+    self.loadingProgress = 1.0;
+    [UIView animateWithDuration:0.2 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.progressView.frame = [self progressFrameForValue:1.0];
+    } completion:^(__unused BOOL finished) {
+        [UIView animateWithDuration:0.25 animations:^{
+            self.progressView.alpha = 0.0;
+        } completion:^(__unused BOOL done) {
+            if (!self.progressVisible) {
+                self.loadingProgress = 0.0;
+            }
+        }];
+    }];
+}
+
 - (void)setDisplayTitle:(NSString *)title domain:(NSString *)domain secure:(BOOL)secure {
     self.displayTitle = title;
     self.displayDomain = domain;
@@ -328,6 +385,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         }]];
     }
     self.URLLabel.attributedText = text;
+    [self setNeedsLayout];
 }
 
 - (void)attachToScrollView:(UIScrollView *)scrollView {
@@ -410,6 +468,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.chromeEffectView.frame = self.chromeContainerView.bounds;
     self.chromeEffectView.layer.cornerRadius = self.chromeContainerView.layer.cornerRadius;
     self.glassDimmingView.frame = self.chromeEffectView.bounds;
+    self.progressView.frame = [self progressFrameForValue:self.loadingProgress];
 
     CGFloat iconY = floor((CGRectGetHeight(chromeFrame) - kTopBarIconSize) / 2.0);
     CGFloat leftX = kTopBarLeadingPadding;
@@ -417,7 +476,6 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         self.backImageView,
         self.refreshImageView,
         self.forwardImageView,
-        self.homeImageView,
         self.tabsImageView
     ];
     for (UIImageView *imageView in leftIcons) {
@@ -458,9 +516,26 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         CGFloat inner = CGRectGetWidth(chromeFrame) - 2.0 * (22.0 + compactSpinner + 8.0);
         labelFrame = CGRectMake(0.0, 0.0, inner / kTopBarCompactLabelScale, CGRectGetHeight(chromeFrame));
     }
+    CGPoint labelCenter = CGPointMake(CGRectGetWidth(chromeFrame) / 2.0, CGRectGetHeight(chromeFrame) / 2.0);
+    self.URLTargetFrame = labelFrame;
+    if (!self.compact) {
+        // Stern direkt links neben dem Seitennamen, beide zusammen mittig im Adressbereich.
+        CGFloat starGap = 14.0;
+        CGFloat maxText = MAX(80.0, CGRectGetWidth(labelFrame) - kTopBarIconSize - starGap);
+        CGFloat textWidth = MIN(ceil([self.URLLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGRectGetHeight(labelFrame))].width), maxText);
+        CGFloat groupWidth = kTopBarIconSize + starGap + textWidth;
+        CGFloat groupX = floor(CGRectGetMidX(labelFrame) - groupWidth / 2.0);
+        self.homeImageView.frame = CGRectMake(groupX, iconY, kTopBarIconSize, kTopBarIconSize);
+        CGFloat textX = groupX + kTopBarIconSize + starGap;
+        labelFrame = CGRectMake(textX, 0.0, textWidth, CGRectGetHeight(chromeFrame));
+        labelCenter = CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
+        CGFloat targetX = CGRectGetMaxX(self.homeImageView.frame) + 4.0;
+        self.URLTargetFrame = CGRectMake(targetX, 0.0, MAX(120.0, labelTrailingX - targetX), CGRectGetHeight(chromeFrame));
+    } else {
+        self.homeImageView.center = labelCenter;
+    }
     self.URLLabel.bounds = CGRectMake(0.0, 0.0, CGRectGetWidth(labelFrame), CGRectGetHeight(labelFrame));
-    self.URLLabel.center = self.compact ? CGPointMake(CGRectGetWidth(chromeFrame) / 2.0, CGRectGetHeight(chromeFrame) / 2.0)
-                                        : CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
+    self.URLLabel.center = labelCenter;
     self.URLLabel.transform = self.compact ? CGAffineTransformMakeScale(kTopBarCompactLabelScale, kTopBarCompactLabelScale)
                                            : CGAffineTransformIdentity;
 
@@ -469,7 +544,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.forwardFocusButton.frame = [self focusFrameForIconView:self.forwardImageView];
     self.homeFocusButton.frame = [self focusFrameForIconView:self.homeImageView];
     self.tabsFocusButton.frame = [self focusFrameForIconView:self.tabsImageView];
-    self.URLFocusButton.frame = [self focusFrameForLabel:self.URLLabel];
+    self.URLFocusButton.frame = [self uniformFocusFrameForRect:self.URLTargetFrame horizontalInset:0.0];
     self.fullscreenFocusButton.frame = [self focusFrameForIconView:self.fullscreenImageView];
     self.menuFocusButton.frame = [self focusFrameForMenuIconView:self.menuImageView];
 
@@ -509,7 +584,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         if (view.hidden || view.alpha < 0.05 || view.window == nil) {
             continue;
         }
-        CGRect frame = [self interactiveFrameForView:view];
+        CGRect frame = view == self.URLLabel ? [self convertRect:self.URLTargetFrame fromView:self.chromeEffectView.contentView]
+                                             : [self interactiveFrameForView:view];
         // Kleine Symbole auf eine gut treffbare Mindestgröße bringen.
         CGFloat growX = MAX(0.0, (64.0 - CGRectGetWidth(frame)) / 2.0);
         CGFloat growY = MAX(0.0, (64.0 - CGRectGetHeight(frame)) / 2.0);

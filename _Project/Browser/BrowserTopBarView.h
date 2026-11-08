@@ -42,6 +42,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 - (void)setPageBackgroundColor:(nullable UIColor *)color;
 /// Stern-Knopf: gefüllt und gelb, wenn die aktuelle Seite ein Favorit ist.
 @property (nonatomic, getter=isFavorite) BOOL favorite;
+/// Ladefortschritt als feine Linie unten in der Leiste; loading = NO lässt sie auslaufen und verschwinden.
+- (void)setLoadingProgress:(double)progress loading:(BOOL)loading;
 /// Seitenname, dahinter dezent die Domain (nil = keine). Bei verschlüsselter Verbindung (HTTPS) ist der Name grün.
 - (void)setDisplayTitle:(nullable NSString *)title domain:(nullable NSString *)domain secure:(BOOL)secure;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;

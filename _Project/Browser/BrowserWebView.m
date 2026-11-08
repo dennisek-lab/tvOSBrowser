@@ -2,6 +2,7 @@
 #import "BrowserDNSProxy.h"
 #import "BrowserClickTargetTracker.h"
 #import "BrowserContentBlocker.h"
+#import "BrowserCookieConsentBlocker.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -511,11 +512,19 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 @property (nonatomic) BOOL loading;
 @property (nonatomic, strong) BrowserClickTargetTracker *clickTargetTracker;
 @property (nonatomic, weak, nullable) UIScrollView *observedScrollView;
+@property (nonatomic) BOOL observingProgress;
+@property (nonatomic, strong, nullable) UIView *transitionSnapshotView;
+@property (nonatomic) CFTimeInterval navigationStartTime;
+@property (nonatomic) BOOL navigationCommitted;
 @property (nonatomic, strong, nullable) id contentController;
 
 @end
 
 static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetContext;
+static void *BrowserWebViewProgressContext = &BrowserWebViewProgressContext;
+// _WKRenderingProgressEvents: erstes sichtbar nicht leeres Layout und erstes Bild mit nennenswerter Fläche.
+static NSUInteger const BrowserRenderingFirstVisuallyNonEmptyLayout = 1 << 1;
+static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 
 @implementation BrowserWebView
 
@@ -566,6 +575,7 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     BrowserInstallYouTubeCaptureUserScript(configuration);
     self.contentController = BrowserUserContentController(configuration);
     [[BrowserContentBlocker sharedBlocker] applyToUserContentController:self.contentController];
+    [[BrowserCookieConsentBlocker sharedBlocker] applyToUserContentController:self.contentController];
     self.clickTargetTracker = [BrowserClickTargetTracker new];
     [self.clickTargetTracker installIntoConfiguration:configuration];
     __weak typeof(self) weakSelf = self;
@@ -589,6 +599,13 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     }
 
     self.runtimeWebView = webViewObject;
+    SEL renderingEvents = NSSelectorFromString(@"_setObservedRenderingProgressEvents:");
+    if ([webViewObject respondsToSelector:renderingEvents]) {
+        ((void (*)(id, SEL, NSUInteger))objc_msgSend)(webViewObject, renderingEvents,
+            BrowserRenderingFirstVisuallyNonEmptyLayout | BrowserRenderingFirstPaintWithSignificantArea);
+    }
+    [webViewObject addObserver:self forKeyPath:@"estimatedProgress" options:NSKeyValueObservingOptionNew context:BrowserWebViewProgressContext];
+    self.observingProgress = YES;
     UIView *runtimeView = (UIView *)webViewObject;
     runtimeView.frame = self.bounds;
     runtimeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -621,6 +638,13 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context == BrowserWebViewProgressContext) {
+        if (self.loadingProgressDidChange != nil) {
+            double progress = [[object valueForKey:@"estimatedProgress"] doubleValue];
+            self.loadingProgressDidChange(progress, self.loading);
+        }
+        return;
+    }
     if (context != BrowserWebViewScrollOffsetContext) {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
         return;
@@ -633,6 +657,9 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 
 - (void)dealloc {
     [_observedScrollView removeObserver:self forKeyPath:@"contentOffset" context:BrowserWebViewScrollOffsetContext];
+    if (_observingProgress) {
+        [_runtimeWebView removeObserver:self forKeyPath:@"estimatedProgress" context:BrowserWebViewProgressContext];
+    }
 }
 
 /// CSS-Client-Koordinaten beginnen unter der schwebenden Leiste (obscured inset), die WebView am Bildschirmrand.
@@ -1090,8 +1117,76 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
     [self stringByEvaluatingJavaScriptFromString:script];
 }
 
+#pragma mark - Weicher Seitenwechsel
+
+/// Hält das Bild der alten Seite, bis die neue etwas Sinnvolles zeigt, und blendet dann über (statt weißem Aufblitzen).
+- (void)beginPageTransition {
+    if (self.transitionSnapshotView != nil || self.lastRequest == nil || self.window == nil) {
+        return;
+    }
+    UIView *runtimeView = (UIView *)self.runtimeWebView;
+    UIView *snapshot = [runtimeView snapshotViewAfterScreenUpdates:NO];
+    if (snapshot == nil) {
+        return;
+    }
+    snapshot.frame = runtimeView.frame;
+    snapshot.userInteractionEnabled = NO;
+    [self insertSubview:snapshot aboveSubview:runtimeView];
+    self.transitionSnapshotView = snapshot;
+    // Sicherheitsnetz, falls kein Rendering-Ereignis kommt.
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (weakSelf.transitionSnapshotView == snapshot) {
+            [weakSelf endPageTransitionAnimated:YES];
+        }
+    });
+}
+
+- (void)endPageTransitionAnimated:(BOOL)animated {
+    UIView *snapshot = self.transitionSnapshotView;
+    if (snapshot == nil) {
+        return;
+    }
+    self.transitionSnapshotView = nil;
+    if (!animated) {
+        [snapshot removeFromSuperview];
+        return;
+    }
+    [UIView animateWithDuration:0.28 delay:0.0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        snapshot.alpha = 0.0;
+    } completion:^(__unused BOOL finished) {
+        [snapshot removeFromSuperview];
+    }];
+}
+
+- (void)logLoadPhase:(NSString *)phase {
+#if DEBUG
+    if (self.navigationStartTime > 0) {
+        NSLog(@"[Load] %@ +%.0f ms %@", phase, (CACurrentMediaTime() - self.navigationStartTime) * 1000.0, self.request.URL.host ?: @"");
+    }
+#endif
+}
+
+- (void)webView:(id)webView didCommitNavigation:(id)navigation {
+    self.navigationCommitted = YES;
+    [self logLoadPhase:@"commit"];
+}
+
+- (void)_webView:(id)webView renderingProgressDidChange:(NSUInteger)progressEvents {
+    if (progressEvents & (BrowserRenderingFirstVisuallyNonEmptyLayout | BrowserRenderingFirstPaintWithSignificantArea)) {
+        [self logLoadPhase:(progressEvents & BrowserRenderingFirstPaintWithSignificantArea) ? @"paint" : @"layout"];
+    }
+    // Erst überblenden, wenn die neue Seite wirklich etwas zeigt.
+    if (self.navigationCommitted && (progressEvents & BrowserRenderingFirstPaintWithSignificantArea)) {
+        [self endPageTransitionAnimated:YES];
+    }
+}
+
 - (void)webView:(id)webView didStartProvisionalNavigation:(id)navigation {
     [self.clickTargetTracker reset];
+    self.navigationStartTime = CACurrentMediaTime();
+    self.navigationCommitted = NO;
+    [self beginPageTransition];
     self.loading = YES;
     if ([self.delegate respondsToSelector:@selector(webViewDidStartLoad:)]) {
         [self.delegate webViewDidStartLoad:self];
@@ -1100,6 +1195,11 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 
 - (void)webView:(id)webView didFinishNavigation:(id)navigation {
     self.loading = NO;
+    [self logLoadPhase:@"finish"];
+    [self endPageTransitionAnimated:YES];
+    if (self.loadingProgressDidChange != nil) {
+        self.loadingProgressDidChange(1.0, NO);
+    }
     self.lastTitle = [self title];
     self.lastRequest = [self request];
     [self installYouTubeRequestCaptureHook];
@@ -1111,6 +1211,10 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 
 - (void)webView:(id)webView didFailNavigation:(id)navigation withError:(NSError *)error {
     self.loading = NO;
+    [self endPageTransitionAnimated:NO];
+    if (self.loadingProgressDidChange != nil) {
+        self.loadingProgressDidChange(1.0, NO);
+    }
     if ([self.delegate respondsToSelector:@selector(webView:didFailLoadWithError:)]) {
         [self.delegate webView:self didFailLoadWithError:error];
     }
@@ -1118,6 +1222,10 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
 
 - (void)webView:(id)webView didFailProvisionalNavigation:(id)navigation withError:(NSError *)error {
     self.loading = NO;
+    [self endPageTransitionAnimated:NO];
+    if (self.loadingProgressDidChange != nil) {
+        self.loadingProgressDidChange(1.0, NO);
+    }
     if ([self.delegate respondsToSelector:@selector(webView:didFailLoadWithError:)]) {
         [self.delegate webView:self didFailLoadWithError:error];
     }
@@ -1173,6 +1281,9 @@ static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetCont
         // Werbeblocker: Regelsätze für Seiten mit Ausnahme wegnehmen bzw. wieder anhängen, bevor geladen wird
         [[BrowserContentBlocker sharedBlocker] updateUserContentController:self.contentController
                                                         forNavigationToURL:request.URL];
+        // Cookie-Banner-Ablehner: Skript für Ausnahme-Seiten herausnehmen bzw. wieder einsetzen
+        [[BrowserCookieConsentBlocker sharedBlocker] updateUserContentController:self.contentController
+                                                              forNavigationToURL:request.URL];
     }
 
     if (decisionHandler != nil) {
