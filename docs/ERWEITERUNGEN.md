@@ -60,6 +60,8 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 
 Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abschnitt 14](#14-selbsttest-und-gerätezyklus).
 
+**Nach jedem tvOS-Update** (Apple TV und Xcode) die App neu aufspielen (`Installieren.command`), starten und diese Liste zumindest bis Punkt 7 durchgehen: Die App nutzt private APIs, die ein Update ohne Vorwarnung ändern kann.
+
 1. **Startet die App überhaupt?** Abstürze beim Start: UIScene-Pflicht (`SceneDelegate`, Scene-Manifest in `Info.plist`, siehe PLAN.md), Konsole nach `UIApplicationEvaluateRuntimeIssue…` durchsuchen.
 2. **Lädt eine Seite?** Logzeilen `[Load] commit/layout/paint/finish +N ms`. Fehlen `layout`/`paint`: `_webView:renderingProgressDidChange:` kommt nicht mehr an (Abschnitt 3).
 3. **Datenspeicher:** Log `[DataStore] eigener Speicher in Caches, N Verzeichnisse gesetzt, store=ok`. Bei `nicht verfügbar` oder `store=nil` gehen Logins/LocalStorage nach Neustart verloren. Verzeichnisanzahl mit dem Vorwert vergleichen (aktuell bis zu 14 Selektoren, nicht alle müssen greifen).
@@ -482,6 +484,8 @@ Test (alle): Selbsttest `guide`, `menu`, `state`; ansonsten manuell mit der Fern
 ## 14. Selbsttest und Gerätezyklus
 
 ### 14.1 Gerätezyklus (Apple TV)
+Zum normalen Aufspielen (Release) genügt ein Doppelklick auf `Installieren.command` im Repo-Stamm: aktualisiert (`git pull`), prüft Xcode, wählt das Apple TV, baut, installiert, startet optional und nennt das Ablaufdatum des Profils (bei kostenlosem Account 7 Tage). Optionen: `--nur-bauen` (unsigniert, ohne Gerät), `--geraete`, `--kein-pull`, `--debug`, `--starten`/`--nicht-starten`, `UDID=…`. Ruft `tools/fetch_whisper_model.sh` und `tools/build_whisper.sh` auf, falls vorhanden. Die Einzelschritte von Hand:
+
 Ein Gerät wird einmal über die App **Device Hub** (Xcode 27) gekoppelt. Danach ohne Xcode-Oberfläche (Projekt `_Project/Browser.xcodeproj`, Schema `Browser`, Bundle-ID `io.github.tvosbrowser.app`):
 
 ```bash
