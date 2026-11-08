@@ -25,6 +25,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Automatisches Ablehnen von Cookie-Bannern (Standard: an) und Seiten, für die es abgeschaltet ist (Hosts ohne „www.“).
 @property (nonatomic) BOOL cookieBannerBlockEnabled;
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;
+/// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
+@property (nonatomic) BOOL cookieBannerAcceptPayWalls;
 
 - (void)ensureUserAgentConsistency;
 

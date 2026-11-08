@@ -7,6 +7,7 @@
 //
 
 #import "BrowserGuideViewController.h"
+#import <objc/message.h>
 #import "BrowserHistoryStore.h"
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
@@ -275,6 +276,23 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                 }
                 if ([step isEqualToString:@"guide"]) {
                     [self showHintsAlert];
+                    return;
+                }
+                if ([step hasPrefix:@"clearsite:"]) {
+                    // Nur die Website-Daten eines Hosts löschen (z. B. gespeicherte Einwilligung), Logins anderswo bleiben.
+                    NSString *host = [step substringFromIndex:10];
+                    id store = [BrowserWebView performSelector:NSSelectorFromString(@"defaultWebsiteDataStore")];
+                    NSSet *types = [BrowserWebView performSelector:NSSelectorFromString(@"allWebsiteDataTypes")];
+                    void (^fetched)(NSArray *) = ^(NSArray *records) {
+                        NSMutableArray *matching = [NSMutableArray array];
+                        for (id record in records) {
+                            NSString *name = [record valueForKey:@"displayName"];
+                            if ([name containsString:host]) { [matching addObject:record]; }
+                        }
+                        void (^done)(void) = ^{ NSLog(@"[SelfTest] clearsite %@: %lu Einträge gelöscht", host, (unsigned long)matching.count); };
+                        ((void (*)(id, SEL, id, id, id))objc_msgSend)(store, NSSelectorFromString(@"removeDataOfTypes:forDataRecords:completionHandler:"), types, matching, done);
+                    };
+                    ((void (*)(id, SEL, id, id))objc_msgSend)(store, NSSelectorFromString(@"fetchDataRecordsOfTypes:completionHandler:"), types, fetched);
                     return;
                 }
                 if ([step isEqualToString:@"zoom"]) {

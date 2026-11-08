@@ -14,6 +14,7 @@ static NSString * const kHomepageDefaultsKey = @"homepage";
 static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
 static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
+static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 
 static NSUInteger const kDefaultTextFontSize = 100;
@@ -173,6 +174,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerBlockEnabled:(BOOL)cookieBannerBlockEnabled {
     [[self defaults] setBool:cookieBannerBlockEnabled forKey:kCookieBannerBlockEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)cookieBannerAcceptPayWalls {
+    NSNumber *value = [[self defaults] objectForKey:kCookieBannerAcceptPayWallsDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setCookieBannerAcceptPayWalls:(BOOL)cookieBannerAcceptPayWalls {
+    [[self defaults] setBool:cookieBannerAcceptPayWalls forKey:kCookieBannerAcceptPayWallsDefaultsKey];
     [[self defaults] synchronize];
 }
 

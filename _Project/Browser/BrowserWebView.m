@@ -35,8 +35,11 @@ static void BrowserEnsureWebKitRuntimeLoaded(void) {
     });
 }
 
+/// Wartet auf eine asynchrone WebKit-Antwort. Höchstens 2 s: hängt der Seitenprozess (z. B. Endlosschleife im
+/// Seiten-JS), stünde sonst die ganze App, und tvOS beendet sie nach einigen Sekunden.
 static void BrowserPumpRunLoopUntil(BOOL *done) {
-    while (!*done) {
+    CFTimeInterval deadline = CACurrentMediaTime() + 2.0;
+    while (!*done && CACurrentMediaTime() < deadline) {
         @autoreleasepool {
             [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
         }
@@ -317,11 +320,13 @@ static NSString *BrowserViewportNormalizerScript(void) {
     @"(function(){"
         "if (window.__browserViewportFix) { return; }"
         "window.__browserViewportFix = true;"
+        "var fixes = 0;"
         "function fix(meta) {"
+            "if (fixes > 8) { return; }"
             "if (!meta || meta.tagName !== 'META' || (meta.getAttribute('name') || '').toLowerCase() !== 'viewport') { return; }"
             "var content = meta.getAttribute('content') || '';"
             "if (/width\\s*=\\s*\\d/i.test(content) || /initial-scale\\s*=\\s*(?!1(\\.0*)?\\b)/i.test(content)) {"
-                "meta.setAttribute('content', 'width=device-width, initial-scale=1');"
+                "fixes++; meta.setAttribute('content', 'width=device-width, initial-scale=1');"
             "}"
         "}"
         "function scan() { var metas = document.querySelectorAll('meta[name=viewport i]'); for (var i = 0; i < metas.length; i++) { fix(metas[i]); } }"

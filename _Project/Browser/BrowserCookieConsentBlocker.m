@@ -137,6 +137,9 @@ static BOOL BrowserConsentHostMatches(NSString *host, NSString *entry) {
     if (source.length == 0) {
         return nil;
     }
+    // Schalter für die Brücke: Bezahlschranken (kein Ablehnen möglich) annehmen.
+    BOOL acceptPayWalls = [BrowserPreferencesStore new].cookieBannerAcceptPayWalls;
+    source = [NSString stringWithFormat:@"window.__browserAcceptPayWalls=%@;\n%@", acceptPayWalls ? @"true" : @"false", source];
     id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
     // injectionTime 0 = document-start (frühes Vorausblenden), forMainFrameOnly NO: CMPs laufen oft in fremden iframes.
     // Das Skript läuft in der Seitenwelt, damit eval-Regeln der Bibliothek direkt im Seitenkontext laufen.
@@ -220,7 +223,7 @@ static BOOL BrowserConsentHostMatches(NSString *host, NSString *entry) {
         return;
     }
     NSString *type = [body[@"type"] isKindOfClass:NSString.class] ? body[@"type"] : @"";
-    if ([type isEqualToString:@"autoconsentDone"]) {
+    if ([type isEqualToString:@"autoconsentDone"] || [type isEqualToString:@"payWallAccepted"]) {
         self.handledCount += 1;
     }
 #if DEBUG

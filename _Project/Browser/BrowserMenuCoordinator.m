@@ -1039,6 +1039,19 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Bezahlschranken („Mit Werbung lesen oder Abo“) lassen sich nicht ablehnen: auf Wunsch zustimmen, damit nie ein Banner stehen bleibt.
+- (BrowserAdvancedMenuItem *)cookiePayWallMenuItem {
+    BOOL enabled = self.preferencesStore.cookieBannerAcceptPayWalls;
+    NSString *title = enabled ? @"Bezahlschranken zustimmen: Ein" : @"Bezahlschranken zustimmen: Aus";
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        self.preferencesStore.cookieBannerAcceptPayWalls = !enabled;
+        [[BrowserCookieConsentBlocker sharedBlocker] preferencesDidChange];
+        [[self.host browserWebView] reload];
+    }];
+}
+
 /// Lässt Cookie-Banner für den Host der aktuellen Seite zu bzw. lehnt sie wieder ab.
 - (BrowserAdvancedMenuItem *)cookieBannerSiteMenuItem {
     NSURL *url = [[self.host browserWebView] request].URL;
@@ -1124,6 +1137,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [self adBlockMenuItem],
         [self adBlockSiteMenuItem],
         [self cookieBannerMenuItem],
+        [self cookiePayWallMenuItem],
         [self cookieBannerSiteMenuItem],
         [self autoOpenNativePlayerMenuItem],
         [self cloudflareDNSMenuItem],
