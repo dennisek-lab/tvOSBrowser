@@ -1,5 +1,6 @@
 #import <GameController/GameController.h>
 #import "BrowserRemoteInputController.h"
+#import "BrowserPreferencesStore.h"
 
 static UIImage *BrowserDefaultCursor(void) {
     static UIImage *image;
@@ -85,13 +86,66 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
 /// Leuchten rund um die Form (wie die gewählte Karte der Tab-Übersicht): weicher Schein ohne Versatz,
 /// innen ausgespart, damit er nicht durch die Glasfläche scheint. Nur Formänderung rechnet neu, Farbe ist billig.
+/// Regenbogen-Modus (Standard): umlaufender Farbring wie das Leuchten von Apple Intelligence. Ein kegelförmiger
+/// Farbverlauf dreht sich als Core-Animation-Endlosschleife (läuft im Render-Server auf der GPU, kein Takt im
+/// App-Prozess). Sichtbar wird er nur über zwei Ring-Masken: ein breiter, weich auslaufender Schein und eine
+/// schmale, kräftige Kante. Die Masken liegen in einem nicht drehenden Container, damit nur die Farben wandern.
 @interface BrowserGlowView : UIView
 @property (nonatomic, strong) CAShapeLayer *maskLayer;
+@property (nonatomic) BOOL rainbow;
+@property (nonatomic, strong) CALayer *bloomContainer;
+@property (nonatomic, strong) CALayer *edgeContainer;
+@property (nonatomic, strong) CAGradientLayer *bloomGradient;
+@property (nonatomic, strong) CAGradientLayer *edgeGradient;
+@property (nonatomic, strong) CAShapeLayer *bloomMask;
+@property (nonatomic, strong) CAShapeLayer *edgeMask;
 - (void)setGlowColor:(UIColor *)color;
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius;
 @end
 
 @implementation BrowserGlowView
+
+static CGFloat const kGlowMargin = 60.0;
+
++ (NSArray *)rainbowColors {
+    // Farben angelehnt an das erste Apple-Intelligence-Leuchten: Violett, Pink, Orange, Gelb, Blau – und zurück.
+    NSArray<UIColor *> *colors = @[
+        [UIColor colorWithRed:0.74 green:0.51 blue:0.95 alpha:1.0],
+        [UIColor colorWithRed:0.96 green:0.45 blue:0.74 alpha:1.0],
+        [UIColor colorWithRed:1.00 green:0.40 blue:0.47 alpha:1.0],
+        [UIColor colorWithRed:1.00 green:0.73 blue:0.44 alpha:1.0],
+        [UIColor colorWithRed:0.55 green:0.62 blue:1.00 alpha:1.0],
+        [UIColor colorWithRed:0.35 green:0.78 blue:1.00 alpha:1.0],
+        [UIColor colorWithRed:0.74 green:0.51 blue:0.95 alpha:1.0],
+    ];
+    NSMutableArray *cg = [NSMutableArray array];
+    for (UIColor *color in colors) {
+        [cg addObject:(id)color.CGColor];
+    }
+    return cg;
+}
+
+- (CAGradientLayer *)newRainbowGradient {
+    CAGradientLayer *gradient = [CAGradientLayer layer];
+    gradient.type = kCAGradientLayerConic;
+    gradient.startPoint = CGPointMake(0.5, 0.5);
+    gradient.endPoint = CGPointMake(0.5, 0.0);
+    gradient.colors = [BrowserGlowView rainbowColors];
+    return gradient;
+}
+
+- (CAShapeLayer *)newRingMaskWithLineWidth:(CGFloat)lineWidth softness:(CGFloat)softness {
+    CAShapeLayer *mask = [CAShapeLayer layer];
+    mask.fillColor = UIColor.clearColor.CGColor;
+    mask.strokeColor = UIColor.blackColor.CGColor;
+    mask.lineWidth = lineWidth;
+    // Der Schatten der Maske zählt als Alpha mit: so läuft der Ring weich aus, ohne teuren Weichzeichner.
+    mask.shadowColor = UIColor.blackColor.CGColor;
+    mask.shadowOffset = CGSizeZero;
+    mask.shadowOpacity = softness > 0.0 ? 1.0 : 0.0;
+    mask.shadowRadius = softness;
+    return mask;
+}
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
@@ -105,8 +159,74 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         _maskLayer = [CAShapeLayer layer];
         _maskLayer.fillRule = kCAFillRuleEvenOdd;
         self.layer.mask = _maskLayer;
+
+        _bloomContainer = [CALayer layer];
+        _bloomGradient = [self newRainbowGradient];
+        [_bloomContainer addSublayer:_bloomGradient];
+        _bloomMask = [self newRingMaskWithLineWidth:10.0 softness:15.0];
+        _bloomContainer.mask = _bloomMask;
+        _bloomContainer.opacity = 0.9;
+
+        _edgeContainer = [CALayer layer];
+        _edgeGradient = [self newRainbowGradient];
+        [_edgeContainer addSublayer:_edgeGradient];
+        _edgeMask = [self newRingMaskWithLineWidth:4.0 softness:1.5];
+        _edgeContainer.mask = _edgeMask;
+
+        [self.layer addSublayer:_bloomContainer];
+        [self.layer addSublayer:_edgeContainer];
+        self.rainbow = YES;
     }
     return self;
+}
+
+- (void)setRainbow:(BOOL)rainbow {
+    _rainbow = rainbow;
+    self.bloomContainer.hidden = !rainbow;
+    self.edgeContainer.hidden = !rainbow;
+    // Einfarbig: wie bisher über den Schatten der Ebene. Regenbogen: Schatten aus, die Ringe leuchten selbst.
+    self.layer.shadowOpacity = rainbow ? 0.0 : 0.95;
+    if (rainbow) {
+        [self startRotation];
+    } else {
+        [self.bloomGradient removeAnimationForKey:@"spin"];
+        [self.edgeGradient removeAnimationForKey:@"spin"];
+    }
+}
+
+- (void)startRotation {
+    for (CAGradientLayer *gradient in @[self.bloomGradient, self.edgeGradient]) {
+        if ([gradient animationForKey:@"spin"] != nil) {
+            continue;
+        }
+        CABasicAnimation *spin = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+        spin.fromValue = @0.0;
+        spin.toValue = @(M_PI * 2.0);
+        spin.duration = 3.2;
+        spin.repeatCount = HUGE_VALF;
+        spin.removedOnCompletion = NO;
+        [gradient addAnimation:spin forKey:@"spin"];
+    }
+    // Leichtes Atmen des Scheins, wie beim Original.
+    if ([self.bloomContainer animationForKey:@"breathe"] == nil) {
+        CABasicAnimation *breathe = [CABasicAnimation animationWithKeyPath:@"opacity"];
+        breathe.fromValue = @0.65;
+        breathe.toValue = @1.0;
+        breathe.duration = 1.6;
+        breathe.autoreverses = YES;
+        breathe.repeatCount = HUGE_VALF;
+        breathe.removedOnCompletion = NO;
+        breathe.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [self.bloomContainer addAnimation:breathe forKey:@"breathe"];
+    }
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    // Nach Hintergrund/Vordergrund entfernt Core Animation Endlosanimationen; beim Zurückkommen neu starten.
+    if (self.window != nil && self.rainbow) {
+        [self startRotation];
+    }
 }
 
 - (void)setGlowColor:(UIColor *)color {
@@ -114,13 +234,35 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     CGRect shape = CGRectMake(0, 0, size.width, size.height);
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius];
     self.layer.shadowPath = path.CGPath;
     // Maske: großes Rechteck minus Form (gerade-ungerade Füllung) = nur außen.
-    UIBezierPath *outside = [UIBezierPath bezierPathWithRect:CGRectInset(shape, -60, -60)];
+    UIBezierPath *outside = [UIBezierPath bezierPathWithRect:CGRectInset(shape, -kGlowMargin, -kGlowMargin)];
     [outside appendPath:[UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius]];
     self.maskLayer.path = outside.CGPath;
+
+    // Regenbogen: Container decken Form plus Rand ab, der Verlauf ist ein Quadrat über die Diagonale,
+    // damit beim Drehen keine Ecke frei bleibt.
+    CGRect container = CGRectInset(shape, -kGlowMargin, -kGlowMargin);
+    CGFloat diagonal = ceil(hypot(container.size.width, container.size.height));
+    for (CALayer *layer in @[self.bloomContainer, self.edgeContainer]) {
+        layer.frame = container;
+    }
+    CGRect square = CGRectMake((container.size.width - diagonal) / 2.0, (container.size.height - diagonal) / 2.0, diagonal, diagonal);
+    for (CAGradientLayer *gradient in @[self.bloomGradient, self.edgeGradient]) {
+        gradient.bounds = CGRectMake(0, 0, diagonal, diagonal);
+        gradient.position = CGPointMake(CGRectGetMidX(square), CGRectGetMidY(square));
+    }
+    // Ringpfade in Container-Koordinaten; die Kante liegt knapp außerhalb der Form (innen schneidet die Maske ab).
+    CGRect inContainer = CGRectOffset(shape, kGlowMargin, kGlowMargin);
+    self.bloomMask.frame = CGRectMake(0, 0, container.size.width, container.size.height);
+    self.edgeMask.frame = self.bloomMask.frame;
+    self.bloomMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(inContainer, -3.0, -3.0) cornerRadius:radius + 3.0].CGPath;
+    self.edgeMask.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(inContainer, -1.5, -1.5) cornerRadius:radius + 1.5].CGPath;
+    [CATransaction commit];
 }
 
 @end
@@ -426,6 +568,10 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         glowColor = [self.host browserRemoteInputControllerGlowColorForTarget:target];
     }
     [glow setGlowColor:glowColor ?: [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0]];
+    BOOL rainbow = [BrowserPreferencesStore new].rainbowGlowEnabled;
+    if (glow.rainbow != rainbow) {
+        glow.rainbow = rainbow;
+    }
     glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
     [glow setShapeSize:frame.size cornerRadius:radius];
     [self updateLensForFrame:frame radius:radius];

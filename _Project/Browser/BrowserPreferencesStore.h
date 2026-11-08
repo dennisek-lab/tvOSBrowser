@@ -31,6 +31,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;
 /// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
+/// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
+@property (nonatomic) BOOL rainbowGlowEnabled;
 
 - (void)ensureUserAgentConsistency;
 

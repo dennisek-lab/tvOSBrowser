@@ -1090,6 +1090,15 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 /// Bezahlschranken („Mit Werbung lesen oder Abo“) lassen sich nicht ablehnen: auf Wunsch zustimmen, damit nie ein Banner stehen bleibt.
+- (BrowserAdvancedMenuItem *)rainbowGlowMenuItem {
+    BOOL enabled = self.preferencesStore.rainbowGlowEnabled;
+    return [self advancedMenuItemWithTitle:@"Regenbogen-Leuchten"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.rainbowGlowEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)cookiePayWallMenuItem {
     BOOL enabled = self.preferencesStore.cookieBannerAcceptPayWalls;
     return [self advancedMenuItemWithTitle:@"Bezahlschranken zustimmen"
@@ -1254,6 +1263,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Ansicht & Wiedergabe"
                                                items:@[
             [self topNavigationVisibilityMenuItem],
+            [self rainbowGlowMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
             [self userAgentModeMenuItem],

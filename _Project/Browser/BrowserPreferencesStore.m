@@ -17,6 +17,7 @@ static NSString * const kAdBlockAutoPauseDefaultsKey = @"AdBlockAutoPauseOnWall"
 static NSString * const kAdBlockAutoExceptionHostsDefaultsKey = @"AdBlockAutoExceptionHosts";
 static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlockEnabled";
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
+static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 
 static NSUInteger const kDefaultTextFontSize = 100;
@@ -206,6 +207,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setCookieBannerAcceptPayWalls:(BOOL)cookieBannerAcceptPayWalls {
     [[self defaults] setBool:cookieBannerAcceptPayWalls forKey:kCookieBannerAcceptPayWallsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)rainbowGlowEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kRainbowGlowEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
+    [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 
