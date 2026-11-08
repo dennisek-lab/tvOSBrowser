@@ -9,6 +9,8 @@
 #import "BrowserWebView.h"
 
 static CGFloat const kThumbnailStagingOffset = 4096.0;
+/// Breite der Vorschau in der Tab-Übersicht (kTabCardWidth in BrowserTabOverviewController.m) in Punkten.
+static CGFloat const kThumbnailMaximumWidth = 600.0;
 
 @interface BrowserTabCoordinator ()
 
@@ -531,7 +533,11 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
     }
 
     [self prepareWebViewLayoutForSnapshot:webView];
-    UIGraphicsBeginImageContextWithOptions(webView.bounds.size, YES, 0.0);
+    // Nur so fein wie die Karte der Tab-Übersicht (584 pt breit), nicht in voller Bildschirmauflösung: ein Bild in
+    // Bildschirmgröße kostet am Apple TV 4K rund 33 MB je Tab und blieb bis zum Schließen des Tabs im Speicher.
+    CGFloat screenScale = webView.window.screen.scale ?: UIScreen.mainScreen.scale;
+    CGFloat scale = MIN(screenScale, kThumbnailMaximumWidth * screenScale / CGRectGetWidth(webView.bounds));
+    UIGraphicsBeginImageContextWithOptions(webView.bounds.size, YES, scale);
     [webView drawViewHierarchyInRect:webView.bounds afterScreenUpdates:NO];
     UIImage *snapshotImage = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -641,6 +647,7 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
 
     BOOL closingActiveTab = tabIndex == self.viewModel.activeTabIndex;
     BrowserTabViewModel *tab = self.viewModel.tabs[tabIndex];
+    [self.webViewsByTabIdentifier[tab.identifier] closePage];
     [self.webViewsByTabIdentifier[tab.identifier] removeFromSuperview];
     [self.webViewsByTabIdentifier removeObjectForKey:tab.identifier];
     [self.viewModel removeTabAtIndex:tabIndex];
@@ -668,6 +675,7 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
     }
 
     NSString *currentURL = self.activeWebView.request.URL.absoluteString;
+    [self.webViewsByTabIdentifier[tab.identifier] closePage];
     [self.webViewsByTabIdentifier[tab.identifier] removeFromSuperview];
     [self.webViewsByTabIdentifier removeObjectForKey:tab.identifier];
     tab.requestURL = currentURL ?: @"";

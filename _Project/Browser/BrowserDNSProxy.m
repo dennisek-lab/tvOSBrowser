@@ -1,9 +1,12 @@
 #import "BrowserDNSProxy.h"
 #import <Network/Network.h>
 #import <objc/message.h>
+#import <sys/resource.h>
 
 static NSString * const kDNSOverCloudflareDefaultsKey = @"DNSOverCloudflare";
 static const size_t kRelayChunkSize = 64 * 1024;
+/// Obergrenze für offene Dateien der App, solange der Proxy läuft (Standard ist 256).
+static const rlim_t kOpenFileLimit = 4096;
 
 #pragma mark - Einzelne SOCKS-Sitzung
 
@@ -348,10 +351,36 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
     return resolver;
 }
 
+/// Jede Verbindung über den Proxy belegt in der App zwei Sockets (zu WebKit und zum Server), die sonst im
+/// Netzwerkprozess von WebKit lägen. WebKit hält viele Verbindungen offen (Keep-Alive, mehrere je Host). Mit dem
+/// Standardlimit von 256 offenen Dateien scheiterten nach einigen großen Seiten neue Verbindungen mit EMFILE
+/// (Network meldet DNS-Fehler -24, der Proxy antwortet mit Fehler, WebKit zeigt „bad URL“, -1000).
++ (void)raiseOpenFileLimit {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        return;
+    }
+    rlim_t wanted = MIN(kOpenFileLimit, limit.rlim_max);
+    if (limit.rlim_cur >= wanted) {
+        return;
+    }
+    rlim_t previous = limit.rlim_cur;
+    limit.rlim_cur = wanted;
+    if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        NSLog(@"[DNSProxy] Limit offener Dateien bleibt bei %llu (errno %d)", (unsigned long long)previous, errno);
+        return;
+    }
+#if DEBUG
+    NSLog(@"[DNSProxy] Limit offener Dateien %llu -> %llu", (unsigned long long)previous, (unsigned long long)wanted);
+#endif
+}
+
 - (BOOL)startAndWaitWithTimeout:(NSTimeInterval)timeout {
     if (!BrowserDNSProxy.isEnabled) {
         return NO;
     }
+    static dispatch_once_t fileLimitOnce;
+    dispatch_once(&fileLimitOnce, ^{ [BrowserDNSProxy raiseOpenFileLimit]; });
     // App-eigene Verbindungen (URLSession, Network) ebenfalls über Cloudflare auflösen.
     static dispatch_once_t defaultContextOnce;
     dispatch_once(&defaultContextOnce, ^{

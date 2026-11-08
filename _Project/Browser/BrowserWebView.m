@@ -944,6 +944,17 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     }
 }
 
+- (void)closePage {
+    // Ohne _close blieb eine WKWebView, deren Tab während des Ladens geschlossen wurde, samt WebPageProxy und
+    // Seitenprozess am Leben (Simulator: Tab wechseln, nach 2 s schließen; die BrowserWebView war frei, die
+    // WKWebView nicht). Safari schließt Tabs ebenso ausdrücklich.
+    [self endPageTransitionAnimated:NO];
+    SEL closeSelector = NSSelectorFromString(@"_close");
+    if ([self.runtimeWebView respondsToSelector:closeSelector]) {
+        ((void (*)(id, SEL))objc_msgSend)(self.runtimeWebView, closeSelector);
+    }
+}
+
 - (NSString *)stringByEvaluatingJavaScriptFromString:(NSString *)script {
     if (script.length == 0 || self.runtimeWebView == nil) {
         return nil;
