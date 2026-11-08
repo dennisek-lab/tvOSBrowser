@@ -27,6 +27,8 @@
 #import "ViewController.h"
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
+/// Spike Siri-Steuerung: BrowserAppIntents.swift schickt Befehle über diese Notification (siehe docs/SIRI_STEUERUNG.md).
+static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNotification";
 
 @interface ViewController () <BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
 
@@ -126,6 +128,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                                              selector:@selector(handleGlobalSelectPressEndedNotification:)
                                                  name:kBrowserGlobalSelectPressEndedNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleSiriCommandNotification:)
+                                                 name:kBrowserSiriCommandNotification
+                                               object:nil];
 
     [self.tabCoordinator restoreInitialStateOrCreateFirstTab];
 }
@@ -207,6 +213,17 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                             }
                         }];
                     }
+                    return;
+                }
+                if ([step hasPrefix:@"siri:"]) {
+                    // Befehl wie aus einem App Intent: siri:<befehl> oder siri:<befehl>|<argument>
+                    NSArray<NSString *> *parts = [[step substringFromIndex:5] componentsSeparatedByString:@"|"];
+                    NSMutableDictionary *info = [@{@"command": parts.firstObject ?: @"", @"source": @"selftest"} mutableCopy];
+                    if (parts.count > 1) {
+                        info[@"argument"] = parts[1];
+                    }
+                    NSLog(@"[SelfTest] siri %@", info[@"command"]);
+                    [NSNotificationCenter.defaultCenter postNotificationName:kBrowserSiriCommandNotification object:nil userInfo:info];
                     return;
                 }
                 if ([step hasPrefix:@"dictate:"]) {
@@ -376,6 +393,42 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 - (void)handleApplicationWillTerminate:(NSNotification *)notification {
     (void)notification;
     [self.tabCoordinator persistSession];
+}
+
+/// Spike: Befehl aus einem App Intent (Siri) oder dem Selbsttest. Nur vorhandene Aktionen,
+/// „reader“ wird bis zum Reader-Knopf nur geloggt. Später ersetzt durch die Befehlstabelle BrowserCommand.
+- (void)handleSiriCommandNotification:(NSNotification *)notification {
+    NSString *command = [notification.userInfo[@"command"] isKindOfClass:NSString.class] ? notification.userInfo[@"command"] : @"";
+    NSString *argument = [notification.userInfo[@"argument"] isKindOfClass:NSString.class] ? notification.userInfo[@"argument"] : nil;
+    NSLog(@"[Siri] Befehl %@ arg=%@ quelle=%@", command, argument ?: @"-", notification.userInfo[@"source"] ?: @"-");
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    if ([command isEqualToString:@"back"]) {
+        [self performTopBarAction:BrowserTopBarActionBack];
+    } else if ([command isEqualToString:@"forward"]) {
+        [self performTopBarAction:BrowserTopBarActionForward];
+    } else if ([command isEqualToString:@"reload"]) {
+        [self performTopBarAction:BrowserTopBarActionRefresh];
+    } else if ([command isEqualToString:@"home"]) {
+        [self performTopBarAction:BrowserTopBarActionHome];
+    } else if ([command isEqualToString:@"tabs"]) {
+        [self performTopBarAction:BrowserTopBarActionTabs];
+    } else if ([command isEqualToString:@"favorite"]) {
+        [self performTopBarAction:BrowserTopBarActionFavorite];
+    } else if ([command isEqualToString:@"newtab"]) {
+        [self browserCreateNewTabLoadingHomePage:YES];
+    } else if ([command isEqualToString:@"address"]) {
+        if (argument.length > 0) {
+            [self openAddressOrSearch:argument];
+        } else {
+            [self showInputURLorSearchGoogle];
+        }
+    } else if ([command isEqualToString:@"reader"]) {
+        NSLog(@"[Siri] reader: noch keine Funktion (Reader-Knopf folgt)");
+    } else {
+        NSLog(@"[Siri] unbekannter Befehl %@", command);
+    }
 }
 
 - (void)handleGlobalSelectPressEndedNotification:(NSNotification *)notification {
