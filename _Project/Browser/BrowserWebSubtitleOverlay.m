@@ -280,7 +280,14 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
     self.shownText = key;
 
     UIFont *font = nil;
-    CTFontDescriptorRef descriptor = MACaptionAppearanceCopyFontDescriptorForStyle(domain, NULL, kMACaptionAppearanceFontStyleDefault);
+    // Nur eine ausdrücklich in den Untertitel-Einstellungen gewählte Schrift übernehmen; der Standard ist eine
+    // Serifenschrift – sonst SF Pro halbfett wie im nativen Player.
+    MACaptionAppearanceBehavior fontBehavior = kMACaptionAppearanceBehaviorUseContentIfAvailable;
+    CTFontDescriptorRef descriptor = MACaptionAppearanceCopyFontDescriptorForStyle(domain, &fontBehavior, kMACaptionAppearanceFontStyleDefault);
+    if (descriptor != NULL && fontBehavior != kMACaptionAppearanceBehaviorUseValue) {
+        CFRelease(descriptor);
+        descriptor = NULL;
+    }
     if (descriptor != NULL) {
         font = [UIFont fontWithDescriptor:(__bridge UIFontDescriptor *)descriptor size:size];
         CFRelease(descriptor);

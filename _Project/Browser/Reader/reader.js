@@ -32,7 +32,7 @@
       '#__reader{all:initial;display:block;position:relative;box-sizing:border-box;width:100%;min-height:100vh;',
       '--rd-bg:#fbfaf6;--rd-fg:#1d1d1f;--rd-dim:#6e6e73;--rd-link:#0a5bd3;--rd-rule:rgba(0,0,0,.14);--rd-quote:rgba(0,0,0,.05);',
       'background:var(--rd-bg);color:var(--rd-fg);padding:' + p(150) + ' ' + p(80) + ' ' + p(160) + ';',
-      'font:400 ' + p(36) + '/1.6 ui-serif,"New York",Georgia,serif;-webkit-text-size-adjust:none;text-align:start;}',
+      'font:400 ' + p(36) + '/1.6 -apple-system,system-ui,sans-serif;-webkit-text-size-adjust:none;text-align:start;}',
       '#__reader *{box-sizing:border-box;}',
       '#__reader .rd-col{display:block;max-width:' + p(1280) + ';margin:0 auto;}',
       '#__reader .rd-site{display:block;font:600 ' + p(26) + '/1.3 -apple-system,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--rd-dim);margin:0 0 ' + p(26) + ';}',

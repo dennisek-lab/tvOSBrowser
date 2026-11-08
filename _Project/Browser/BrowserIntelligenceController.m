@@ -25,16 +25,15 @@ static UIVisualEffect *BrowserIntelligenceGlassEffect(void) {
     return [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
 }
 
-static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
-    UIFont *base = [UIFont systemFontOfSize:size weight:weight];
-    UIFontDescriptor *serif = [base.fontDescriptor fontDescriptorWithDesign:UIFontDescriptorSystemDesignSerif];
-    return serif != nil ? [UIFont fontWithDescriptor:serif size:size] : base;
+/// Fließtext der Karten in der Systemschrift (SF Pro) wie im übrigen Apple-Stil der App – keine Serifenschrift.
+static UIFont *BrowserIntelligenceBodyFont(CGFloat size, UIFontWeight weight) {
+    return [UIFont systemFontOfSize:size weight:weight];
 }
 
 #pragma mark - Karte „Zusammenfassung“
 
 /// Abgedunkelter Hintergrund mit Glas-Karte in der Mitte: Kopf (Symbol, „Zusammenfassung“, Seitentitel),
-/// Sätze als Liste in Reader-Schrift (New York), Fußzeile mit Quelle („lokal“), Dauer und Bedienhinweis.
+/// Sätze als Liste in der Systemschrift (SF Pro), Fußzeile mit Quelle („lokal“), Dauer und Bedienhinweis.
 @interface BrowserSummaryCardView : UIView
 @property (nonatomic, strong) UIView *dimView;
 @property (nonatomic, strong) UIVisualEffectView *cardView;
@@ -201,7 +200,7 @@ static UIFont *BrowserIntelligenceSerifFont(CGFloat size, UIFontWeight weight) {
     style.lineSpacing = self.sentenceFontSize * 0.22;
     for (UILabel *label in self.sentenceLabels) {
         label.attributedText = [[NSAttributedString alloc] initWithString:label.text ?: @""
-                                                               attributes:@{NSFontAttributeName: BrowserIntelligenceSerifFont(self.sentenceFontSize, UIFontWeightRegular),
+                                                               attributes:@{NSFontAttributeName: BrowserIntelligenceBodyFont(self.sentenceFontSize, UIFontWeightRegular),
                                                                             NSParagraphStyleAttributeName: style}];
     }
     for (UILabel *bullet in self.bulletLabels) {
@@ -492,7 +491,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
     style.lineSpacing = 6.0;
     style.lineBreakMode = NSLineBreakByTruncatingTail;
     self.sentenceLabel.attributedText = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"„%@“", sentence]
-                                                                        attributes:@{NSFontAttributeName: BrowserIntelligenceSerifFont(30.0, UIFontWeightRegular),
+                                                                        attributes:@{NSFontAttributeName: BrowserIntelligenceBodyFont(30.0, UIFontWeightRegular),
                                                                                      NSParagraphStyleAttributeName: style}];
     self.footerLabel.text = footer;
 }
