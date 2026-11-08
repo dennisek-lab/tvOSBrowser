@@ -25,6 +25,8 @@ static NSString * const kPointerSpeedDefaultsKey = @"PointerSpeed";
 static NSString * const kPointerGlideEnabledDefaultsKey = @"PointerGlideEnabled";
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
+/// Einmalige Umstellung des alten Standards „en“ auf „auto“ erledigt (siehe autoSubtitlesLanguage).
+static NSString * const kAutoSubtitlesLanguageMigratedDefaultsKey = @"AutoSubtitlesLanguageMigratedToAuto";
 static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
 static NSString * const kClassicDesignEnabledDefaultsKey = @"ClassicDesign";
 static NSString * const kSetupCompletedDefaultsKey = @"SetupCompleted";
@@ -307,14 +309,36 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
+/// Standard ist „auto“ (Sprache je Video erkennen). Einmalige Umstellung: Ein gespeichertes „en“ aus der Zeit, als
+/// „en“ der Standard war, wird beim ersten Lesen zu „auto“. Bewusst gewählt lässt sich „en“ von damals nicht sicher
+/// erkennen (es kam auch über Selbsttests/`defaults write` und als Ausweg aus der früher je Abschnitt springenden
+/// automatischen Erkennung in die Einstellungen); ein falsches „Englisch“ war der gemeldete Fehler, eine falsche
+/// Umstellung kostet dagegen nur eine Auswahl im Player-Menü. Wer danach „Englisch“ wählt, behält es.
 - (NSString *)autoSubtitlesLanguage {
-    NSString *value = [[self defaults] stringForKey:kAutoSubtitlesLanguageDefaultsKey];
-    return value.length > 0 ? value : @"en";
+    NSUserDefaults *defaults = [self defaults];
+    NSString *value = [defaults stringForKey:kAutoSubtitlesLanguageDefaultsKey];
+    if (![defaults boolForKey:kAutoSubtitlesLanguageMigratedDefaultsKey]) {
+        [defaults setBool:YES forKey:kAutoSubtitlesLanguageMigratedDefaultsKey];
+        if ([value isEqualToString:@"en"]) {
+            // Ausdrücklich setzen statt löschen: Löschen ließe einen Wert aus einer anderen Ebene durchscheinen
+            // (z. B. im Simulator per `simctl spawn … defaults write` gesetzt).
+            [defaults setObject:@"auto" forKey:kAutoSubtitlesLanguageDefaultsKey];
+            value = @"auto";
+            NSLog(@"[Subtitles] Sprache: gespeichertes „en“ (alter Standard) auf „auto“ umgestellt");
+        }
+    }
+    return value.length > 0 ? value : @"auto";
 }
 
 - (void)setAutoSubtitlesLanguage:(NSString *)autoSubtitlesLanguage {
-    [[self defaults] setObject:autoSubtitlesLanguage.length > 0 ? autoSubtitlesLanguage : @"en" forKey:kAutoSubtitlesLanguageDefaultsKey];
-    [[self defaults] synchronize];
+    NSUserDefaults *defaults = [self defaults];
+    [defaults setBool:YES forKey:kAutoSubtitlesLanguageMigratedDefaultsKey];
+    if (autoSubtitlesLanguage.length > 0) {
+        [defaults setObject:autoSubtitlesLanguage forKey:kAutoSubtitlesLanguageDefaultsKey];
+    } else {
+        [defaults removeObjectForKey:kAutoSubtitlesLanguageDefaultsKey];
+    }
+    [defaults synchronize];
 }
 
 - (BOOL)webSubtitlesEnabled {

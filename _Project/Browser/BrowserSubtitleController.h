@@ -10,8 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// BrowserNativeVideoPlayerViewController wird je Player ein Controller angelegt (als assoziiertes Objekt),
 /// `BrowserNativePlayerWillEndSessionNotification` räumt ihn ab. Der Player muss nicht geändert werden.
 ///
-/// Legt die Untertitelebene in `subtitleOverlayView` (sonst `contentOverlayView`), einen Schalter
-/// „Automatische Untertitel“ in `transportBarCustomMenuItems` (bestehende Einträge bleiben erhalten) und
+/// Legt die Untertitelebene in `subtitleOverlayView` (sonst `contentOverlayView`), ein Menü
+/// „Automatische Untertitel“ (An/Aus, „Sprache: …“ mit Automatisch und festen Sprachen, bei Automatisch die für
+/// dieses Video erkannte Sprache) in `transportBarCustomMenuItems` (bestehende Einträge bleiben erhalten) und
 /// startet die Erkennung, wenn `BrowserPreferencesStore.autoSubtitlesEnabled` an ist und keine
 /// Stream-/Seiten-Untertitel laufen. Tonquelle: Audio-Tap bei Dateien, eigene Segmentauswertung bei HLS.
 /// Logpräfix `[Subtitles]`.
