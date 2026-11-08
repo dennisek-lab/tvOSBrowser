@@ -13,6 +13,7 @@
 #import "BrowserGuideViewController.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
+#import "BrowserIntelligence.h"
 #import "BrowserIntelligenceController.h"
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
@@ -288,7 +289,14 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                 if ([step hasPrefix:@"parse:"]) {
                     // Parser prüfen, ohne auszuführen: parse:<text>|<text>|…
                     for (NSString *text in [[step substringFromIndex:6] componentsSeparatedByString:@"|"]) {
-                        NSLog(@"[SelfTest] parse \"%@\" -> %@", text, [BrowserCommandParser describeParseOfText:text]);
+                        NSString *line = [BrowserCommandParser describeParseOfText:text];
+                        NSLog(@"[SelfTest] parse \"%@\" -> %@", text, line);
+                        if ([line hasPrefix:@"keine"]) {
+                            // Zweite Stufe wie im Diktat, nur loggen.
+                            [BrowserIntelligence.sharedIntelligence matchCommandForText:text completion:^(BrowserCommandMatch *match) {
+                                NSLog(@"[SelfTest] parse \"%@\" ähnlich: %@", text, match != nil ? match.logDescription : @"kommt nicht in Frage -> Suche");
+                            }];
+                        }
                     }
                     return;
                 }
@@ -748,7 +756,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     }
 }
 
-/// Eingabe aus dem Adressfeld (Diktat oder Tastatur): erst die Befehlstabelle fragen, dann Adresse oder Suche.
+/// Eingabe aus dem Adressfeld (Diktat oder Tastatur): erst die Befehlstabelle fragen (ganze Phrasen, Präfixe wie
+/// „frag …“), dann der Ähnlichkeitsabgleich (BrowserIntelligence matchCommandForText:), sonst Adresse oder Suche.
 - (void)handleEnteredAddressText:(NSString *)text {
     BrowserParsedCommand *parsed = [BrowserCommandParser parseText:text ?: @""];
     if (parsed != nil) {
@@ -756,7 +765,22 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self.commandRouter performCommandNamed:parsed.name argument:parsed.argument source:BrowserCommandSourceDictation];
         return;
     }
-    [self openAddressOrSearch:text];
+    __weak typeof(self) weakSelf = self;
+    [BrowserIntelligence.sharedIntelligence matchCommandForText:text ?: @"" completion:^(BrowserCommandMatch *match) {
+        typeof(self) self_ = weakSelf;
+        if (self_ == nil) {
+            return;
+        }
+        if (match != nil) {
+            NSLog(@"[Command] Diktat \"%@\" ähnlich: %@", text, match.logDescription);
+        }
+        if (match.accepted) {
+            [self_.commandRouter performCommandNamed:match.name argument:match.argument.length > 0 ? match.argument : nil
+                                              source:BrowserCommandSourceDictation feedbackNote:@"sinngemäß erkannt"];
+            return;
+        }
+        [self_ openAddressOrSearch:text];
+    }];
 }
 
 - (void)searchFieldDidEndOnExit:(UITextField *)textField {
@@ -1272,6 +1296,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 
 - (BOOL)browserCommandTranslate {
     return [self.intelligenceController translateCurrentPage];
+}
+
+- (void)browserCommandAskPage:(NSString *)question {
+    [self.intelligenceController askCurrentPage:question];
 }
 
 - (void)browserSummarizePage {

@@ -28,7 +28,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 16. [Offen/unklar](#16-offenunklar)
 17. [App-Icon und Top Shelf](#17-app-icon-und-top-shelf)
 18. [Animationen (Liquid Glass / schlicht)](#18-animationen-browsermotion)
-19. [Intelligente Funktionen: Zusammenfassen, Übersetzen](#19-intelligente-funktionen-browserintelligence)
+19. [Intelligente Funktionen: Zusammenfassen, Übersetzen, Sprachbefehle sinngemäß, Frag die Seite](#19-intelligente-funktionen-browserintelligence)
 
 ---
 
@@ -902,8 +902,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `dictate:<Text>` | Play/Pause lang (Suchdialog), Text einsetzen (simuliert Diktat) | `dictate field=ok text=…` |
 | `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Notification, dann Router), siehe `docs/SIRI_STEUERUNG.md` | `siri <befehl>`, `[Siri] Befehl …`, `[Command] …` |
 | `cmd:<name>[\|<arg>]` | Befehl direkt über den Router (alle Namen aus `BrowserCommand`, z. B. `cmd:reader\|on`, `cmd:seek\|-10`, `cmd:open\|heise.de`) | `cmd …`, `[Command] <name> arg=… quelle=selbsttest ok\|nicht möglich\|unbekannt („Rückmeldung“)` |
-| `parse:<text>[\|<text>…]` | Parser prüfen, ohne auszuführen (mehrere Texte mit `\|`) | `parse "<text>" -> reader\|on ("starte den reader")` bzw. `keine -> Suche`/`keine -> Adresse` |
-| `enter:<text>` | Text wie aus dem Adressfeld bestätigt (Parser, dann Befehl oder Suche) | `enter …`, `[Command] Diktat "…" -> …` |
+| `parse:<text>[\|<text>…]` | Parser prüfen, ohne auszuführen (mehrere Texte mit `\|`); ohne Parser-Treffer zusätzlich der sinngemäße Abgleich (Abschnitt 19.1) | `parse "<text>" -> reader\|on ("starte den reader")` bzw. `keine -> Suche`/`keine -> Adresse`, dann `parse "<text>" ähnlich: ausführen\|Suche -> <befehl> (Begriffe … Abstand …, Embedding …, unbekannt=…, Beispiel "…", <Grund>)` |
+| `enter:<text>` | Text wie aus dem Adressfeld bestätigt (Parser, dann sinngemäßer Abgleich, dann Befehl oder Suche) | `enter …`, `[Command] Diktat "…" -> …` bzw. `[Command] Diktat "…" ähnlich: …` |
 | `probe` | JS-Messung: Element `#red`, `scrollY`, `innerHeight/Width`, Treffer bei (20,20), `visualViewport.offsetTop` plus `webFrame`, `contentOffset`, `contentInset` (für Einschub/Versatz; setzt Testseite mit `#red` voraus) | `probe … webFrame=… offset=… inset=…` |
 | `label` | Text der Adress-Beschriftung der Leiste | `label <Text>` |
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |
@@ -930,6 +930,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `summarize` | Seite zusammenfassen (wie Menü „Zusammenfassen“), Karte bleibt offen | `summarize <URL>`, dann `[Reader] text -> …`, `[AI] Satz #…`, `[AI] zusammenfassen: ok …`, `[AI] Karte: …` |
 | `translate` | Seite über translate.goog öffnen (wie Sprachbefehl „Übersetzen“) | `translate <URL> -> <Proxy-URL>`, `[AI] übersetzen …` |
 | `translate:hint` / `translate:reset` | Kapsel „Übersetzen?“ erzwingen (für Screenshots) / abgelehnte Hosts und Sitzungsliste leeren | `translate:hint <host>` / `translate:reset` |
+| `ask:<frage>` | „Frag die Seite“ (Abschnitt 19.2): Stelle suchen, markieren, Karte zeigen | `ask <frage>`, `[Reader] text -> …`, `[AI] Fundstelle #…`, `[AI] frag "…": N Treffer …`, `[AI] markieren: …`, `[AI] Antwort 1/N markiert=0\|1 …` |
+| `ask:next` | nächste Fundstelle (wie Play/Pause bei offener Karte) | `[AI] Antwort 2/N …` |
 
 Zeichen `;` und `|` dürfen in `js:`/`url:`/`fill:` nicht vorkommen (Trenner).
 
@@ -949,6 +951,8 @@ POINTER_SELFTEST="parse:Reader|Starte den Reader|zurück|suche Wetter|Reader Tes
 POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wikipedia.org/;wait;favorite;url:https://www.heise.de/;wait;address;dir:down;dir:right"
 # Zusammenfassen und Übersetzen (Abschnitt 19)
 POINTER_SELFTEST="translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(device);wait;wait;ai;summarize;wait;menu;translate"
+# Frag die Seite und sinngemäße Befehle (Abschnitt 19.1, 19.2)
+POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:frag wann wurde das Apple TV 4K vorgestellt;wait;ask:next;wait;enter:lade die Seite nochmal"
 ```
 
 ---
@@ -970,11 +974,11 @@ POINTER_SELFTEST="translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(de
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
 | `[Reader] check/toggle/exit -> a|y|n|e:…`, `[Reader] text -> <Quelle> N Zeichen (Seite M)` | `BrowserReaderMode` | ja |
-| `[AI] zusammenfassen: …`, `[AI] Karte: …`, `[AI] Übersetzen-Hinweis <host>: <Grund> …`, `[AI] übersetzen …`, `[AI] Übersetzen abgelehnt für …`, `[AI] kontextuelles Embedding …` | `BrowserIntelligence`, `BrowserIntelligenceController` | nein (nur `[AI] Satz #…` ist DEBUG) |
+| `[AI] zusammenfassen: …`, `[AI] Karte: …`, `[AI] Übersetzen-Hinweis <host>: <Grund> …`, `[AI] übersetzen …`, `[AI] Übersetzen abgelehnt für …`, `[AI] kontextuelles Embedding …`, `[AI] frag "…": N Treffer …`, `[AI] markieren: …`, `[AI] Antwort i/N markiert=…` | `BrowserIntelligence`, `BrowserIntelligenceController` | nein (nur `[AI] Satz #…` und `[AI] Fundstelle #…` sind DEBUG) |
 | `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
 | `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
-| `[Command] <name> arg=… quelle=diktat\|siri\|selbsttest ok\|nicht möglich\|unbekannt`, `[Command] Diktat "…" -> …` | `BrowserCommandRouter`, `ViewController handleEnteredAddressText:` | nein |
+| `[Command] <name> arg=… quelle=diktat\|siri\|selbsttest ok\|nicht möglich\|unbekannt`, `[Command] Diktat "…" -> …`, `[Command] Diktat "…" ähnlich: ausführen\|Suche -> …` | `BrowserCommandRouter`, `ViewController handleEnteredAddressText:` | nein |
 | `[Siri] Befehl …`, `[Siri] Intent -> Befehl …` | `ViewController`, `BrowserAppIntents.swift` | nein |
 | `[Probe]` | `BrowserFeasibilityProbe` | nein (nur bei gesetzter Umgebungsvariable) |
 | `[FullscreenHack]` | `WebAVPlayerViewController+FullscreenSubviewHack.m` | Hack aus |
@@ -1043,7 +1047,7 @@ swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
 
 ## 19. Intelligente Funktionen (`BrowserIntelligence`)
 
-**Zweck.** Erste Punkte aus `PLAN.md` Phase 6: Artikel zusammenfassen (lokal, extraktiv) und Seiten übersetzen (Google-Übersetzungs-Proxy), dazu ein Hinweis „Übersetzen?“ bei fremdsprachigen Seiten. Hintergrund: Apples Sprachmodell, Translation und Writing Tools sind auf tvOS 27.2 für Apps gesperrt, `NaturalLanguage` ist verfügbar (`docs/APPLE_INTELLIGENCE.md`). Modelle lesen hier nur und schlagen vor; sie klicken nie und senden nichts ab.
+**Zweck.** Punkte aus `PLAN.md` Phase 6: Artikel zusammenfassen (lokal, extraktiv) und Seiten übersetzen (Google-Übersetzungs-Proxy), dazu ein Hinweis „Übersetzen?“ bei fremdsprachigen Seiten; Sprachbefehle sinngemäß erkennen (19.1) und „Frag die Seite“ (19.2). Hintergrund: Apples Sprachmodell, Translation und Writing Tools sind auf tvOS 27.2 für Apps gesperrt, `NaturalLanguage` ist verfügbar (`docs/APPLE_INTELLIGENCE.md`). Modelle lesen hier nur und schlagen vor; sie klicken nie und senden nichts ab.
 
 **Dateien.**
 - `_Project/Browser/BrowserAIProvider.h`: Protokoll `BrowserAIProvider` (`providerName`, `available`, `dominantLanguageForText:confidence:`, `summarizeText:title:maxSentences:completion:`, `diagnosticsDescription`) und Ergebnis `BrowserAISummary` (Sätze, Sprache, Verfahren, Dauer, Kandidaten). Spätere Anbieter (Mac im Heimnetz, Cloud, `SystemLanguageModel`) kommen hinter dieselbe Schnittstelle.
@@ -1099,3 +1103,90 @@ Screenshots mit `xcrun simctl io <UDID> screenshot …` (nie `booted`, wenn mehr
 
 **Aktualisieren.** Gewichte und Schwellen stehen in `summarySyncForText:` (Kommentare 4a bis 5), Satzlängen und Bausteinfilter in `BrowserNLSentenceLooksUsable`, Abkürzungen in `BrowserNLShouldJoinSentences`, Befehlsphrasen in `BrowserCommand.m`. Neuer Anbieter: Klasse mit `BrowserAIProvider`, in `+[BrowserIntelligence sharedIntelligence]` wählen.
 
+### 19.1 Sprachbefehle sinngemäß erkennen (Diktat-Abgleich)
+
+**Zweck.** Diktat und Adressfeld: Findet `BrowserCommandParser` nichts, prüft `BrowserIntelligence matchCommandForText:completion:`, ob der Satz sinngemäß einer Phrase aus der Befehlstabelle entspricht („geh eine Seite zurück“, „lade die Seite nochmal“, „zeig mir alle Tabs“). Ausgeführt wird nur über einer vorsichtigen Schwelle, alles andere bleibt Suche. Suchbegriffe wie „Reader Test Vergleich“, „zurück zur Zukunft“ oder „Tabs vs Spaces“ dürfen nie Befehle werden.
+
+**Ablauf.** `ViewController handleEnteredAddressText:` → Parser. Kein Treffer und keine Adresse → asynchron `matchCommandForText:` → bei `accepted` `BrowserCommandRouter performCommandNamed:argument:source:feedbackNote:` mit dem Zusatz „sinngemäß erkannt“ in der Rückmeldung („Neu laden · sinngemäß erkannt“, Screenshot `docs/ai-screens/befehl-sinngemaess.png`), sonst `openAddressOrSearch:` wie bisher. Der Index wird beim ersten Aufruf einmal aufgebaut; das Satz-Embedding wird nur gefragt, wenn es für die erkannte Sprache eines gibt (im Simulator nur Englisch), und auch dann nur fürs Log, solange unbekannte Wörter im Satz sind.
+
+**Verfahren.**
+- Vergleichsmenge: die Phrasen der Befehlstabelle je Befehl und Argument. Die Begriffe laufen gegen alle ausgeschriebenen Phrasen, das Satz-Embedding gegen `BrowserCommand.examplePhrases` (jede Alternative eines Musters einmal, `BrowserCommandExpandPatternLinear`, kein Kreuzprodukt). Befehle, die nur über ein Präfix mit freiem Text laufen (Suche, Adresse, Frag die Seite), nehmen nicht teil.
+- Wörter: klein, Umlaute behalten, Stoppwörter (de/en Funktionswörter, „bitte“, „mal“, „kannst du“, „mir“ …) raus, leichter Stammformer (`BrowserCommandStem`, Endungen -en/-e/-s/-er/-ing/-ed …). `NLTagger`-Lemma gibt es im tvOS-Simulator weder für de noch en, deshalb kein Lemma. Synonyme vorher: „nochmal/nochmals/erneut“ → „neu“.
+- Begriffsvektor je Befehlsklasse (Name|Argument), IDF über Klassen (`log(1 + C/df)`), Wörter, die in keiner Phrase vorkommen, bekommen das höchste Gewicht und zählen als **unbekannt**. Ähnlichkeit = IDF-gewichteter Kosinus zur besten Phrase der Klasse, Abstand = Differenz zur besten anderen Klasse.
+- Satz-Embedding (`NLEmbedding sentenceEmbeddingForLanguage:`, Sprache per `NLLanguageRecognizer` auf de/en beschränkt) nur als **Bestätigung**: allein ist es zu ungenau (Simulator: „neuer Tab Chrome“ 0,86 zu „new tab“, „scroll ganz nach unten“ landete auf „top“).
+
+**Regeln (`BrowserIntelligence.m`, Konstanten `kCommand…`).**
+
+| Bedingung | Ergebnis |
+|:--|:--|
+| Adresse, unter 2 oder über 10 Wörter | kommt nicht in Frage → Suche |
+| ein unbekanntes Wort | Suche („unbekannte Wörter“) – schützt alle Suchbegriffe mit Eigennamen oder Themen |
+| Begriffe ≥ 0,80 und Abstand ≥ 0,12 | ausführen („Begriffe“) |
+| Begriffe ≥ 0,62, Abstand ≥ 0,12 und Satz-Embedding wählt denselben Befehl mit ≥ 0,75 und Abstand ≥ 0,05 | ausführen („Begriffe + Embedding en“) |
+| bis 0,12 unter der Schwelle | Suche („knapp darunter“), nur Log |
+| sonst | Suche („zu unähnlich“) |
+
+Auf Deutsch gibt es im Simulator kein Satz-Embedding, dort entscheidet nur die erste Regel (Log: „kein Satz-Embedding (de)“).
+
+**Ergebnisse (`parse:`-Selbsttest, Simulator „Ask-Test“).** Alle Regressionsfälle bleiben Suche: „Reader Test Vergleich“, „Reader Test“, „zurück zur Zukunft“, „Tabs vs Spaces“, „neuer Tab Chrome“, „Hilfe bei Steuern“, „Lesemodus Safari“, „vor 10 Jahren“, „Pause Musik“, „Geh zu Wikipedia“, „open source software“, „Wetter Berlin“, „back to the future“, „help with taxes“, „new tab chrome“, „bring mich zur Startseite“, „Frage der Woche“, „ask jeeves“ (jeweils „unbekannte Wörter“); „Tab“ und „heise.de“ kommen gar nicht in Frage. Neu erkannt:
+
+| Satz | Befehl | Werte |
+|:--|:--|:--|
+| geh eine Seite zurück | `back` | Begriffe 0,94, Abstand 0,47 |
+| lade die Seite nochmal | `reload` | 1,00 / 0,54 |
+| kannst du die Seite neu laden | `reload` | 1,00 / 0,54 |
+| zeig mir alle Tabs | `tabs` | 1,00 / 0,55 |
+| scroll ganz nach unten | `down` | 0,81 / 0,23 |
+| please reload this page | `reload` | 1,00 / 0,85, Embedding 0,83 |
+| go back to the previous page | `back` | 0,76 / 0,44 + Embedding en 0,76 |
+| mach den Lesemodus an | `reader\|on` | schon über den Parser |
+
+**Grenzen.** Ein einziges fremdes Wort macht jeden Satz zur Suche, auch harmlose Füllwörter, die nicht in der Stoppliste stehen („bring mich zur Startseite“ bleibt Suche, weil „bring“ unbekannt ist). Das ist gewollt vorsichtig. Neue Formulierungen kommen am besten als Präfix in `BrowserCommand.m` dazu; sie erweitern automatisch die Beispielphrasen.
+
+### 19.2 „Frag die Seite“
+
+**Zweck.** „frag wann wurde das Apple TV 4K vorgestellt“ sucht die passende Stelle im Artikel, markiert sie in der Seite, scrollt hin und zeigt den Satz in einer Glas-Karte. Kein Sprachmodell: die Antwort ist immer ein wörtlicher Satz der Seite.
+
+**Auslöser.** Befehl `ask` (Titel „Frag die Seite“, Symbol `text.magnifyingglass`) mit Präfixen „frag (die Seite)“, „frage (die Seite)“, „ask (the|this page)“. Bei „frage“ und „ask“ muss ein Fragewort folgen (wer, was, wann, wo, wie, warum, welche …, who, what, when …), sonst bleibt es Suche („Frage der Woche“, „ask jeeves“). Selbsttest `ask:<frage>`, `ask:next`.
+
+**Ablauf.**
+1. `BrowserIntelligenceController askCurrentPage:` schließt Zusammenfassung, Übersetzen-Hinweis und alte Antwort, dann `BrowserIntelligence askQuestion:inWebView:completion:`.
+2. Text: `BrowserReaderMode textForWebView:` mit bis zu 30.000 Zeichen (Readability, ohne Tabellen).
+3. Anbieter (`findPassagesForQuestion:inText:maxResults:completion:`): Sätze wie beim Zusammenfassen (gemeinsame Funktion `sentencesOfText:…`, hier mit Zahlen), Fragebegriffe ohne Frage- und Füllwörter (`BrowserNLQuestionStopTerms`), Fragetyp aus dem Fragewort (Datum, Zahl, Ort, Person).
+4. Bewertung je Satz: Begriffsabdeckung mit IDF über die Sätze (0,7 eigener Satz, 0,15 Nachbarsätze, 0,15 Schwerpunkt = seltenster Begriff), Fragetyp-Treffer (Jahreszahl/Datum, Zahl mit Einheit, Ort, Name) als Bonus; Satz-Embedding nur für Sätze mit Abdeckung ≥ 0,25 (spart etwa 1 s pro Artikel). Wert = 0,58 Begriffe + 0,27 Embedding + 0,15 Art (ohne Embedding 0,85/0,15), über 45 Wörter × 0,88.
+5. Relevanz: Abdeckung ≥ 0,45, oder ≥ 0,25 wenn das Embedding ≥ 0,65 stützt; unter 0,30 Embedding braucht es ≥ 0,80 Abdeckung. Bis zu 3 Stellen mit mindestens 55 % des besten Werts, keine Teilstring-Dubletten.
+6. Andere Sprache als die Seite (deutsche Frage, englische Seite): kleines Wörterbuch de↔en (`BrowserNLTranslations`, Frageverben und Technikwörter mit gebeugten Formen, z. B. „vorgestellt“ → announced/introduced/unveiled). Kein Übersetzer.
+7. Markieren (`highlightPassage:inWebView:`, Skript `kAskHighlightScript`): TreeWalker über sichtbare Textknoten (bei aktivem Reader in `#__reader`, ohne `sup`, `script`, `.mw-editsection`), Leerraum normalisiert, Suche exakt, dann ohne Groß/Klein, dann Anfang+Ende; die Textstücke werden in `span.__bask` gehüllt. Wirkung: weißer Ring und blauer Glow, der in eine gelbe Markierung übergeht (CSS-Keyframes), nach 9 s Ausblenden, nach 10 s wieder entfernt. `scrollIntoView({block: 'center', behavior: 'smooth'})`. `window.__browserAsk.clear()/fade()`.
+8. Karte `BrowserAnswerCardView`: Glas unten mittig (bis 1.500 pt breit), „Frage: …“, der Satz in der Reader-Schrift (30 pt, bis 4 Zeilen), Fußzeile „Stelle 1 von 3 · Play/Pause: nächste · Zurück-Taste schließt · Lokal · 0,1 s“ (bzw. „in der Seite nicht markiert“, wenn das Skript den Satz nicht fand). Play/Pause springt zur nächsten Stelle (Karte federt auf die neue Höhe), Zurück-Taste schließt und nimmt die Markierung weg, nach 25 s blendet sie aus. Neue Seite, Tabwechsel und Zusammenfassen schließen sie.
+9. Kein Treffer: Rückmeldung „Keine passende Stelle gefunden“ (bzw. „Frage zu kurz“, „Kein Text auf der Seite“).
+
+**Messwerte (Simulator „Ask-Test“, Apple TV 4K, tvOS 27.2, 8. November 2026).**
+
+| Seite / Frage | Ergebnis | Verfahren | Abruf / Rechnen |
+|:--|:--|:--|:--|
+| de.wikipedia.org/wiki/Apple_TV, „frag wann wurde das Apple TV 4K vorgestellt“ | 1: „Am 12. September 2017 wurde das Apple TV 4K vorgestellt.“ (0,97), 2: 2021, 3: 2022; genau markiert | Begriffe (IDF), kein de-Embedding | 21 ms / 83 ms |
+| en.wikipedia.org/wiki/Apple_TV_(device), „ask when was the Apple TV 4K announced“ | 1: Ankündigung 4. Generation 2026, 2: 2017 – die Frage ist mehrdeutig | Begriffe + Satz-Embedding (23 Sätze eingebettet) | 48 ms / 408 ms |
+| dieselbe Seite, deutsche Frage „frag wann wurde das Apple TV 4K vorgestellt“ | 2026, 2017, 2021 („announced“) | Begriffe + Wörterbuch | 48 ms / 72 ms |
+| „what is the capital of France“, „frag wie heißt der Hund“ | keine Stelle (richtig) | – | – |
+| „how much storage does the Apple TV 4K have“ | schwach: Formfaktor-Sätze; die Speicherangaben stehen in Tabellen, die Readability nicht liefert | | |
+
+Screenshots: `docs/ai-screens/frag-die-seite-de.png` (Antwort 1), `frag-die-seite-de-naechste.png` (Play/Pause → Stelle 2), `frag-die-seite-en.png` (Glow-Phase), `frag-die-seite-de-auf-en.png` (deutsche Frage auf englischer Seite), `frag-die-seite-kein-treffer.png`.
+
+**Bewertung.** Für Faktenfragen zu Lexikon- und Nachrichtentexten („wann“, „wie viel“, „wer“) gut: der richtige Satz steht meist auf Platz 1, sonst auf 2 oder 3, und Markieren plus Hinscrollen macht ihn sofort sichtbar. Unsinnsfragen werden abgelehnt. Schwach bei mehrdeutigen Fragen (welches Modell?), bei Antworten, die über zwei Sätze verteilt sind, und bei Fakten in Tabellen oder Infoboxen. „Warum“- und Meinungsfragen beantwortet es nicht im eigentlichen Sinn, es zeigt höchstens den Satz mit den meisten Begriffen.
+
+**Grenzen und Fallen.**
+- Nur die ersten 30.000 Zeichen des Readability-Textes; Tabellen und Infoboxen fehlen.
+- Deutsch ohne Satz-Embedding und ohne Lemma (Simulator): „vorgestellt“ findet „vorstellen“ nur über den Stammformer und das Wörterbuch. Am Gerät messen.
+- Markierung: Ein Satz über mehrere Links wird in mehrere `span` geteilt; an den Nahtstellen sieht man kleine Lücken im Glow. Fixe Banner (Wikipedia-Spendenbanner) können den Satz nach dem Scrollen teilweise verdecken.
+- Steht der Satz nur im Readability-Text, aber anders im DOM (Silbentrennung, `&shy;`, umgestellte Zitate), meldet die Karte „in der Seite nicht markiert“.
+
+**Woran man merkt, dass es kaputt ist.** `[AI] frag "…": 0 Treffer … Begriffe=[]`: Stoppliste schluckt alles. `[AI] markieren: {"found":false,"why":…}`: Seite ändert den DOM oder der Text weicht ab. Karte erscheint, aber kein Glow: Seiten-CSS überschreibt `.__bask` (Stil steht in `#__bask_style`, im Web-Inspector prüfen).
+
+**Test.**
+```
+POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:frag wann wurde das Apple TV 4K vorgestellt;wait;ask:next"
+POINTER_SELFTEST="url:https://en.wikipedia.org/wiki/Apple_TV_(device);wait;wait;ask:when was the Apple TV 4K announced;wait;wait;ask:what is the capital of France"
+POINTER_SELFTEST="parse:geh eine Seite zurück|lade die Seite nochmal|Tabs vs Spaces|frag wer hat das erfunden|Frage der Woche"
+```
+
+**Aktualisieren.** Schwellen `kAsk…` und `kCommand…` oben in den jeweiligen Blöcken von `BrowserIntelligence.m`, Stoppwörter `BrowserNLQuestionStopTerms`/`BrowserCommandStopWords`, Wörterbuch `BrowserNLTranslations`, Markier-Skript `kAskHighlightScript`. Wer Schwellen ändert, lässt den `parse:`-Selbsttest oben laufen: alle Suchbegriffe müssen „-> Suche“ bleiben.

@@ -195,6 +195,21 @@
     return rest.length > 0 ? rest : nil;
 }
 
+/// Beginnt der Text mit einem Fragewort (Deutsch/Englisch)? Für „frage …“ und „ask …“.
++ (BOOL)textStartsWithQuestionWord:(NSString *)text {
+    static NSSet<NSString *> *words;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        words = [NSSet setWithArray:@[@"wann", @"wer", @"wen", @"wem", @"wessen", @"was", @"wie", @"wo", @"woher", @"wohin", @"warum",
+                                      @"weshalb", @"wieso", @"wozu", @"womit", @"wofür", @"worüber", @"welche", @"welcher", @"welches",
+                                      @"welchen", @"wieviel", @"wieviele", @"ob", @"gibt", @"steht", @"kostet", @"hat", @"ist", @"sind",
+                                      @"when", @"who", @"whom", @"whose", @"what", @"how", @"where", @"why", @"which", @"does", @"do",
+                                      @"did", @"is", @"are", @"was", @"were", @"can", @"has", @"have"]];
+    });
+    NSString *first = [self normalizedWordsOfText:text].firstObject;
+    return first != nil && [words containsObject:first];
+}
+
 + (BrowserParsedCommand *)parseText:(NSString *)text {
     NSString *trimmed = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (trimmed.length == 0 || [self textLooksLikeAddress:trimmed]) {
@@ -225,6 +240,11 @@
             NSString *argument = [self argumentAfterPrefix:prefix inText:trimmed];
             if (argument == nil) {
                 continue;
+            }
+            if ([command.name isEqualToString:@"ask"] && ([prefix isEqualToString:@"frage"] || [prefix isEqualToString:@"ask"]) &&
+                ![self textStartsWithQuestionWord:argument]) {
+                // „Frage der Woche“, „ask jeeves“: Nomen bzw. Name, keine Frage an die Seite.
+                return nil;
             }
             if ([command.name isEqualToString:@"open"]) {
                 NSString *address = [self addressFromSpokenText:argument];

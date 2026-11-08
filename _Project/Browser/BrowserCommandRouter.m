@@ -95,6 +95,11 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
 }
 
 - (BOOL)performCommandNamed:(NSString *)name argument:(NSString *)argument source:(BrowserCommandSource)source {
+    return [self performCommandNamed:name argument:argument source:source feedbackNote:nil];
+}
+
+- (BOOL)performCommandNamed:(NSString *)name argument:(NSString *)argument source:(BrowserCommandSource)source
+               feedbackNote:(NSString *)note {
     BrowserCommand *command = [BrowserCommand commandNamed:name.lowercaseString ?: @""];
     NSString *sourceName = [BrowserCommand nameForSource:source];
     if (command == nil) {
@@ -208,6 +213,17 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             ok = NO;
             feedback = @"Befehl nicht verfügbar";
         }
+    } else if ([key isEqualToString:@"ask"]) {
+        // Rückmeldung (Antwort-Karte oder „Keine passende Stelle“) kommt vom BrowserIntelligenceController.
+        if (argument.length == 0) {
+            ok = NO;
+            feedback = @"Was soll ich die Seite fragen?";
+        } else if ([host respondsToSelector:@selector(browserCommandAskPage:)]) {
+            [host browserCommandAskPage:argument];
+        } else {
+            ok = NO;
+            feedback = @"Befehl nicht verfügbar";
+        }
     } else if (command.requiresVideo && ![host browserCommandPageHasVideo]) {
         ok = NO;
         feedback = @"Kein Video auf der Seite";
@@ -233,7 +249,8 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
     NSLog(@"[Command] %@ arg=%@ quelle=%@ %@%@", command.name, argument ?: @"-", sourceName, ok ? @"ok" : @"nicht möglich",
           feedback != nil ? [NSString stringWithFormat:@" („%@“)", feedback] : @"");
     if (feedback != nil) {
-        [self showFeedback:feedback symbolName:command.symbolName success:ok];
+        [self showFeedback:note.length > 0 ? [NSString stringWithFormat:@"%@  ·  %@", feedback, note] : feedback
+                symbolName:command.symbolName success:ok];
     }
     return ok;
 }

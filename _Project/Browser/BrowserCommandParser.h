@@ -29,6 +29,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Kleinbuchstaben, Satzzeichen und Füllwörter („bitte“) weg, Bindestriche als Leerzeichen.
 + (NSString *)normalizedText:(NSString *)text;
 
+/// Sieht der Text wie eine Adresse aus (ein Wort mit Punkt, Schema, localhost)? Adressen gehen nie an den Parser.
++ (BOOL)textLooksLikeAddress:(NSString *)text;
+
+/// Wörter des Textes nach der Normalisierung, ohne Füllwörter.
++ (NSArray<NSString *> *)normalizedWordsOfText:(NSString *)text;
+
 /// Gesprochene Adresse („heise punkt de“) als Adresse („heise.de“), sonst nil.
 + (nullable NSString *)addressFromSpokenText:(NSString *)text;
 

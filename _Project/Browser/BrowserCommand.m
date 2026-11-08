@@ -13,6 +13,7 @@
 @property (nonatomic, readwrite) BOOL requiresVideo;
 @property (nonatomic, readwrite, copy) NSDictionary<NSString *, NSString *> *phrases;
 @property (nonatomic, readwrite, copy) NSArray<NSString *> *prefixes;
+@property (nonatomic, readwrite, copy) NSDictionary<NSString *, NSArray<NSString *> *> *examplePhrases;
 @end
 
 /// Erweitert Muster mit Alternativen in Klammern: "(starte|start) (den |)reader"
@@ -46,6 +47,49 @@ static void BrowserCommandExpandPattern(NSString *pattern, NSMutableArray<NSStri
     }
 }
 
+/// Wie BrowserCommandExpandPattern, aber linear: erst alle Gruppen mit der ersten Alternative, dann jede weitere
+/// Alternative einer Gruppe einzeln (die übrigen Gruppen bleiben bei der ersten). Aus 10 × 5 × 10 × 3 Kombinationen
+/// werden so 25 Beispiele, die trotzdem jedes Wort der Tabelle enthalten.
+static void BrowserCommandExpandPatternLinear(NSString *pattern, NSMutableArray<NSString *> *output) {
+    NSMutableArray<NSString *> *literals = [NSMutableArray array];
+    NSMutableArray<NSArray<NSString *> *> *groups = [NSMutableArray array];
+    NSUInteger cursor = 0;
+    while (cursor < pattern.length) {
+        NSRange open = [pattern rangeOfString:@"(" options:0 range:NSMakeRange(cursor, pattern.length - cursor)];
+        NSRange close = open.location == NSNotFound ? open
+            : [pattern rangeOfString:@")" options:0 range:NSMakeRange(open.location, pattern.length - open.location)];
+        if (open.location == NSNotFound || close.location == NSNotFound) {
+            break;
+        }
+        [literals addObject:[pattern substringWithRange:NSMakeRange(cursor, open.location - cursor)]];
+        [groups addObject:[[pattern substringWithRange:NSMakeRange(NSMaxRange(open), close.location - NSMaxRange(open))]
+                           componentsSeparatedByString:@"|"]];
+        cursor = NSMaxRange(close);
+    }
+    NSString *tail = cursor < pattern.length ? [pattern substringFromIndex:cursor] : @"";
+    NSString * (^compose)(NSInteger, NSUInteger) = ^NSString *(NSInteger groupIndex, NSUInteger alternative) {
+        NSMutableString *text = [NSMutableString string];
+        for (NSUInteger g = 0; g < groups.count; g++) {
+            [text appendString:literals[g]];
+            [text appendString:groups[g][(NSInteger)g == groupIndex ? alternative : 0]];
+        }
+        [text appendString:tail];
+        NSArray<NSString *> *words = [text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        return [[words filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]] componentsJoinedByString:@" "];
+    };
+    NSMutableOrderedSet<NSString *> *unique = [NSMutableOrderedSet orderedSetWithObject:compose(-1, 0)];
+    for (NSUInteger g = 0; g < groups.count; g++) {
+        for (NSUInteger a = 1; a < groups[g].count; a++) {
+            [unique addObject:compose((NSInteger)g, a)];
+        }
+    }
+    for (NSString *phrase in unique) {
+        if (phrase.length > 0) {
+            [output addObject:phrase];
+        }
+    }
+}
+
 @implementation BrowserCommand
 
 + (BrowserCommand *)commandWithName:(NSString *)name
@@ -62,16 +106,21 @@ static void BrowserCommandExpandPattern(NSString *pattern, NSMutableArray<NSStri
     command.argumentKind = argument;
     command.requiresVideo = video;
     NSMutableDictionary<NSString *, NSString *> *phrases = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSArray<NSString *> *> *examples = [NSMutableDictionary dictionary];
     [patterns enumerateKeysAndObjectsUsingBlock:^(NSString *arg, NSArray<NSString *> *list, __unused BOOL *stop) {
+        NSMutableArray<NSString *> *linear = [NSMutableArray array];
         for (NSString *pattern in list) {
             NSMutableArray<NSString *> *expanded = [NSMutableArray array];
             BrowserCommandExpandPattern(pattern, expanded);
             for (NSString *phrase in expanded) {
                 phrases[phrase] = arg;
             }
+            BrowserCommandExpandPatternLinear(pattern, linear);
         }
+        examples[arg] = [[NSOrderedSet orderedSetWithArray:linear] array];
     }];
     command.phrases = phrases;
+    command.examplePhrases = examples;
     command.prefixes = [prefixes sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
         return a.length > b.length ? NSOrderedAscending : (a.length < b.length ? NSOrderedDescending : NSOrderedSame);
     }];
@@ -203,6 +252,11 @@ static void BrowserCommandExpandPattern(NSString *pattern, NSMutableArray<NSStri
                                            @"(seite|webseite|artikel) übersetzen", @"(auf deutsch|ins deutsche) übersetzen", @"übersetzung",
                                            @"(translate|translate this page|translate the page|translate page|translate to german)"]}
                          prefixes:@[]],
+            // „Frag die Seite“: Frage im Diktat, Antwort ist die passendste Stelle der Seite (hervorgehoben).
+            // „frage“ und „ask“ nur mit Fragewort danach (BrowserCommandParser), sonst bleibt es eine Suche.
+            [self commandWithName:@"ask" title:@"Frag die Seite" symbol:@"text.magnifyingglass" argument:BrowserCommandArgumentText video:NO
+                         patterns:@{}
+                         prefixes:@[@"frag die seite", @"frage die seite", @"frag", @"frage", @"ask the page", @"ask this page", @"ask"]],
         ];
 #if DEBUG
         // Doppelte Phrasen wären mehrdeutig: im Debug-Build melden.

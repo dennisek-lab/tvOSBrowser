@@ -2,7 +2,8 @@
 //  BrowserIntelligenceController.h
 //  Browser
 //
-//  Oberfläche der intelligenten Funktionen: Glas-Karte „Zusammenfassung“ und Hinweis-Kapsel „Übersetzen?“.
+//  Oberfläche der intelligenten Funktionen: Glas-Karte „Zusammenfassung“, Hinweis-Kapsel „Übersetzen?“ und
+//  die Antwort-Karte von „Frag die Seite“ (gefundener Satz, in der Seite hervorgehoben).
 //  Die Logik (Text, NaturalLanguage, translate.goog) liegt in BrowserIntelligence. ViewController reicht
 //  Seitenereignisse, Menütaste und Play/Pause durch; Auslöser sind das Seitenmenü („Diese Seite“) und die
 //  Sprachbefehle "summarize" und "translate" (BrowserCommand).
@@ -24,11 +25,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, readonly) BOOL summaryVisible;
 @property (nonatomic, readonly) BOOL translationHintVisible;
+@property (nonatomic, readonly) BOOL answerVisible;
 
 /// Zeigt die Karte mit „Wird zusammengefasst …“ und dann das Ergebnis (oder eine Rückmeldung bei Fehlern).
 - (void)summarizeCurrentPage;
 /// Öffnet die Seite über translate.goog. NO (mit Rückmeldung), wenn das nicht geht oder schon übersetzt ist.
 - (BOOL)translateCurrentPage;
+/// „Frag die Seite“: passendste Stelle suchen, in der Seite hervorheben, hinscrollen, Antwort-Karte unten.
+/// Kein Treffer: Rückmeldung „Keine passende Stelle gefunden“.
+- (void)askCurrentPage:(NSString *)question;
 
 - (void)pageDidStartLoadInWebView:(BrowserWebView *)webView;
 /// Prüft nach kurzer Pause die Sprache und blendet bei fremder Sprache „Übersetzen?“ ein.
@@ -36,13 +41,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// Tabwechsel: Karte und Kapsel schließen.
 - (void)activeWebViewDidChange;
 
-/// Menütaste: schließt die Karte bzw. lehnt den Hinweis für diesen Host ab. YES, wenn verbraucht.
+/// Menütaste: schließt Karte bzw. Antwort oder lehnt den Hinweis für diesen Host ab. YES, wenn verbraucht.
 - (BOOL)handleMenuPress;
-/// Play/Pause: nimmt den Hinweis an (übersetzt). YES, wenn verbraucht.
+/// Play/Pause: nimmt den Hinweis an (übersetzt) bzw. zeigt die nächste Fundstelle. YES, wenn verbraucht.
 - (BOOL)handlePlayPausePress;
 
 #if DEBUG
-/// Selbsttest-Schritte ai, summarize, translate, translate:hint, translate:reset. YES, wenn erkannt.
+/// Selbsttest-Schritte ai, summarize, translate, translate:hint, translate:reset, ask:<frage>, ask:next. YES, wenn erkannt.
 - (BOOL)runSelfTestStep:(NSString *)step;
 #endif
 
