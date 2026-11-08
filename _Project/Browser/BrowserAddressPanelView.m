@@ -3,6 +3,7 @@
 //
 
 #import "BrowserAddressPanelView.h"
+#import "BrowserTabCoordinator.h"
 #import "BrowserFaviconCache.h"
 #import "BrowserHistoryStore.h"
 
@@ -31,7 +32,8 @@ static CGFloat const kPanelIconCornerFraction = 0.24;
 static CGFloat const kPanelFullBleedPixelSize = 96.0;
 
 static NSString *BrowserAddressPanelDisplayName(BrowserSiteEntry *entry) {
-    NSString *name = entry.name;
+    // Gleicher Kurzname wie in der Leiste („Apple TV – Wikipedia“ → „Wikipedia“, Guardian → „The Guardian“).
+    NSString *name = entry.host.length > 0 ? BrowserShortSiteName(nil, entry.name, entry.host) : entry.name;
     // Name wie eine Domain („tagesschau.de“): ohne Endung, damit er unter die Kachel passt.
     BOOL domainLike = name.length > 0 && [name rangeOfString:@" "].location == NSNotFound &&
         [entry.host hasSuffix:name.lowercaseString];

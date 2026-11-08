@@ -275,7 +275,7 @@ static NSString *BrowserPhraseMatchingHost(NSString *title, NSString *host) {
 }
 
 /// Kurzer Name der Website wie in Safari: Metadaten, sonst der zur Domain passende Teil des Titels.
-static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *host) {
+NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *host) {
     NSCharacterSet *whitespace = NSCharacterSet.whitespaceAndNewlineCharacterSet;
     siteName = [siteName stringByTrimmingCharactersInSet:whitespace];
     if (siteName.length > 0) {
