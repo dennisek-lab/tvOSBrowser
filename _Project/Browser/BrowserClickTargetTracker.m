@@ -118,6 +118,162 @@ static NSString *BrowserFrameVideoScript(void) {
     "})();", BrowserManifestObserverJS()];
 }
 
+/// Player-Brücke: läuft in **allen** Frames (document-start), möglichst in einer eigenen Content World, und
+/// erreicht so auch Player in fremden iframes (Vimeo, Dailymotion, YouTube-Embeds, Mediatheken) und in
+/// Shadow DOM. Ein Frame meldet seinem Elternframe, ob er ein Video (v), ein laufendes Video (p) oder nur einen
+/// Play-Knopf (b) hat; der Hauptframe markiert solche iframes mit `data-browser-player` (1 = Player, 2 = läuft),
+/// damit das Zielskript sie als Video meldet. Befehle gehen per `postMessage` mit geheimem Kennwort abwärts.
+/// `window.__bpb` (nur in der Brückenwelt sichtbar):
+/// - `cmd(c, x, y, strict)`: Videobefehl (toggle, play, pause, seek:S, seekto:S) am Punkt (CSS-Pixel), sonst am
+///   laufenden Video; strict = nur am Punkt oder an einem laufenden Video (sonst auch einziges/größtes Video).
+///   Ergebnis: play, pause, seek, click (Play-Knopf des Players geklickt), frame (an iframe weitergereicht), none.
+/// - `click(x, y)`: Klick in fremdes iframe bzw. Shadow DOM; liefert `page`, wenn das Ziel im Hauptdokument
+///   (oder einem iframe gleicher Herkunft) liegt, dann klickt weiter der bisherige Weg.
+/// - `href(url, c)`: Befehl an den Frame mit dieser Adresse (Übergabe an den nativen Player, Rückkehr).
+/// Ohne eigene Content World (isolated = NO) sind Klicks in fremde Frames gesperrt: Das Kennwort wäre dann für
+/// die Seite lesbar, und eine Seite könnte damit in eingebettete fremde Inhalte klicken.
+static NSString *BrowserPlayerBridgeScript(NSString *token, BOOL isolated) {
+    NSString *body = @"(function(){"
+    "if (window.__bpb) { return; }"
+    "var K='__TOKEN__', ISO=__ISO__, B={}, lastPlayed=null, lastState='', timer=0;"
+    "try { Object.defineProperty(window,'__bpb',{value:B,configurable:false,enumerable:false,writable:false}); } catch(e) { window.__bpb=B; }"
+    "var PLAY=/(^|[^a-z])(play|abspielen|wiedergabe|wiedergeben|starten|ansehen|watch|lire|lecture|reproducir|riproduci)([^a-z]|$)|play-?btn|play-?button|playbutton|big-?play|play-?icon|playicon|ytp-large-play|jw-icon-display|jw-display-icon|vjs-big-play|vp-big-play|hugeplaybacktoggle|playback-?toggle|play-?pause|playpause/;"
+    "var NOPLAY=/playlist|autoplay|playback-?rate|playback-?speed|replay|next|weiter|naechst|nächst|trailer|vorschau/;"
+    "var BTN='button,[role=button],a,[class*=play i],[aria-label*=play i],[aria-label*=abspielen i],[title*=play i],[title*=abspielen i],[data-testid*=play i]';"
+    "function up(el){ if (!el) { return null; } if (el.parentElement) { return el.parentElement; } var r=el.getRootNode&&el.getRootNode(); return (r&&r.host)||null; }"
+    "function win(el){ return (el&&el.ownerDocument&&el.ownerDocument.defaultView)||window; }"
+    "function frames(doc){ return [].slice.call((doc||document).querySelectorAll('iframe,frame')); }"
+    "function frameOf(src){ var fs=frames(document); for (var i=0;i<fs.length;i++){ try { if (fs[i].contentWindow===src) { return fs[i]; } } catch(e) {} } return null; }"
+    "function vis(el){ var r=el.getBoundingClientRect(), w=win(el); if (r.width<2||r.height<2||r.bottom<=0||r.right<=0||r.top>=w.innerHeight||r.left>=w.innerWidth) { return null; }"
+        "var s=w.getComputedStyle(el); if (s.visibility==='hidden'||s.display==='none'||parseFloat(s.opacity)<0.05) { return null; } return r; }"
+    "function inside(r,x,y){ return r && x>=r.left && x<=r.right && y>=r.top && y<=r.bottom; }"
+    // Videos samt offener Shadow Roots.
+    "function vids(root,out,d){ out=out||[]; d=d||0; if (!root||d>6) { return out; } var a=root.querySelectorAll('video'), i; for (i=0;i<a.length;i++){ out.push(a[i]); }"
+        "var all=root.querySelectorAll('*'); if (all.length<30000) { for (i=0;i<all.length;i++){ if (all[i].shadowRoot) { vids(all[i].shadowRoot,out,d+1); } } } return out; }"
+    // Element am Punkt: steigt in offene Shadow Roots und iframes gleicher Herkunft ab; bei fremden iframes
+    // endet es dort und liefert die Koordinaten im Frame.
+    "function hit(x,y){"
+        "var doc=document, el=doc.elementFromPoint(x,y), g=0, sh=false;"
+        "while (el && g++<40) {"
+            "var sr=el.shadowRoot;"
+            "if (sr && sr.elementFromPoint) { var s=sr.elementFromPoint(x,y); if (s && s!==el && s.getRootNode && s.getRootNode()===sr) { el=s; sh=true; continue; } }"
+            "if (el.tagName==='IFRAME'||el.tagName==='FRAME') {"
+                "var r=el.getBoundingClientRect(), cs=win(el).getComputedStyle(el);"
+                "var lx=x-r.left-el.clientLeft-(parseFloat(cs.paddingLeft)||0), ly=y-r.top-el.clientTop-(parseFloat(cs.paddingTop)||0);"
+                "var d=null; try { d=el.contentDocument; } catch(e) {}"
+                "if (d && d.elementFromPoint) { var f=d.elementFromPoint(lx,ly); if (f) { el=f; x=lx; y=ly; doc=d; continue; } return {el:el,x:x,y:y,doc:doc,sh:sh}; }"
+                "return {el:el,x:lx,y:ly,doc:doc,frame:el,sh:sh};"
+            "}"
+            "break;"
+        "}"
+        "return el ? {el:el,x:x,y:y,doc:doc,sh:sh} : null;"
+    "}"
+    "function label(el){ var g=function(n){ return (el.getAttribute&&el.getAttribute(n))||''; };"
+        "var t=(el.childElementCount<4 ? (el.textContent||'') : '').trim(); if (t.length>24) { t=''; }"
+        "var c=typeof el.className==='string' ? el.className : g('class');"
+        "return [g('aria-label'),g('title'),g('data-testid'),g('data-plyr'),el.id||'',c,t].join(' ').toLowerCase(); }"
+    "function playish(el){ if (!el||el.nodeType!==1) { return false; } var l=label(el); return PLAY.test(l) && !NOPLAY.test(l); }"
+    // Play-Knopf eines Players: in der Ahnenkette des Ziels, sonst im Player-Behälter (höchstens 1,6-fache Fläche
+    // des Bezugsrechtecks), sichtbar und über dem Bezug.
+    "function playButtonNear(el,ref){"
+        "for (var n=el, i=0; n && i<8; n=up(n), i++){ if (playish(n) && vis(n)) { return n; } }"
+        "var rr=ref||(el&&el.getBoundingClientRect()); if (!rr||rr.width<120||rr.height<68) { return null; }"
+        "var c=el, best=null, ba=0;"
+        "for (var k=0; c && k<8; k++){"
+            "var p=up(c); if (!p||p===document.body||p===document.documentElement) { break; }"
+            "var pr=p.getBoundingClientRect(); if (pr.width*pr.height>rr.width*rr.height*1.6+1) { break; } c=p;"
+        "}"
+        "if (!c||!c.querySelectorAll) { return null; }"
+        "var roots=[c], q, j; for (q=c.querySelectorAll('*'), j=0; j<q.length && roots.length<20; j++){ if (q[j].shadowRoot) { roots.push(q[j].shadowRoot); } }"
+        "for (var m=0;m<roots.length;m++){ var bs=roots[m].querySelectorAll(BTN);"
+            "for (j=0;j<bs.length;j++){ var b=bs[j]; if (!playish(b)) { continue; } var r=vis(b); if (!r||r.width<16||r.height<16) { continue; }"
+                "if (r.right<rr.left||r.left>rr.right||r.bottom<rr.top||r.top>rr.bottom) { continue; }"
+                "var a=r.width*r.height; if (a>ba) { ba=a; best=b; } } }"
+        "return best;"
+    "}"
+    "function fire(el,x,y){"
+        "var w=win(el), o={bubbles:true,cancelable:true,composed:true,view:w,clientX:x,clientY:y,screenX:x,screenY:y,button:0,buttons:1,detail:1,pointerId:1,pointerType:'mouse',isPrimary:true,width:1,height:1,pressure:0.5};"
+        "function ev(t,C){ try { var Ctor=w[C]||window[C]; if (Ctor) { el.dispatchEvent(new Ctor(t,o)); return; } } catch(e) {}"
+            "try { var m=el.ownerDocument.createEvent('MouseEvents'); m.initMouseEvent(t,true,true,w,1,x,y,x,y,false,false,false,false,0,null); el.dispatchEvent(m); } catch(e2) {} }"
+        "if (x<0) { var r=el.getBoundingClientRect(); x=r.left+r.width/2; y=r.top+r.height/2; o.clientX=o.screenX=x; o.clientY=o.screenY=y; }"
+        "ev('pointerover','PointerEvent'); ev('mouseover','MouseEvent'); ev('pointerdown','PointerEvent'); ev('mousedown','MouseEvent');"
+        "try { var f=el.closest&&el.closest('a,button,input,select,textarea,[tabindex]'); if (f&&f.focus) { f.focus({preventScroll:true}); } } catch(e) {}"
+        "o.buttons=0; ev('pointerup','PointerEvent'); ev('mouseup','MouseEvent');"
+        "if (typeof el.click==='function') { el.click(); } else { ev('click','MouseEvent'); }"
+    "}"
+    "function send(fr,msg){ msg.__bpbCmd=K; try { fr.contentWindow.postMessage(msg,'*'); return true; } catch(e) { return false; } }"
+    "function playing(v){ return !v.paused && !v.ended; }"
+    "function big(v){ var r=v.getBoundingClientRect(); return r.width>=200 && r.height>=112; }"
+    "function noSource(v){ return v.networkState===3 || (!v.currentSrc && !v.src && !v.querySelector('source')); }"
+    "function act(v,c){"
+        "if (c==='toggle') { c=(v.paused||v.ended) ? 'play' : 'pause'; }"
+        "if (c==='play') {"
+            // Noch ohne Quelle (Player lädt erst beim Klick) oder Seite verweigert play(): Knopf des Players.
+            "var b=noSource(v) ? playButtonNear(v,v.getBoundingClientRect()) : null; if (b) { fire(b,-1,-1); return 'click'; }"
+            "try { var p=v.play(); if (p&&p.catch) { p.catch(function(e){ B.lastError=String(e); var b2=playButtonNear(v,v.getBoundingClientRect()); if (b2) { fire(b2,-1,-1); } }); } } catch(e) { B.lastError=String(e); }"
+            "return 'play';"
+        "}"
+        "if (c==='pause') { v.pause(); return 'pause'; }"
+        "if (c.indexOf('seek:')===0) { var dd=parseFloat(c.slice(5)); if (isFinite(dd)) { v.currentTime=Math.max(0,Math.min(isFinite(v.duration)?v.duration:1e9,v.currentTime+dd)); } return 'seek'; }"
+        "if (c.indexOf('seekto:')===0) { var s=parseFloat(c.slice(7)); if (isFinite(s)) { v.currentTime=Math.max(0,s); } return 'seek'; }"
+        "return 'none';"
+    "}"
+    "function videoAt(doc,x,y){ var vs=vids(doc), best=null, ba=1e12; for (var i=0;i<vs.length;i++){ var r=vs[i].getBoundingClientRect(); if (inside(r,x,y) && r.width*r.height<ba && r.width>=40) { ba=r.width*r.height; best=vs[i]; } } return best; }"
+    "function frameOK(fr,strict){ var s=fr.__bps; if (s) { return !!(s.v||s.b); } if (strict) { return false; } var r=fr.getBoundingClientRect(); return r.width>=300 && r.height>=150; }"
+    "B.cmd=function(c,x,y,strict){"
+        "c=String(c||'toggle'); var h=(x>=0&&y>=0) ? hit(x,y) : null;"
+        "if (h && h.frame) { if (frameOK(h.frame,strict) && send(h.frame,{op:'cmd',c:c,x:h.x,y:h.y,s:strict?1:0})) { return 'frame'; } h=null; }"
+        "if (h) {"
+            "var v=videoAt(h.doc,h.x,h.y); if (v) { return act(v,c); }"
+            "if (c==='toggle'||c==='play') { var b=playButtonNear(h.el,null); if (b) { fire(b,-1,-1); return 'click'; } }"
+        "}"
+        "var vs=vids(document), i, fs=frames(document);"
+        "for (i=0;i<vs.length;i++){ if (playing(vs[i])) { return act(vs[i],c); } }"
+        "for (i=0;i<fs.length;i++){ if (fs[i].__bps && fs[i].__bps.p && send(fs[i],{op:'cmd',c:c,x:-1,y:-1,s:1})) { return 'frame'; } }"
+        "if (strict) { return 'none'; }"
+        "if (lastPlayed && lastPlayed.isConnected) { return act(lastPlayed,c); }"
+        "var best=null, ba=0; for (i=0;i<vs.length;i++){ var r=vis(vs[i]); if (r && r.width*r.height>ba) { ba=r.width*r.height; best=vs[i]; } }"
+        "if (best) { return act(best,c); }"
+        "var bf=null; ba=0; for (i=0;i<fs.length;i++){ var q=fs[i].__bps; var fr=vis(fs[i]); if (q && (q.v||q.b) && fr && fr.width*fr.height>ba) { ba=fr.width*fr.height; bf=fs[i]; } }"
+        "if (bf && send(bf,{op:'cmd',c:c,x:-1,y:-1,s:0})) { return 'frame'; }"
+        "if ((c==='toggle'||c==='play') && x<0) { var pb=null; ba=0; var bs=document.querySelectorAll(BTN); for (i=0;i<bs.length;i++){ var br=playish(bs[i]) && vis(bs[i]); if (br && br.width*br.height>ba && br.width>=32) { ba=br.width*br.height; pb=bs[i]; } } if (pb) { fire(pb,-1,-1); return 'click'; } }"
+        "return 'none';"
+    "};"
+    "B.click=function(x,y){"
+        "var h=hit(x,y); if (!h) { return 'none'; }"
+        "if (h.frame) { if (!ISO) { return 'noiso'; } return send(h.frame,{op:'click',x:h.x,y:h.y}) ? 'frame' : 'none'; }"
+        "if (window===top && !h.sh) { return 'page'; }"
+        "fire(h.el,h.x,h.y); return h.sh ? 'shadow' : 'click';"
+    "};"
+    "B.href=function(u,c){ var r='none'; if (location.href===u) { r=B.cmd(c,-1,-1,false); } var fs=frames(document); for (var i=0;i<fs.length;i++){ send(fs[i],{op:'href',u:u,c:c}); } return r; };"
+    // Zustand für den Elternframe bzw. die Markierung der iframes im Hauptframe.
+    "function state(){ var vs=vids(document), v=0, p=0, b=0, i;"
+        "for (i=0;i<vs.length;i++){ if (big(vs[i])) { v=1; if (playing(vs[i])) { p=1; } } }"
+        "var fs=frames(document); for (i=0;i<fs.length;i++){ var s=fs[i].__bps; if (s) { v=v||s.v; p=p||s.p; b=b||s.b; } }"
+        "if (!v && !b && window!==top) { var bs=document.querySelectorAll(BTN); for (i=0;i<bs.length && i<400;i++){ var r=playish(bs[i]) && vis(bs[i]); if (r && r.width>=32 && r.height>=32) { b=1; break; } } }"
+        "return {v:v?1:0,p:p?1:0,b:b?1:0}; }"
+    "function mark(){ var fs=frames(document); for (var i=0;i<fs.length;i++){ var s=fs[i].__bps, val=s&&(s.v||s.b) ? (s.p?'2':'1') : '';"
+        "if ((fs[i].getAttribute('data-browser-player')||'')!==val) { if (val) { fs[i].setAttribute('data-browser-player',val); } else { fs[i].removeAttribute('data-browser-player'); } } } }"
+    "function update(){ timer=0; if (window===top) { mark(); return; } var s=state(), k=JSON.stringify(s); if (k===lastState) { return; } lastState=k; try { parent.postMessage({__bpbState:s},'*'); } catch(e) {} }"
+    "function schedule(ms){ if (!timer) { timer=setTimeout(update,ms||250); } }"
+    "addEventListener('message',function(e){"
+        "var d=e.data; if (!d||typeof d!=='object') { return; }"
+        "if (d.__bpbState) { var fr=frameOf(e.source); if (fr) { fr.__bps=d.__bpbState; schedule(100); } return; }"
+        "if (d.__bpbCmd!==K) { return; }"
+        "try { e.stopImmediatePropagation(); } catch(x) {}"
+        "if (d.op==='cmd') { B.cmd(d.c,d.x,d.y,!!d.s); }"
+        "else if (d.op==='click' && ISO) { B.click(d.x,d.y); }"
+        "else if (d.op==='href') { B.href(d.u,d.c); }"
+        "schedule(300);"
+    "},true);"
+    "['play','playing','pause','ended','loadedmetadata','emptied'].forEach(function(n){ document.addEventListener(n,function(e){ if (e.target&&e.target.tagName==='VIDEO') { if (n==='play') { lastPlayed=e.target; } schedule(200); } },true); });"
+    "addEventListener('DOMContentLoaded',function(){ schedule(50); });"
+    "addEventListener('load',function(){ schedule(50); [1000,3000,6000,12000].forEach(function(t){ setTimeout(function(){ schedule(10); },t); }); });"
+    "})();";
+    body = [body stringByReplacingOccurrencesOfString:@"__TOKEN__" withString:token];
+    return [body stringByReplacingOccurrencesOfString:@"__ISO__" withString:isolated ? @"1" : @"0"];
+}
+
 static NSString *BrowserClickTargetScript(void) {
     return @"(function(){"
     "if (window.__browserTargets) { return; }"
@@ -224,6 +380,14 @@ static NSString *BrowserClickTargetScript(void) {
             "if (vr.width<120||vr.height<80||vr.bottom<0||vr.right<0||vr.top>innerHeight||vr.left>innerWidth) { continue; }"
             "vids.push([Math.round(vr.left),Math.round(vr.top),Math.round(vr.width),Math.round(vr.height),fixedLike(v),isPlaying?1:0]);"
         "}"
+        // Player in iframes (von der Player-Brücke markiert: 1 = Player, 2 = läuft) zählen wie Videos.
+        "var pf=document.querySelectorAll('iframe[data-browser-player],frame[data-browser-player]');"
+        "for (var pi=0; pi<pf.length && vids.length<20; pi++){"
+            "var f=pf[pi], fr=f.getBoundingClientRect(), fp=f.getAttribute('data-browser-player')==='2';"
+            "if (fp) { playing=true; }"
+            "if (fr.width<120||fr.height<80||fr.bottom<0||fr.right<0||fr.top>innerHeight||fr.left>innerWidth) { continue; }"
+            "vids.push([Math.round(fr.left),Math.round(fr.top),Math.round(fr.width),Math.round(fr.height),fixedLike(f),fp?1:0]);"
+        "}"
         "var m=null, av=window.__browserActiveVideo;"
         "if (!av || !av.isConnected) { av=null; for (var k=0;k<vs.length;k++){ if (!vs[k].paused) { av=vs[k]; break; } } }"
         "if (av && (av.currentTime>0 || !av.paused)) {"
@@ -254,7 +418,7 @@ static NSString *BrowserClickTargetScript(void) {
     "['play','playing','pause','ended','emptied','seeked','ratechange','durationchange','loadedmetadata'].forEach(function(n){ document.addEventListener(n,function(){ schedule(60); },true); });"
     "addEventListener('load',function(){ schedule(50); });"
     "['fullscreenchange','webkitfullscreenchange','webkitbeginfullscreen','webkitendfullscreen'].forEach(function(n){ document.addEventListener(n,function(){ schedule(30); },true); });"
-    "try { new MutationObserver(function(){ schedule(350); }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden','aria-hidden','disabled']}); } catch(e) {}"
+    "try { new MutationObserver(function(){ schedule(350); }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden','aria-hidden','disabled','data-browser-player']}); } catch(e) {}"
     "schedule(0);"
     "})();";
 }
@@ -331,6 +495,63 @@ static NSString *BrowserClickTargetScript(void) {
         "})(%f,%f,'%@');", point.x, point.y, safeCommand];
 }
 
+#pragma mark - Player-Brücke
+
+/// Kennwort für Befehle zwischen den Brückenskripten der Frames, je Prozessstart neu. In der eigenen Content World
+/// kann die Seite es nicht lesen, also auch keine Klicks in fremde eingebettete Inhalte auslösen.
+static NSString *BrowserPlayerBridgeToken(void) {
+    static NSString *token;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        uint8_t bytes[16];
+        arc4random_buf(bytes, sizeof(bytes));
+        NSMutableString *hex = [NSMutableString stringWithCapacity:32];
+        for (size_t i = 0; i < sizeof(bytes); i++) {
+            [hex appendFormat:@"%02x", bytes[i]];
+        }
+        token = [hex copy];
+    });
+    return token;
+}
+
++ (id)playerBridgeContentWorld {
+    static id world;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Class worldClass = NSClassFromString(@"WKContentWorld");
+        Class scriptClass = NSClassFromString(@"WKUserScript");
+        Class webViewClass = NSClassFromString(@"WKWebView");
+        SEL named = NSSelectorFromString(@"worldWithName:");
+        BOOL supported = worldClass != Nil && [worldClass respondsToSelector:named] &&
+            [scriptClass instancesRespondToSelector:NSSelectorFromString(@"initWithSource:injectionTime:forMainFrameOnly:inContentWorld:")] &&
+            [webViewClass instancesRespondToSelector:NSSelectorFromString(@"evaluateJavaScript:inFrame:inContentWorld:completionHandler:")];
+        if (supported) {
+            world = ((id (*)(id, SEL, id))objc_msgSend)(worldClass, named, @"BrowserPlayerBridge");
+        }
+        NSLog(@"[PlayerBridge] Content World %@", world != nil ? @"eigene" : @"nicht verfügbar, Seitenwelt ohne Klicks in fremde Frames");
+    });
+    return world;
+}
+
+static NSString *BrowserBridgeSafeArgument(NSString *value) {
+    NSCharacterSet *unsafe = [NSCharacterSet characterSetWithCharactersInString:@"'\\\n\r  "];
+    return [[value ?: @"" componentsSeparatedByCharactersInSet:unsafe] componentsJoinedByString:@""];
+}
+
++ (NSString *)playerBridgeCommandScript:(NSString *)command cssPoint:(CGPoint)point strict:(BOOL)strict {
+    return [NSString stringWithFormat:@"(window.__bpb ? window.__bpb.cmd('%@',%f,%f,%@) : 'nobridge')",
+            BrowserBridgeSafeArgument(command), point.x, point.y, strict ? @"true" : @"false"];
+}
+
++ (NSString *)playerBridgeClickScriptAtCSSPoint:(CGPoint)point {
+    return [NSString stringWithFormat:@"(window.__bpb ? window.__bpb.click(%f,%f) : 'nobridge')", point.x, point.y];
+}
+
++ (NSString *)playerBridgeScriptForFrameURL:(NSString *)frameURL command:(NSString *)command {
+    return [NSString stringWithFormat:@"(window.__bpb ? window.__bpb.href('%@','%@') : 'nobridge')",
+            BrowserBridgeSafeArgument(frameURL), BrowserBridgeSafeArgument(command)];
+}
+
 + (NSString *)exitFullscreenScript {
     return @"(function(){"
         "try { if (document.fullscreenElement && document.exitFullscreen) { document.exitFullscreen(); return 'exit'; } } catch(e) {}"
@@ -390,6 +611,18 @@ static NSString *BrowserClickTargetScript(void) {
     frameHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(frameHook, scriptInit, BrowserFrameVideoScript(), 0, NO);
     if (frameHook != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, frameHook);
+    }
+    // Player-Brücke in allen Frames, wenn möglich in eigener Content World.
+    id world = [BrowserClickTargetTracker playerBridgeContentWorld];
+    SEL worldInit = NSSelectorFromString(@"initWithSource:injectionTime:forMainFrameOnly:inContentWorld:");
+    id bridge = [scriptClass alloc];
+    if (world != nil) {
+        bridge = ((id (*)(id, SEL, id, NSInteger, BOOL, id))objc_msgSend)(bridge, worldInit, BrowserPlayerBridgeScript(BrowserPlayerBridgeToken(), YES), 0, NO, world);
+    } else {
+        bridge = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(bridge, scriptInit, BrowserPlayerBridgeScript(BrowserPlayerBridgeToken(), NO), 0, NO);
+    }
+    if (bridge != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, bridge);
     }
     id hook = [scriptClass alloc];
     // injectionTime 0 = WKUserScriptInjectionTimeAtDocumentStart.
