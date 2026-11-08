@@ -33,6 +33,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nullable, nonatomic, copy) void (^videoEventHandler)(NSDictionary * _Nonnull event);
 /// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
+/// Leuchtfarbe des Elements am Punkt (Koordinaten dieser Ansicht), nil = keine eigene Farbe (Grau, Weiß, Schwarz).
+- (nullable UIColor *)glowColorAtPoint:(CGPoint)point;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)videoRects;
 /// Läuft auf der Seite gerade ein Video?

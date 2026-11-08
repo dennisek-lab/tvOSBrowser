@@ -34,6 +34,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// Clickpad rechts: über laufendem Video spulen, sonst nächstes Element.
 - (void)browserRemoteInputControllerNavigateForward;
 @optional
+/// Ansicht, deren Inhalt die Hervorhebung als Linse vergrößert (WebView); nil = keine Linse.
+- (nullable UIView *)browserRemoteInputControllerLensSourceView;
+/// Leuchtfarbe für das Ziel (Koordinaten von rootView); nil = Standardblau.
+- (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
 @required

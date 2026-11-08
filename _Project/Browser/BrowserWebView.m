@@ -723,6 +723,11 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     return [self rectsShiftedByTopInset:[self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }
 
+- (UIColor *)glowColorAtPoint:(CGPoint)point {
+    return [self.clickTargetTracker glowColorAtViewPoint:CGPointMake(point.x, point.y - self.topObscuredInset)
+                                               viewWidth:CGRectGetWidth(self.bounds)];
+}
+
 - (NSArray<NSValue *> *)videoRects {
     return [self rectsShiftedByTopInset:[self.clickTargetTracker videoRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }

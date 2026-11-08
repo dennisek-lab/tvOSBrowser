@@ -112,6 +112,16 @@ static NSString *BrowserClickTargetScript(void) {
         "for (var i=0;i<els.length;i++){ if (!els[i]) { continue; } var c2=rgba(getComputedStyle(els[i]).backgroundColor); if (c2 && c2[3]>0.5) { return c2; } }"
         "return [255,255,255,1];"
     "}"
+    // Knopffarbe fürs Leuchten: Hintergrund, sonst Textfarbe; Weiß, Schwarz, Grau und Durchsichtiges zählen als keine (-1).
+    "function glow(s){"
+        "var c=[rgba(s.backgroundColor), rgba(s.color)];"
+        "for (var i=0;i<2;i++){ var q=c[i]; if (!q || q[3]<0.5) { continue; }"
+            "var mx=Math.max(q[0],q[1],q[2]), mn=Math.min(q[0],q[1],q[2]);"
+            "if (mx-mn<40 || mx<50) { continue; }"
+            "return (Math.round(q[0])<<16)|(Math.round(q[1])<<8)|Math.round(q[2]);"
+        "}"
+        "return -1;"
+    "}"
     "function usable(el, r){"
         "if (r.width<6||r.height<6) { return false; }"
         "if (r.bottom<0||r.right<0||r.top>innerHeight||r.left>innerWidth) { return false; }"
@@ -128,7 +138,7 @@ static NSString *BrowserClickTargetScript(void) {
         "for (var i=0; i<els.length && out.length<500; i++){"
             "var el=els[i], r=el.getBoundingClientRect();"
             "if (!usable(el,r)) { continue; }"
-            "out.push([Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height),fixedLike(el)]);"
+            "out.push([Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height),fixedLike(el),glow(getComputedStyle(el))]);"
         "}"
         "var vids=[], playing=false, vs=document.querySelectorAll('video');"
         "for (var j=0; j<vs.length && vids.length<20; j++){"
@@ -386,6 +396,28 @@ static NSString *BrowserClickTargetScript(void) {
 
 - (NSArray<NSValue *> *)targetRectsForViewWidth:(CGFloat)viewWidth {
     return [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
+}
+
+- (UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
+    NSArray<NSValue *> *rects = [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
+    NSInteger best = -1;
+    CGFloat bestArea = CGFLOAT_MAX;
+    for (NSUInteger i = 0; i < rects.count; i++) {
+        CGRect rect = rects[i].CGRectValue;
+        CGFloat area = CGRectGetWidth(rect) * CGRectGetHeight(rect);
+        if (CGRectContainsPoint(rect, point) && area < bestArea) {
+            best = (NSInteger)i;
+            bestArea = area;
+        }
+    }
+    if (best < 0 || self.rawTargets[best].count < 6) {
+        return nil;
+    }
+    NSInteger packed = self.rawTargets[best][5].integerValue;
+    if (packed < 0) {
+        return nil;
+    }
+    return [UIColor colorWithRed:((packed >> 16) & 255) / 255.0 green:((packed >> 8) & 255) / 255.0 blue:(packed & 255) / 255.0 alpha:1.0];
 }
 
 - (NSArray<NSValue *> *)videoRectsForViewWidth:(CGFloat)viewWidth {

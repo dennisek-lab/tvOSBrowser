@@ -25,6 +25,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ziele in Koordinaten der WebView. `viewWidth` ist die Breite der WebView in Punkten.
 - (NSArray<NSValue *> *)targetRectsForViewWidth:(CGFloat)viewWidth;
 
+/// Leuchtfarbe des Ziels unter dem Punkt (Koordinaten der WebView ohne Leisteneinschub), nil = keine eigene Farbe.
+- (nullable UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
+
 /// Sichtbare Videos (mindestens 120 × 80 CSS-Pixel), in Koordinaten der WebView.
 - (NSArray<NSValue *> *)videoRectsForViewWidth:(CGFloat)viewWidth;
 
