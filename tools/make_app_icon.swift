@@ -522,24 +522,14 @@ func drawText(_ ctx: CGContext, _ text: String, _ font: CTFont, _ fill: CGColor,
     ctx.restoreGState()
 }
 
-/// Top Shelf: gleicher Hintergrund, Emblem rechts, Schriftzug links.
+/// Top Shelf: gleicher Hintergrund, Emblem in der Mitte, ohne Schriftzug (der Name steht ohnehin unter dem Icon).
 func renderTopShelf(_ w: Int, _ h: Int, _ variant: Variant) -> CGImage {
     let W = CGFloat(w), H = CGFloat(h)
-    let e = Emblem(c: CGPoint(x: W - H * 1.05, y: H * 0.5), r: H * 0.34)
+    let e = Emblem(c: CGPoint(x: W * 0.5, y: H * 0.5), r: H * 0.34)
     let back = renderBack(w, h)
     let middle = renderMiddle(w, h, e, back: back, variant: variant)
     let front = renderFront(w, h, e, variant: variant)
-    let text = draw(w, h) { ctx in
-        let x = H * 0.42
-        let title = systemFont(H * 0.17, .bold)
-        let sub = systemFont(H * 0.062, .medium)
-        softLayer(ctx, blurRadius: H * 0.02, alpha: 0.35) { s in
-            drawText(s, "tvOS Browser", title, color(0.10, 0.02, 0.25), at: CGPoint(x: x + H * 0.008, y: H * 0.47))
-        }
-        drawText(ctx, "tvOS Browser", title, white(1), at: CGPoint(x: x, y: H * 0.48))
-        drawText(ctx, "Das ganze Web auf dem großen Bildschirm", sub, white(0.85), at: CGPoint(x: x + H * 0.008, y: H * 0.34))
-    }
-    return flatten([back, middle, front, text])
+    return flatten([back, middle, front])
 }
 
 // MARK: - Assets-Katalog
