@@ -5,7 +5,9 @@
 #endif
 
 static CGFloat const kTopBarHorizontalInset = 40.0;
-static CGFloat const kTopBarVerticalInset = 8.0;
+/// Luft über der ausgeklappten Leiste (die Ansicht ist 116 pt hoch: 18 oben, 86 Leiste, 12 unten).
+static CGFloat const kTopBarVerticalInset = 18.0;
+static CGFloat const kTopBarCompactVerticalInset = 12.0;
 static CGFloat const kTopBarHeight = 86.0;
 static CGFloat const kTopBarMaxWidth = 1760.0;
 static CGFloat const kTopBarIconSize = 52.0;
@@ -382,10 +384,15 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     UIColor *green = self.lightPage ? [UIColor colorWithRed:0.05 green:0.52 blue:0.20 alpha:1.0]
                                     : [UIColor colorWithRed:0.36 green:0.82 blue:0.48 alpha:1.0];
     NSString *title = self.displayTitle ?: @"";
-    BOOL greenTitle = self.displaySecure && !self.colorfulPage;
+    if (self.colorfulPage) {
+        // Farbige Leiste: kräftigeres Grün, damit der Name lesbar bleibt.
+        green = self.lightPage ? [UIColor colorWithRed:0.0 green:0.42 blue:0.14 alpha:1.0]
+                               : [UIColor colorWithRed:0.55 green:1.0 blue:0.62 alpha:1.0];
+    }
+    BOOL greenTitle = self.displaySecure;
     NSMutableAttributedString *text = [NSMutableAttributedString new];
     if (self.displaySecure && self.colorfulPage) {
-        // Verschlüsselt auf farbiger Seite: Schloss in Schriftfarbe statt grünem Namen.
+        // Verschlüsselt auf farbiger Seite: zusätzlich das Schloss, der Name bleibt grün.
         UIImageSymbolConfiguration *lockConfiguration = [UIImageSymbolConfiguration configurationWithFont:self.URLLabel.font scale:UIImageSymbolScaleSmall];
         UIImage *lock = [[UIImage systemImageNamed:@"lock.fill" withConfiguration:lockConfiguration]
                          imageWithTintColor:[foreground colorWithAlphaComponent:0.8] renderingMode:UIImageRenderingModeAlwaysOriginal];
@@ -478,7 +485,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         height = kTopBarCompactHeight;
     }
     CGFloat originX = floor((CGRectGetWidth(self.bounds) - width) / 2.0);
-    CGRect chromeFrame = CGRectMake(originX, kTopBarVerticalInset, width, height);
+    CGRect chromeFrame = CGRectMake(originX, self.compact ? kTopBarCompactVerticalInset : kTopBarVerticalInset, width, height);
 
     self.chromeContainerView.frame = chromeFrame;
     self.chromeContainerView.layer.cornerRadius = chromeFrame.size.height / 2.0;

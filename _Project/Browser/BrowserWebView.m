@@ -549,6 +549,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 
 @property (nullable, nonatomic, strong) id runtimeWebView;
 @property (nullable, nonatomic, strong) NSURLRequest *lastRequest;
+@property (nullable, nonatomic, readwrite, strong) NSURL *committedURL;
 @property (nullable, nonatomic, copy) NSString *lastTitle;
 @property (nonatomic, copy) NSString *userAgent;
 @property (nonatomic) BOOL loading;
@@ -1125,6 +1126,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     [self applyPageScalingIfNeeded];
 }
 
+
 - (void)setPageZoom:(double)pageZoom {
     _pageZoom = pageZoom > 0.0 ? pageZoom : 1.0;
     [self applyPageScalingIfNeeded];
@@ -1214,8 +1216,19 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 #endif
 }
 
+/// Merkt sich die Adresse der zugesagten Seite. WKWebView.URL springt schon beim Laden auf die neue Adresse,
+/// während Titel und Bild noch die alte Seite zeigen; die Leiste soll Titel und Domain derselben Seite zeigen.
+- (void)updateCommittedURL {
+    id webView = self.runtimeWebView;
+    id url = [webView respondsToSelector:NSSelectorFromString(@"URL")] ? [webView valueForKey:@"URL"] : nil;
+    if ([url isKindOfClass:NSURL.class]) {
+        self.committedURL = url;
+    }
+}
+
 - (void)webView:(id)webView didCommitNavigation:(id)navigation {
     self.navigationCommitted = YES;
+    [self updateCommittedURL];
     [self logLoadPhase:@"commit"];
 }
 
@@ -1241,6 +1254,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 }
 
 - (void)webView:(id)webView didFinishNavigation:(id)navigation {
+    [self updateCommittedURL];
     self.loading = NO;
     [self logLoadPhase:@"finish"];
     [self endPageTransitionAnimated:YES];

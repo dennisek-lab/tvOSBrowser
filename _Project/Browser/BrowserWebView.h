@@ -17,6 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nullable, nonatomic, weak) id<BrowserWebViewDelegate> delegate;
 @property (nullable, nonatomic, readonly, strong) NSURLRequest *request;
+/// Adresse der aktuell angezeigten (zugesagten) Seite, passend zum Seitentitel; während des Ladens noch die alte.
+@property (nullable, nonatomic, readonly, strong) NSURL *committedURL;
 @property (nullable, nonatomic, readonly, strong) UIScrollView *scrollView;
 @property (nullable, nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, getter=canGoBack) BOOL canGoBack;

@@ -287,7 +287,10 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
     }
 
     NSURLRequest *request = self.activeWebView.request;
-    NSString *currentURL = tab.URLString.length > 0 ? tab.URLString : request.URL.absoluteString;
+    // Adresse der angezeigten Seite (passt zum Titel); die Tab-Adresse hinkt beim Laden hinterher.
+    NSString *committedURL = self.activeWebView.committedURL.absoluteString;
+    NSString *currentURL = committedURL.length > 0 && ![committedURL isEqualToString:@"about:blank"] ? committedURL
+        : (tab.URLString.length > 0 ? tab.URLString : request.URL.absoluteString);
     // Wie Safari kurz statt der ganzen Adresse: Seitentitel und dahinter dezent die Domain.
     NSString *host = [NSURL URLWithString:currentURL].host ?: @"";
     if ([host hasPrefix:@"www."]) {

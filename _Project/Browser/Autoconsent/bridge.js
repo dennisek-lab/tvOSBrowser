@@ -78,7 +78,13 @@
     }
   }
   // Erst autoconsent ablehnen lassen; was danach noch sichtbar ist, ist eine Bezahlschranke.
-  [2500, 5000, 8000, 12000].forEach(function (ms) { setTimeout(function () { scan('t' + ms); }, ms); });
+  // Manche Schranken kommen spät (eigene Zustimmungsseite, nachgeladenes iframe): 30 s lang alle 1,5 s nachsehen.
+  var started = Date.now();
+  var timer = setInterval(function () {
+    var ms = Date.now() - started;
+    if (accepted || ms > 30000) { clearInterval(timer); return; }
+    if (ms >= 2500) { scan('t' + Math.round(ms / 100) * 100); }
+  }, 1500);
   var push = standalone.messages.push;
   standalone.messages.push = function () {
     var r = push.apply(this, arguments);
