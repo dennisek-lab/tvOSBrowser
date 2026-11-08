@@ -599,6 +599,14 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         }]];
     }
 
+    if ([self.videoPlaybackCoordinator pageHasVideo]) {
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Im Player öffnen"
+                                                            style:UIAlertActionStyleDefault
+                                                          handler:^(__unused UIAlertAction *action) {
+            [weakSelf.videoPlaybackCoordinator openPageVideoInNativePlayer];
+        }]];
+    }
+
     [alertController addAction:[UIAlertAction actionWithTitle:@"Neuer Tab"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
@@ -685,6 +693,12 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             UIApplication.sharedApplication.idleTimerDisabled = weakWebView.videoPlaying;
             [weakSelf.nowPlayingController updateWithMediaInfo:weakWebView.mediaInfo];
             [weakSelf applyPageColorOfWebView:weakWebView];
+        }
+    };
+    // Vollbildwunsch oder Start eines Videos auf der Seite: nativer Player.
+    webView.videoEventHandler = ^(NSDictionary *event) {
+        if (weakSelf.webview == weakWebView) {
+            [weakSelf.videoPlaybackCoordinator handlePageVideoEvent:event];
         }
     };
 }

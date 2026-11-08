@@ -26,6 +26,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)playVideoUnderCursorIfAvailable;
 - (BOOL)handleSelectPressForVideoAtCursor;
 
+/// Hat die aktuelle Seite ein Video (sichtbares Video oder aktives Medium)?
+- (BOOL)pageHasVideo;
+/// Übergibt das Video der Seite (unter dem Zeiger, sonst das laufende oder größte) an den nativen Player.
+- (void)openPageVideoInNativePlayer;
+/// Verarbeitet Meldungen des Seiten-Skripts (`BrowserWebView.videoEventHandler`): Vollbildwunsch, Videostart.
+- (void)handlePageVideoEvent:(NSDictionary *)event;
+
 @end
 
 NS_ASSUME_NONNULL_END

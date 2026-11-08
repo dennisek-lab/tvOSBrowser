@@ -14,6 +14,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Meldet sich, wenn die Seite neue Ziele geschickt hat. Läuft auf dem Hauptthread.
 @property (nonatomic, copy, nullable) void (^targetsDidChange)(void);
 
+/// Meldet Videoereignisse der Seite: type "fullscreen" (Seite will ein Video im Vollbild zeigen)
+/// oder "playing" (sichtbares Video hat zu spielen begonnen), dazu bid (Kennung des Video-Elements).
+/// Läuft auf dem Hauptthread.
+@property (nonatomic, copy, nullable) void (^videoEventHandler)(NSDictionary *event);
+
 /// Installiert Skript und Nachrichten-Handler in eine `WKWebViewConfiguration` (per Laufzeit).
 - (void)installIntoConfiguration:(id)configuration;
 

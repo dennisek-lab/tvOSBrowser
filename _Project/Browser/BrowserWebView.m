@@ -593,6 +593,14 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     self.clickTargetTracker.scrollView = [self scrollView];
 }
 
+- (void)setVideoEventHandler:(void (^)(NSDictionary *))videoEventHandler {
+    self.clickTargetTracker.videoEventHandler = videoEventHandler;
+}
+
+- (void (^)(NSDictionary *))videoEventHandler {
+    return self.clickTargetTracker.videoEventHandler;
+}
+
 - (NSArray<NSValue *> *)clickTargetRects {
     return [self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)];
 }

@@ -25,6 +25,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL scalesPageToFit;
 /// Wird aufgerufen, wenn die Seite neue klickbare Elemente gemeldet hat (magnetischer Zeiger).
 @property (nullable, nonatomic, copy) void (^clickTargetsDidChange)(void);
+/// Videoereignisse der Seite (Vollbildwunsch, Videostart), siehe BrowserClickTargetTracker.videoEventHandler.
+@property (nullable, nonatomic, copy) void (^videoEventHandler)(NSDictionary * _Nonnull event);
 /// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
