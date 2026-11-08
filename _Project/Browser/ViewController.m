@@ -440,8 +440,15 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     return;
                 }
                 if ([step hasPrefix:@"js:"]) {
-                    [self.webview evaluateJavaScriptAsync:[step substringFromIndex:3] completion:^(id result) {
-                        NSLog(@"[SelfTest] js %@", result);
+                    // Fehler mitloggen: „js (null)“ allein verrät nicht, ob der Ausdruck scheitert (Syntax, z. B. ein
+                    // „return“ außerhalb einer Funktion → Code 4) oder der Seitenprozess weg ist (Code 5 „unsupported
+                    // type“ auch für 1+1, siehe [WebProcess]).
+                    [self.webview evaluateJavaScriptAsync:[step substringFromIndex:3] resultHandler:^(id result, NSError *error) {
+                        if (error != nil) {
+                            NSLog(@"[SelfTest] js Fehler %ld: %@ %@", (long)error.code, error.localizedDescription, error.userInfo[@"WKJavaScriptExceptionMessage"] ?: @"");
+                        } else {
+                            NSLog(@"[SelfTest] js %@", result);
+                        }
                     }];
                     return;
                 }

@@ -12,7 +12,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 
 1. [Übersicht und Risiko](#1-übersicht-und-risiko)
 2. [Checkliste nach einem tvOS-/WebKit-Update](#2-checkliste-nach-einem-tvos-webkit-update)
-3. [WKWebView per Laufzeit](#3-wkwebview-per-laufzeit-browserwebview)
+3. [WKWebView per Laufzeit](#3-wkwebview-per-laufzeit-browserwebview) (mit 3.1 [Beendeter Seitenprozess](#31-beendeter-seitenprozess-speichergrenze-am-apple-tv))
 4. [Nutzerskripte und die userScripts-Falle](#4-nutzerskripte-und-die-userscripts-falle)
 5. [Cookie-Ablehner (autoconsent) und Bezahlschranken](#5-cookie-ablehner-autoconsent-und-bezahlschranken)
 6. [Werbeblocker](#6-werbeblocker-browsercontentblocker)
@@ -127,8 +127,16 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 | YouTube/MSE-Videos starten nicht | Medien-Prefs; „Inspect WebKit Media Prefs“-Menüpunkt (`presentWebKitRuntimeMediaPreferences`, `runtimeMediaPreferenceReport`) |
 | Login/Cookies weg nach Neustart | `[DataStore] … store=nil` oder Selektoren fehlen |
 | App friert bei Skript-Endlosschleife ein | Zeitgrenze `BrowserPumpRunLoopUntil` umgangen |
+| Seite plötzlich weiß oder schwarz, Zeiger rastet noch auf alten Flächen ein, `js:` liefert für jeden Ausdruck Fehler 5 („unsupported type“), `[Reader] check -> (null)` | Seitenprozess beendet: `[WebProcess] Seitenprozess beendet (Grund …)`, Abschnitt 3.1 |
 
 **Test.** Selbsttest-Schritte `url:`, `zoom`, `probe`, `state`, `js:`, `label`; Logzeilen `[Load]`, `[DataStore]`. Beispiel: `POINTER_SELFTEST="url:https://de.wikipedia.org;zoom;probe"`.
+
+### 3.1 Beendeter Seitenprozess (Speichergrenze am Apple TV)
+- **Befund (bild.de, 8. November 2026):** Mit frischen Cookies blieb bild.de am Gerät weiß; im Simulator nicht. Nach „Alle akzeptieren“ lädt die Seite in derselben Seite ihren kompletten Werbe-/Tracking-Bestand nach (Höhe 617 → 27.000 px, viele iframes). Rund 1 s danach beendet Jetsam `com.apple.WebKit.WebContent` wegen der Speichergrenze (`JetsamEvent-*.ips`: Grund `highwater`, 91.076 Seiten à 16 KB ≈ 1,5 GB, größter Prozess). WebKit meldet das als Absturz (Grund 3). Ohne Reaktion stand danach nur die leere WebView da; alle `evaluateJavaScript`-Aufrufe (auch `1+1`, auch in einer eigenen Inhaltswelt) liefern WKErrorDomain 5, `[Load] paint` kommt nie. Ein erneutes Laden mit gespeicherter Einwilligung bleibt unter der Grenze (geprüft mit Scrollen über 5.000 px). Der Simulator kennt die Grenze nicht. Gleiches passiert unabhängig von Ablehnen/Akzeptieren und ohne Zeiger-/Videoskripte; Ursache ist die Seite, nicht ein Eigenbau.
+- **Reaktion:** `BrowserWebView` implementiert `webViewWebContentProcessDidTerminate:` und die private Variante `_webView:webContentProcessDidTerminateWithReason:` (WebKit ruft nur diese, wenn vorhanden; `_WKProcessTerminationReason`: 0 Speichergrenze von WebKit, 1 CPU, 2 von der App verlangt, 3 Absturz/Jetsam). `handleWebContentProcessTerminationWithReason:` lädt nach 0,3 s neu (wie Safari), einmal je Host innerhalb von 60 s; beim zweiten Mal Fehlermeldung über `webView:didFailLoadWithError:` (Domäne `BrowserWebContentProcess`, Dialog mit „Neu laden“). Grund 2 löst nichts aus.
+- **Log (immer):** `[WebProcess] Seitenprozess beendet (Grund 3) www.bild.de -> neu laden` bzw. `-> wiederholt, kein Neuladen`.
+- **Prüfen am Gerät:** `xcrun devicectl device info files --device <UDID> --domain-type systemCrashLogs` listet `JetsamEvent-…ips` (Zeitstempel = Abbruch), kopieren mit `xcrun devicectl device copy from --device <UDID> --domain-type systemCrashLogs --source <Datei> --destination x.ips`; im JSON unter `processes` den Eintrag mit `reason` suchen. Jetsam-Berichte werden gedrosselt, nicht jeder Abbruch erzeugt eine Datei.
+- **Test:** `POINTER_SELFTEST="url:about:blank;clearall;wait;wait;url:https://www.bild.de;wait;js:document.readyState+' '+document.documentElement.scrollHeight;wait;wait;wait;wait"` – erwartet `payWallAccepted`, `[WebProcess] … -> neu laden`, danach `js interactive|complete … ` mit Höhe ~28.000 und sichtbarer Startseite.
 
 **Aktualisieren.** Neue private Selektoren: in den WebKit-Headern der Xcode-SDK (`WKWebView+Private.h` ist nicht enthalten) oder per `class_copyMethodList` zur Laufzeit suchen; die Debug-Hilfe `runtimeMediaPreferenceReport` listet Preferences. Bitwerte der Rendering-Ereignisse (`_WKRenderingProgressEvents`) am WebKit-Quellcode der passenden Version prüfen.
 
@@ -199,7 +207,7 @@ Lehnt Cookie-Banner automatisch ab (`autoAction: "optOut"`, nie zustimmen) auf B
 ### 5.4a Nachlauf-Ablehnen, iframe-Signal und Störer (`bridge.js`)
 - **Ablehnen-Nachlauf (`rejectScan`)**, unabhängig vom Bezahlschranken-Schalter: Alle 2 s (ab 3 s, bis 30 s) wird nach einem sichtbaren Knopf gesucht, dessen Beschriftung zu `REJECT` passt (Reject/Reject Non-Essential, Ablehnen, Nur notwendige …) und der in einem Dialog mit Cookie-/Datenschutz-Text liegt. Gründe: autoconsent erkennt manchmal das falsche CMP (The Verge: Regel `pmc-privacy-banner` statt OneTrust, meldet `optOutResult ergebnis=ja`, der OneTrust-Banner bleibt). Nie „Manage/Einstellungen“, nie „Accept“. Log: `rejectClicked`, `rejectSkip`.
 - **Bezahl-Signal an iframes:** Der Zustimmen-Knopf steckt oft in einem fremden iframe (Golem: Sourcepoint `cmp-cdn.golem.de`), der Abo-Text („Golem pur bestellen“) im umgebenden Dokument. `ownPaySignal()` prüft Dokument (kurze Seite < 6000 Zeichen oder Dialog/Consent-Container mit `PAY`-Text, inkl. Knopf-/Linktexte) und sendet per `postMessage({browserPaySignal:1})` an Kindframes; diese setzen `parentPay` und scannen sofort. Log: `payWallAccepted … (Signal vom Elterndokument)`.
-- **Bezahl-zuerst-Hosts (`PAY_FIRST_HOSTS`, Bild-Familie):** Dort führt Ablehnen in eine Sackgasse (Tracking-Block → Seite hält es für einen Werbeblocker, bleibt weiß/Sperrseite `adblockwall.html`). Bei aktivem `__browserAcceptPayWalls` setzt `bridge.js` `autoconsentStandalone.instance.config.autoAction = null`: autoconsent erkennt dann nur noch (Log `popupFound`, kein `optOutResult`), und die Bezahlschranken-Logik klickt „Alle akzeptieren“ im Sourcepoint-iframe (`cmp2.bild.de`, Signal vom Elterndokument; `PAY` enthält `bild plus`). Neue Hosts dieser Art in `PAY_FIRST_HOSTS` eintragen. Schalter aus → normales Ablehnen. Akzeptieren und Ablehnen schließen sich pro Frame aus (`accepted`/`rejected`).
+- **Bezahl-zuerst-Hosts (`PAY_FIRST_HOSTS`, Bild-Familie):** Dort führt Ablehnen in eine Sackgasse (Tracking-Block → Seite hält es für einen Werbeblocker, bleibt weiß/Sperrseite `adblockwall.html`). Bei aktivem `__browserAcceptPayWalls` setzt `bridge.js` `autoconsentStandalone.instance.config.autoAction = null`: autoconsent erkennt dann nur noch (Log `popupFound`, kein `optOutResult`), und die Bezahlschranken-Logik klickt „Alle akzeptieren“ im Sourcepoint-iframe (`cmp2.bild.de`, Signal vom Elterndokument; `PAY` enthält `bild plus`). Neue Hosts dieser Art in `PAY_FIRST_HOSTS` eintragen. Schalter aus → normales Ablehnen. Akzeptieren und Ablehnen schließen sich pro Frame aus (`accepted`/`rejected`). Am Apple TV sprengt bild.de direkt nach der Einwilligung die Speichergrenze des Seitenprozesses; die Seite erscheint erst durch das automatische Neuladen aus Abschnitt 3.1 (rund 10 s nach dem Klick). Nicht mit einem Fehler der Brücke verwechseln: `payWallAccepted` kam, danach `[WebProcess]`.
 - **Störer:** Eigener Abschnitt am Anfang von `bridge.js`, immer aktiv, solange der Cookie-Ablehner an ist. Blendet Google One Tap (`#credential_picker_container`, `#credential_picker_iframe`, `#g_id_onload`, iframes `accounts.google.com/gsi/iframe/select`) per CSS aus, im One-Tap-iframe selbst per `html,body{display:none}`. Der normale „Mit Google anmelden“-Knopf bleibt unberührt. Neue Störer nur mit eindeutig harmlosen Selektoren ergänzen.
 
 ### 5.5 Private/fragile Schnittstellen
@@ -294,6 +302,7 @@ Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `
 - **Reaktion:** Host der Hauptseite (aus `message.webView.URL`) wird per `setException:YES` ausgenommen, in `adBlockAutoExceptionHosts` vermerkt, Seite einmal neu geladen. Schleifenschutz: pro Host einmal je App-Lauf. Eine Menüentscheidung des Nutzers (`setException:`) entfernt den Auto-Vermerk.
 - **Log (DEBUG):** `[AdBlockWall] host … erkannt → Ausnahme, neu laden`.
 - **Keine eingebaute Hostliste:** Die Filterliste „Adblock Warning Removal List“ (EasyList, antiadblockfilters) ist gepflegt, besteht aber aus Netzwerk-/Kosmetikregeln, nicht aus einer Liste von Sperr-Seiten. Eine Vorab-Ausnahme würde unnötig Werbung zeigen, daher nur Erkennung.
+- **Hinweis:** `adBlockAutoExceptionHosts`/`adBlockExceptionHosts` überstehen `clearall` (liegen in `NSUserDefaults`, nicht im Datenspeicher). Am Gerät ist bild.de nach dem ersten Treffer dauerhaft ausgenommen, eine Sperrseite erscheint dann nicht mehr. Nachsehen: `xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer --domain-identifier io.github.tvosbrowser.app --source Library/Preferences/io.github.tvosbrowser.app.plist --destination p.plist` und `plutil -p p.plist`.
 - **Test:** `POINTER_SELFTEST="clearall;url:https://www.bild.de;wait;wait;wait;wait;wait;wait;wait;wait"`. Gegenprobe ohne Treffer: spiegel.de, heise.de, `de.wikipedia.org/wiki/Werbeblocker`. Sperrtexte fehlen? `BLOCKER`/`ACTION` in `adblock-wall.js` ergänzen.
 
 ### 6.9 Erweiterte Regeln: Scriptlets und prozedurales CSS (`BrowserScriptletInjector`)
@@ -918,7 +927,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `clearsite:<host>` | nur Einträge löschen, deren `displayName` den Host enthält (z. B. gespeicherte Cookie-Einwilligung) | `clearsite <host>: N Einträge gelöscht` |
 | `zoom` | Zoom-Zustand (`zoomScale`, `min/max`, `_viewScale`, `contentSize`, `bounds`, `pageZoom`) | `zoom zoomScale=… viewScale=…` |
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
-| `js:<Code>` | JavaScript ausführen, Ergebnis loggen | `js <Ergebnis>` |
+| `js:<Code>` | JavaScript ausführen, Ergebnis loggen. Ausdruck, kein `return` auf oberster Ebene (sonst Syntaxfehler); für Anweisungen `(function(){try{…}catch(e){return 'ERR '+e}})()`, Zeilenumbrüche statt `;` | `js <Ergebnis>` bzw. `js Fehler <Code>: <Text> <Ausnahme>` (4 Ausnahme/Syntax, 5 Ergebnis nicht übertragbar oder Seitenprozess weg, siehe 3.1) |
 | `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (whisper, Sprache aus `autoSubtitlesLanguage`; ohne Modell Platzhalter). Optionen: `en`/`auto` (Sprache für diesen Test), `stub` (Platzhalter-Erkennung), `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
 | `wait` (jeder unbekannte Schritt) | nichts tun, 3 s warten | – |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
@@ -959,6 +968,7 @@ POINTER_SELFTEST="translate:reset;url:https://en.wikipedia.org/wiki/Apple_TV_(de
 |:--|:--|:--|
 | `[Load] commit/layout/paint/finish +N ms host` | `BrowserWebView logLoadPhase:` | ja |
 | `[DataStore] …` | `BrowserCreatePersistentWebsiteDataStore` | nein |
+| `[WebProcess] Seitenprozess beendet (Grund N) <host> -> …` | `BrowserWebView handleWebContentProcessTerminationWithReason:` (3.1) | nein |
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
 | `[Scriptlets] geladen/nicht verfügbar` bzw. `[Scriptlets] <host> N Regeln` | `BrowserScriptletInjector` | erste nein, zweite ja |
 | `[CookieBlock] …` | `BrowserCookieConsentBlocker handleMessageBody:` und Fehlzeile für das Bundle | ja |

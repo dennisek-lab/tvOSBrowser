@@ -68,6 +68,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script;
 /// Führt JavaScript aus und meldet das Ergebnis (oder nil) auf dem Hauptthread.
 - (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script completion:(void (^ _Nullable)(id _Nullable result))completion;
+/// Wie oben, liefert zusätzlich den Fehler von WebKit (Syntaxfehler, Ausnahme, nicht übertragbarer Typ).
+- (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script resultHandler:(void (^ _Nullable)(id _Nullable result, NSError * _Nullable error))resultHandler;
 /// Grundzoom, wenn scalesPageToFit aus ist (1.0 = 100 %).
 @property (nonatomic) double pageZoom;
 /// WKUserContentController dieser WebView (per Laufzeit), z. B. für zusätzliche Nutzerskripte und Rückkanäle.
