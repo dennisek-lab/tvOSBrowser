@@ -8,6 +8,7 @@
 #import "BrowserCommandParser.h"
 #import "BrowserReaderMode.h"
 #import "BrowserWebView.h"
+#import "BrowserAppleTranslator.h"
 #import <NaturalLanguage/NaturalLanguage.h>
 
 NSString * const BrowserIntelligenceErrorDomain = @"BrowserIntelligence";
@@ -1587,7 +1588,8 @@ static NSString * const kLanguageProbeScript =
         NSString *system = BrowserBaseLanguage(BrowserIntelligence.systemLanguageCode);
         if ([self translationDeclinedForHost:host]) {
             info.reason = @"abgelehnt";
-        } else if (info.hasLogin) {
+        } else if (info.hasLogin && !BrowserAppleTranslator.sharedTranslator.available) {
+            // Nur bei Google ein Grund: Apple übersetzt in der Seite, Anmeldung und Cookies bleiben.
             info.reason = [probe[@"pw"] boolValue] ? @"login (Passwortfeld)" : @"login (Adresse)";
         } else if (sample.length < 200) {
             info.reason = @"zu wenig Text";

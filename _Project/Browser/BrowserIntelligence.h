@@ -61,7 +61,8 @@ typedef NS_ENUM(NSInteger, BrowserIntelligenceError) {
 /// Seite hat ein Passwortfeld oder sieht nach Anmeldung aus.
 @property (nonatomic) BOOL hasLogin;
 @property (nonatomic) NSUInteger sampleLength;
-/// YES, wenn der Hinweis erscheinen soll (fremde Sprache, sicher erkannt, kein Login, nicht abgelehnt, kein Proxy).
+/// YES, wenn der Hinweis erscheinen soll (fremde Sprache, sicher erkannt, nicht abgelehnt, kein Proxy; Login-Seiten
+/// nur, wenn Apples Übersetzung bereitsteht, denn über Google gingen Anmeldung und Cookies verloren).
 @property (nonatomic) BOOL shouldOfferTranslation;
 /// Kurzer Grund für das Log ("fremd", "gleiche Sprache", "login", "abgelehnt", "proxy", "zu wenig Text" …).
 @property (nonatomic, copy) NSString *reason;

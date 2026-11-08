@@ -18,6 +18,8 @@
     'I', 'IMG', 'INS', 'LABEL', 'MARK', 'NOBR', 'Q', 'S', 'SMALL', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TIME',
     'TT', 'U', 'WBR']);
   var LETTER = /\p{L}/u;
+  var WORD_END = /[\p{L}\p{N}]$/u;
+  var WORD_START = /^[\p{L}\p{N}]/u;
   var MAX_PARAGRAPH_CHARS = 5000;
   var MAX_PARTS = 300;
 
@@ -214,14 +216,16 @@
   }
 
   window.__btr = {
-    start: function () {
+    // options.spaces: Zielsprache trennt Wörter mit Leerzeichen (nicht bei Chinesisch, Japanisch, Thai …).
+    start: function (options) {
       if (S) {
         return this.state();
       }
       S = {
         blocks: new Map(), byId: new Map(), nodes: new Map(), nodeIds: new WeakMap(), orig: new Map(),
         written: new Map(), skipCache: new WeakMap(), queue: [], seq: 0, done: 0, failed: 0, sent: 0,
-        pendingNodes: [], mutationTimer: 0, title: null, started: Date.now()
+        pendingNodes: [], mutationTimer: 0, title: null, started: Date.now(),
+        spaces: !options || options.spaces !== false
       };
       S.io = new IntersectionObserver(onIntersect, { rootMargin: '1200px 0px 1200px 0px' });
       S.mo = new MutationObserver(onMutations);
@@ -285,7 +289,7 @@
       return out;
     },
 
-    // results: [{i: absatzId, t: {knotenId: text}}] oder [{i, f: 1}] (fehlgeschlagen).
+    // results: [{i: absatzId, t: [[knotenId, text], …]}] oder [{i, f: 1}] (fehlgeschlagen).
     apply: function (results) {
       if (!S) {
         return 0;
@@ -303,13 +307,19 @@
           continue;
         }
         if (entry.isTitle) {
-          if (result.t.t) {
-            document.title = result.t.t;
+          if (result.t.length > 0 && result.t[0][1]) {
+            document.title = String(result.t[0][1]).trim();
           }
           S.done++;
           continue;
         }
-        for (var id in result.t) {
+        // result.t: [[knotenId, text], …] in Seitenreihenfolge. Leerraum am Rand kommt vom Original (Layout bleibt);
+        // stellt die Übersetzung Wörter so um, dass zwei Wörter ohne Leerzeichen aneinanderstoßen, wo im Original
+        // eine Grenze war (Link „Brutzeit“ + „ziehen …“), kommt ein Leerzeichen dazu.
+        var previousValue = '';
+        var previousOriginal = '';
+        for (var k = 0; k < result.t.length; k++) {
+          var id = result.t[k][0];
           var node = S.nodes.get(id);
           if (!node || !node.isConnected) {
             continue;
@@ -318,14 +328,27 @@
           if (!S.orig.has(node)) {
             S.orig.set(node, original);
           }
+          var text = String(result.t[k][1]);
           var lead = original.match(/^\s*/)[0];
           var trail = lead.length === original.length ? '' : original.match(/\s*$/)[0];
-          var core = String(result.t[id]).trim();
-          var value = lead + core + trail;
+          var core = text.trim();
+          if (!lead && /^\s/.test(text)) {
+            lead = ' ';
+          }
+          if (!trail && /\S\s+$/.test(text)) {
+            trail = ' ';
+          }
+          var value = core ? lead + core + trail : original.replace(/\S+/g, '').replace(/\s+/g, ' ');
+          if (S.spaces && core && !lead && WORD_END.test(previousValue) && WORD_START.test(value) &&
+              !(WORD_END.test(previousOriginal) && WORD_START.test(original))) {
+            value = ' ' + value;
+          }
           if (node.data !== value) {
             node.data = value;
           }
           S.written.set(node, value);
+          previousValue = value;
+          previousOriginal = original;
         }
         S.done++;
         applied++;

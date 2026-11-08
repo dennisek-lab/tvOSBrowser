@@ -49,6 +49,48 @@ static void BrowserLTSplitLanguage(NSString *code, NSString **language, NSString
     *region = country;
 }
 
+/// Apple hängt Teile ohne Buchstaben, die unverändert bleiben (Fußnote „[37]“ aus „[“, „37“, „]“), teils zusätzlich
+/// an den Nachbarbereich an („37] Ihre Höhlen“). Solche Wiederholungen am Anfang bzw. Ende entfernen.
+static void BrowserLTStripEchoedNeighbours(NSArray<NSString *> *parts, NSMutableArray<NSString *> *translated) {
+    NSCharacterSet *space = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    for (NSUInteger i = 0; i < parts.count; i++) {
+        if (!BrowserLTHasLetter(parts[i])) {
+            continue;
+        }
+        NSMutableString *before = [NSMutableString string];
+        for (NSInteger j = (NSInteger)i - 1; j >= 0 && !BrowserLTHasLetter(parts[j]); j--) {
+            [before insertString:parts[j] atIndex:0];
+        }
+        NSMutableString *after = [NSMutableString string];
+        for (NSUInteger j = i + 1; j < parts.count && !BrowserLTHasLetter(parts[j]); j++) {
+            [after appendString:parts[j]];
+        }
+        NSString *echoBefore = [before stringByTrimmingCharactersInSet:space];
+        NSString *echoAfter = [after stringByTrimmingCharactersInSet:space];
+        NSString *text = translated[i];
+        NSString *trimmed = [text stringByTrimmingCharactersInSet:space];
+        // Längstes Ende von „vorher“ (ab 2 Zeichen, einzelne Satzzeichen bleiben), mit dem die Übersetzung beginnt.
+        for (NSUInteger length = echoBefore.length; length >= 2; length--) {
+            NSString *suffix = [echoBefore substringFromIndex:echoBefore.length - length];
+            if ([trimmed hasPrefix:suffix]) {
+                NSRange range = [text rangeOfString:suffix];
+                text = [text stringByReplacingCharactersInRange:range withString:@""];
+                break;
+            }
+        }
+        trimmed = [text stringByTrimmingCharactersInSet:space];
+        for (NSUInteger length = echoAfter.length; length >= 2; length--) {
+            NSString *prefix = [echoAfter substringToIndex:length];
+            if ([trimmed hasSuffix:prefix]) {
+                NSRange range = [text rangeOfString:prefix options:NSBackwardsSearch];
+                text = [text stringByReplacingCharactersInRange:range withString:@""];
+                break;
+            }
+        }
+        translated[i] = text;
+    }
+}
+
 @interface BrowserAppleTranslator ()
 @property (nonatomic, readwrite) BOOL available;
 @property (nonatomic, strong, nullable) NSArray *localePairs; // _LTLocalePair
@@ -226,7 +268,9 @@ static NSLocale *BrowserLTBestLocale(NSArray<NSLocale *> *locales, NSString *cod
     SEL rangeInit = NSSelectorFromString(@"initWithIdentifier:text:shouldTranslate:");
     NSMutableArray *ranges = [NSMutableArray arrayWithCapacity:parts.count];
     [parts enumerateObjectsUsingBlock:^(NSString *part, NSUInteger index, __unused BOOL *stop) {
-        id range = ((id (*)(id, SEL, id, id, BOOL))objc_msgSend)([rangeClass alloc], rangeInit, @(index).stringValue, part, YES);
+        // Teile ohne Buchstaben (Fußnoten [37], Zahlen, Satzzeichen) bleiben, wie sie sind.
+        id range = ((id (*)(id, SEL, id, id, BOOL))objc_msgSend)([rangeClass alloc], rangeInit, @(index).stringValue, part,
+                                                                 BrowserLTHasLetter(part));
         if (range != nil) {
             [ranges addObject:range];
         }
@@ -256,25 +300,30 @@ static NSLocale *BrowserLTBestLocale(NSArray<NSLocale *> *locales, NSString *cod
             NSUInteger longest = NSNotFound;
             for (NSUInteger i = 0; i < parts.count; i++) {
                 NSString *text = aligned[@(i).stringValue];
+                if (!BrowserLTHasLetter(parts[i])) {
+                    continue; // unverändert lassen
+                }
                 if (text != nil) {
                     translated[i] = text;
-                } else if (BrowserLTHasLetter(parts[i])) {
+                } else {
                     complete = NO;
                 }
                 if (BrowserLTHasLetter(parts[i]) && (longest == NSNotFound || parts[i].length > parts[longest].length)) {
                     longest = i;
                 }
             }
+            if (complete && parts.count > 1) {
+                BrowserLTStripEchoedNeighbours(parts, translated);
+            }
             if (parts.count == 1) {
                 translated[0] = full;
                 complete = YES;
             } else if (!complete && longest != NSNotFound) {
-                // Bereiche unvollständig: ganzer Absatz in den längsten Teil, übrige Wortteile leeren (Leerraum bleibt).
-                for (NSUInteger i = 0; i < parts.count; i++) {
-                    if (BrowserLTHasLetter(parts[i])) {
-                        translated[i] = i == longest ? full : @"";
-                    }
-                }
+                // Bereiche unvollständig (oft nebeneinanderliegende Beschriftungen, die nur scheinbar ein Absatz sind):
+                // jeden Wortteil einzeln übersetzen, statt alles in einen Knoten zu schreiben.
+                [self translatePartsSeparately:parts translated:translated source:source target:target fallback:full
+                                       longest:longest completion:completion];
+                return;
             }
             completion(translated, complete, nil);
         } forKey:@"completionHandler"];
@@ -282,6 +331,45 @@ static NSLocale *BrowserLTBestLocale(NSArray<NSLocale *> *locales, NSString *cod
     } @catch (NSException *exception) {
         completion(nil, NO, BrowserLTError(BrowserAppleTranslatorErrorUnavailable, exception.reason ?: @"Ausnahme"));
     }
+}
+
+/// Rückfall bei unvollständigen Bereichen: Wortteile einzeln übersetzen. Scheitert das, steht der ganze Absatz im
+/// längsten Teil und die übrigen Wortteile werden geleert.
+- (void)translatePartsSeparately:(NSArray<NSString *> *)parts translated:(NSMutableArray<NSString *> *)translated
+                          source:(NSLocale *)source target:(NSLocale *)target fallback:(NSString *)full longest:(NSUInteger)longest
+                      completion:(void (^)(NSArray<NSString *> *, BOOL, NSError *))completion {
+    NSMutableArray<NSNumber *> *indexes = [NSMutableArray array];
+    for (NSUInteger i = 0; i < parts.count; i++) {
+        if (BrowserLTHasLetter(parts[i])) {
+            [indexes addObject:@(i)];
+        }
+    }
+    dispatch_group_t group = dispatch_group_create();
+    NSObject *lock = [NSObject new];
+    __block BOOL failed = NO;
+    for (NSNumber *number in indexes) {
+        NSUInteger index = number.unsignedIntegerValue;
+        dispatch_group_enter(group);
+        [self translateParts:@[parts[index]] source:source target:target completion:^(NSArray<NSString *> *single, __unused BOOL used, __unused NSError *error) {
+            @synchronized (lock) {
+                if (single.count == 1) {
+                    translated[index] = single[0];
+                } else {
+                    failed = YES;
+                }
+            }
+            dispatch_group_leave(group);
+        }];
+    }
+    dispatch_group_notify(group, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        if (failed) {
+            for (NSNumber *number in indexes) {
+                NSUInteger index = number.unsignedIntegerValue;
+                translated[index] = index == longest ? full : @"";
+            }
+        }
+        completion(translated, NO, nil);
+    });
 }
 
 #if DEBUG
@@ -678,7 +766,10 @@ static NSString *BrowserPageTranslationScript(void) {
             [self finishFirstBatch:NO error:BrowserLTError(BrowserAppleTranslatorErrorUnsupportedPair, @"Sprachpaar wird von Apple nicht angeboten")];
             return;
         }
-        [self evaluate:[script stringByAppendingString:@"\n;window.__btr.start();"] completion:^(id result, NSError *error) {
+        NSString *language = [NSLocale localeWithLocaleIdentifier:self.targetLanguage].languageCode ?: self.targetLanguage;
+        BOOL spaces = ![@[@"zh", @"ja", @"th", @"lo", @"km", @"my"] containsObject:language];
+        NSString *start = [NSString stringWithFormat:@"\n;window.__btr.start({spaces: %@});", spaces ? @"true" : @"false"];
+        [self evaluate:[script stringByAppendingString:start] completion:^(id result, NSError *error) {
             if (self.generation != generation) {
                 return;
             }
@@ -826,7 +917,11 @@ static NSString *BrowserPageTranslationScript(void) {
                     return;
                 }
                 if (translated.count == ids.count) {
-                    results[index] = @{@"i": identifier, @"t": [NSDictionary dictionaryWithObjects:translated forKeys:ids]};
+                    NSMutableArray *pairs = [NSMutableArray arrayWithCapacity:ids.count]; // Reihenfolge wie in der Seite
+                    [ids enumerateObjectsUsingBlock:^(NSString *nodeId, NSUInteger i, __unused BOOL *stop) {
+                        [pairs addObject:@[nodeId, translated[i]]];
+                    }];
+                    results[index] = @{@"i": identifier, @"t": pairs};
                     fallbacks += usedAlignment ? 0 : 1;
                 } else {
                     lastError = error;
