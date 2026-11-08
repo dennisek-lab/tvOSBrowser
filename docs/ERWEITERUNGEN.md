@@ -26,6 +26,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 14. [Selbsttest und Gerätezyklus](#14-selbsttest-und-gerätezyklus)
 15. [Alle Logpräfixe](#15-logpräfixe)
 16. [Offen/unklar](#16-offenunklar)
+17. [App-Icon und Top Shelf](#17-app-icon-und-top-shelf)
 
 ---
 
@@ -778,3 +779,21 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 - Test `https://1.1.1.1/help` und Langzeittests des DNS-Proxys nach Hintergrund sind laut PLAN.md offen.
 - Ob `[InputTrace]`, `[NowPlaying]`, `[TopBar]` und die Video-Logzeilen nur in DEBUG erscheinen, wurde nicht für jede Zeile geprüft.
 - Genaue Pfade des gebauten `.app` (DerivedData) hängen vom gewählten `-derivedDataPath` ab.
+
+---
+
+## 17. App-Icon und Top Shelf
+
+Das Icon (Liquid-Glass-Stil: Glasscheibe mit Kompassnadel und Umlaufbahn vor einem Verlauf in den Glow-Farben der App) wird vollständig von `tools/make_app_icon.swift` gezeichnet (Core Graphics, Core Image für Weichzeichnen und Linsenbrechung). Die PNGs im Katalog nie von Hand bearbeiten, sondern das Skript ändern und neu laufen lassen.
+
+```sh
+swift tools/make_app_icon.swift                    # Standardvariante „nadel“ in den Katalog, Vorschauen nach docs/icon/
+swift tools/make_app_icon.swift --variant globus   # Alternative „globus“ in den Katalog schreiben
+swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
+```
+
+- Ziel: `_Project/Browser/Assets.xcassets/App Icon & Top Shelf Image.brandassets/`. Das Skript schreibt die Bildstapel `App Icon - Small` (400×240 und 800×480 @2x) und `App Icon - Large` (1280×768, App Store) mit je drei Ebenen (`Back` Verlauf, `Middle` Glasscheibe, `Front` Symbol) sowie `Top Shelf Image` (1920×720/3840×1440) und `Top Shelf Image Wide` (2320×720/4640×1440) samt `Contents.json` neu.
+- Vorschau: `docs/icon/preview.png` (Variante im Katalog: Icon groß, Fokus-Simulation, Ebenen einzeln, Top Shelf), `docs/icon/variante-<name>.png` für die jeweils andere Variante, `docs/icon/simulator-home.png` Home-Bildschirm im Simulator.
+- Die Ausgabe ist reproduzierbar (Software-Renderer von Core Image, keine Zufallswerte): zweimal laufen lassen ergibt dieselben Bytes.
+- Icon Composer (`.icon`) unterstützt laut Apple nur iOS, iPadOS, macOS und watchOS; tvOS braucht weiter den Bildstapel im Asset-Katalog. Den Glas-Effekt backt das Skript deshalb selbst in die Ebenen; Parallax und Glanz beim Fokussieren macht tvOS.
+- Prüfen: `xcodebuild … build` darf beim Schritt `CompileAssetCatalog` keine Warnungen zeigen; streng geht es mit `xcrun actool --compile <tmp> --platform appletvos --target-device tv --minimum-deployment-target 17.0 --app-icon "App Icon & Top Shelf Image" --output-partial-info-plist <tmp>/info.plist --warnings --notices _Project/Browser/Assets.xcassets`.
