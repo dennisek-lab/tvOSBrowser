@@ -3,17 +3,19 @@
 # App-Paket, Inhalt nicht im Git).
 #
 # Aufruf:
-#   tools/fetch_whisper_model.sh                 # Standard: base.en-q5_1 (Englisch, ~57 MB)
-#   tools/fetch_whisper_model.sh tiny.en-q5_1    # kleiner/schneller (~31 MB), bei Leistungsproblemen
-#   tools/fetch_whisper_model.sh base-q5_1       # mehrsprachig (Deutsch usw., ~57 MB)
+#   tools/fetch_whisper_model.sh                 # Standard: base-q5_1 (mehrsprachig, erkennt die Sprache, ~57 MB)
+#   tools/fetch_whisper_model.sh base.en-q5_1    # nur Englisch (~57 MB), für Englisch etwas genauer
+#   tools/fetch_whisper_model.sh tiny-q5_1       # mehrsprachig, kleiner/schneller (~31 MB), ungenauer
+#   tools/fetch_whisper_model.sh small-q5_1      # mehrsprachig, deutlich genauer (~181 MB), ~3x langsamer
 #
-# Die App nimmt das erste vorhandene Modell in dieser Reihenfolge: bei „Sprache automatisch“
-# ein mehrsprachiges (base-q5_1, tiny-q5_1), sonst base.en-q5_1, tiny.en-q5_1 (siehe
-# BrowserSubtitleEngine.m, +modelCandidates). Mehrere Modelle gleichzeitig sind möglich,
-# machen die App aber größer.
+# Die App nimmt das erste vorhandene Modell in dieser Reihenfolge: bei „Automatisch“ und festen
+# Sprachen außer Englisch ein mehrsprachiges (base-q5_1, base-q8_0, base, small-q5_1, tiny-q5_1, tiny),
+# bei „Englisch“ zuerst base.en-q5_1, tiny.en-q5_1 (siehe BrowserSubtitleEngine.m, +modelCandidates).
+# Ohne mehrsprachiges Modell gibt es nur englische Untertitel. Mehrere Modelle gleichzeitig sind
+# möglich, machen die App aber größer.
 set -euo pipefail
 
-NAME="${1:-base.en-q5_1}"
+NAME="${1:-base-q5_1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST_DIR="$ROOT/_Project/Browser/WhisperModels"
 FILE="ggml-$NAME.bin"
