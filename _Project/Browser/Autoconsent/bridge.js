@@ -41,7 +41,7 @@
   // Text, der eine Bezahlschranke ausmacht (Abo-/Pur-Angebot statt Ablehnen).
   var PAY = /(\babo\b|abonn|\bpur\b|pur-abo|werbefrei|ohne werbung|ohne werbebanner|ohne werbetracking|\bpro\b bestellen|\bplus\b.{0,20}(abo|testen|lesen)|subscribe|subscription|ad-free|€|euro\b)/i;
   // Beschriftung des Zustimmen-Knopfs.
-  var ACCEPT = /^(akzeptieren( und weiter(lesen)?)?|alle akzeptieren|zustimmen( und weiter(lesen)?)?|allen zustimmen|einverstanden|ich stimme zu|ok(ay)?|accept( all)?( and continue)?|agree( and continue)?|i agree|mit werbung (weiter|lesen|nutzen|weiterlesen)|weiter mit werbung|mit werbung und tracking weiter)$/i;
+  var ACCEPT = /^(akzeptieren( (und|&) weiter(lesen)?)?|alle akzeptieren|zustimmen( (und|&) weiter(lesen)?)?|allen zustimmen|einverstanden|ich stimme zu|ok(ay)?|accept( all)?( and continue)?|agree( and continue)?|i agree|mit werbung (weiter|lesen|nutzen|weiterlesen)|weiter mit werbung|mit werbung und tracking weiter)$/i;
   var accepted = false;
   function visible(el) {
     var r = el.getBoundingClientRect();
@@ -53,12 +53,24 @@
     return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
   }
   // Umgebender Dialog: fixiertes Element, role=dialog/aria-modal oder (im CMP-iframe) die ganze Seite.
+  // Im iframe (CMP-Fenster) zählt die ganze Seite, sonst der äußerste fixierte Container: Abo-Hinweis und
+  // Zustimmen-Knopf stehen oft in getrennten Spalten.
   function dialogOf(el) {
+    if (!top) { return document.body; }
+    var found = null;
     for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
       var cs = getComputedStyle(n);
-      if (cs.position === 'fixed' || cs.position === 'sticky' || n.getAttribute('role') === 'dialog' || n.getAttribute('aria-modal') === 'true') { return n; }
+      if (cs.position === 'fixed' || cs.position === 'sticky' || n.getAttribute('role') === 'dialog' || n.getAttribute('aria-modal') === 'true') { found = n; }
     }
-    return top ? null : document.body;
+    return found;
+  }
+  var skipped = {};
+  // Diagnose: warum ein passender Knopf nicht geklickt wurde (je Grund und Text nur einmal).
+  function skip(label, why) {
+    var key = why + label;
+    if (skipped[key]) { return; }
+    skipped[key] = true;
+    try { handler.postMessage({ type: 'payWallSkip', cmp: '', url: location.href, top: top, details: label + ': ' + why }); } catch (e) {}
   }
   function scan(reason) {
     if (accepted || !document.body) { return; }
@@ -66,11 +78,12 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       var label = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
-      if (!label || label.length > 60 || !ACCEPT.test(label) || !visible(el)) { continue; }
+      if (!label || label.length > 60 || !ACCEPT.test(label)) { continue; }
+      if (!visible(el)) { skip(label, 'unsichtbar'); continue; }
       var dialog = dialogOf(el);
-      if (!dialog) { continue; }
-      var text = (dialog.innerText || '').slice(0, 4000);
-      if (!PAY.test(text)) { continue; }
+      if (!dialog) { skip(label, 'kein Dialog'); continue; }
+      var text = dialog.innerText || '';
+      if (!PAY.test(text)) { skip(label, 'keine Bezahlschranke'); continue; }
       accepted = true;
       try { el.click(); } catch (e) {}
       try { handler.postMessage({ type: 'payWallAccepted', cmp: '', url: location.href, top: top, details: label + ' (' + reason + ')' }); } catch (e) {}

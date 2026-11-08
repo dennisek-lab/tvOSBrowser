@@ -515,6 +515,8 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)pointerTargetsDidChange {
+    // Seite hat sich geändert (Scrollen, Laden, DOM): Linsenbild ist veraltet und wird neu aufgenommen.
+    self.lensRect = CGRectNull;
     if (self.lastTouchLocation.x != -1 || self.pressInProgress) {
         // Während der Finger wischt, bewertet die nächste Bewegung ohnehin neu.
         return;

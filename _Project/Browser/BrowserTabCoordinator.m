@@ -244,6 +244,36 @@ static BOOL BrowserNameMatchesHost(NSString *name, NSString *host) {
     return letters.length > 0 && label.length > 0 && ([letters containsString:label] || [label containsString:letters]);
 }
 
+/// Wortfolge im Titel, deren Buchstaben genau dem Domainnamen entsprechen (ohne Groß/Klein und Satzzeichen).
+static NSString *BrowserPhraseMatchingHost(NSString *title, NSString *host) {
+    NSString *label = BrowserLetters(BrowserHostLabel(host));
+    if (label.length < 3) {
+        return nil;
+    }
+    NSArray<NSString *> *words = [title componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    for (NSUInteger start = 0; start < words.count; start++) {
+        NSMutableString *letters = [NSMutableString string];
+        for (NSUInteger end = start; end < words.count && end < start + 4; end++) {
+            [letters appendString:BrowserLetters(words[end])];
+            if ([letters isEqualToString:label] || ([letters hasPrefix:label] && letters.length <= label.length + 1)) {
+                NSString *phrase = [[words subarrayWithRange:NSMakeRange(start, end - start + 1)] componentsJoinedByString:@" "];
+                phrase = [phrase stringByTrimmingCharactersInSet:NSCharacterSet.punctuationCharacterSet];
+                if ([phrase hasSuffix:@"'s"] || [phrase hasSuffix:@"’s"]) {
+                    phrase = [phrase substringToIndex:phrase.length - 2];
+                }
+                if (phrase.length == 0) {
+                    return nil;
+                }
+                return [[[phrase substringToIndex:1] uppercaseString] stringByAppendingString:[phrase substringFromIndex:1]];
+            }
+            if (letters.length > label.length) {
+                break;
+            }
+        }
+    }
+    return nil;
+}
+
 /// Kurzer Name der Website wie in Safari: Metadaten, sonst der zur Domain passende Teil des Titels.
 static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *host) {
     NSCharacterSet *whitespace = NSCharacterSet.whitespaceAndNewlineCharacterSet;
@@ -268,6 +298,14 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
         NSString *trimmed = [part stringByTrimmingCharactersInSet:whitespace];
         if (trimmed.length > 0 && BrowserNameMatchesHost(trimmed, host) && (best == nil || trimmed.length < best.length)) {
             best = trimmed;
+        }
+    }
+    if (best == nil || best.length > 24) {
+        // Kein kurzer Teil passt (z. B. „Latest news … from the Guardian“): die Wörter des Titels nehmen,
+        // die zusammen den Domainnamen ergeben („the Guardian“ → „The Guardian“).
+        NSString *phrase = BrowserPhraseMatchingHost(title, host);
+        if (phrase.length > 0) {
+            best = phrase;
         }
     }
     if (best == nil) {
@@ -299,7 +337,8 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
     NSString *fullTitle = self.activeWebView.reportedPageTitle.length > 0 ? self.activeWebView.reportedPageTitle : self.activeWebView.title;
     NSString *title = BrowserShortSiteName(self.activeWebView.reportedSiteName, fullTitle, host);
     BOOL secure = [[NSURL URLWithString:currentURL].scheme.lowercaseString isEqualToString:@"https"];
-    if (title.length > 0 && BrowserNameMatchesHost(title, host)) {
+    // Immer „Titel · Domain“ (wie Safari), außer der Titel ist schon die Domain selbst.
+    if (title.length > 0 && host.length > 0 && [title.lowercaseString isEqualToString:host.lowercaseString]) {
         [self.topMenuView setDisplayTitle:title domain:nil secure:secure];
     } else if (title.length > 0 && host.length > 0) {
         [self.topMenuView setDisplayTitle:title domain:host secure:secure];

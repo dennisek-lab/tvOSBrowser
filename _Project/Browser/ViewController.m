@@ -150,6 +150,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         return;
     }
     started = YES; // viewDidAppear kommt nach jedem geschlossenen Dialog erneut
+    // Lange Testläufe ohne Eingabe: sonst startet der Bildschirmschoner und hält die App an.
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSArray<NSString *> *steps = [spec componentsSeparatedByString:@";"];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self dismissViewControllerAnimated:NO completion:nil];
