@@ -270,6 +270,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     NSLog(@"[SelfTest] menu handled=%d", handled);
                     return;
                 }
+                if ([step isEqualToString:@"guide"]) {
+                    [self showHintsAlert];
+                    return;
+                }
                 if ([step isEqualToString:@"state"]) {
                     NSLog(@"[SelfTest] state presented=%@ windowRoot=%@ fs=%d keyWindowPresented=%@", NSStringFromClass(self.presentedViewController.class), NSStringFromClass(self.view.window.rootViewController.class), self.webview.pageFullscreen, NSStringFromClass(self.view.window.rootViewController.presentedViewController.class));
                     return;
