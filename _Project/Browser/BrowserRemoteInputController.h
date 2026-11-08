@@ -17,9 +17,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserRemoteInputControllerDismissTabOverview;
 - (void)browserRemoteInputControllerHandleTabOverviewAlternateAction;
 - (void)browserRemoteInputControllerHandlePrimaryAction;
-- (void)browserRemoteInputControllerHandleMenuPress;
+/// NO: Taste nicht behandelt, das System darf sie nutzen (z. B. zurück zum Home-Bildschirm).
+- (BOOL)browserRemoteInputControllerHandleMenuPress;
 - (void)browserRemoteInputControllerHandlePlayPausePress;
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress;
+/// Play/Pause gehalten (ab 0,6 s).
+- (void)browserRemoteInputControllerHandlePlayPauseLongPress;
 /// Einrastziele für den magnetischen Zeiger (Seitenelemente und Knöpfe der oberen Leiste), in Koordinaten von rootView.
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets;
 - (void)browserRemoteInputControllerNavigateBack;

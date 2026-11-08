@@ -27,10 +27,22 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nullable, nonatomic, copy) void (^clickTargetsDidChange)(void);
 /// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
+/// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
+- (NSArray<NSValue *> * _Nonnull)videoRects;
+/// Läuft auf der Seite gerade ein Video?
+@property (nonatomic, readonly) BOOL videoPlaying;
+/// Videobefehl am Punkt (Koordinaten dieser Ansicht): "toggle", "seek:10", "seek:-10".
+- (void)sendVideoCommand:(NSString * _Nonnull)command atPoint:(CGPoint)point;
+/// Videobefehl an das aktive Video der Seite (für Systembefehle): zusätzlich "play", "pause", "seekto:S", "action:nexttrack".
+- (void)sendVideoCommand:(NSString * _Nonnull)command;
+/// Angaben zum aktiven Video für „Now Playing“ (siehe BrowserClickTargetTracker.mediaInfo).
+@property (nonatomic, readonly, copy, nullable) NSDictionary *mediaInfo;
 /// Bittet die Seite, ihre klickbaren Elemente sofort neu zu melden (asynchron).
 - (void)refreshClickTargets;
 /// Führt JavaScript aus, ohne auf das Ergebnis zu warten.
 - (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script;
+/// Führt JavaScript aus und meldet das Ergebnis (oder nil) auf dem Hauptthread.
+- (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script completion:(void (^ _Nullable)(id _Nullable result))completion;
 /// Grundzoom, wenn scalesPageToFit aus ist (1.0 = 100 %).
 @property (nonatomic) double pageZoom;
 

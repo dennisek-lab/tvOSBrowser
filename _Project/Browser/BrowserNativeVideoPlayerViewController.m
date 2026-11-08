@@ -1,5 +1,6 @@
 #import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserNativeVideoAssetLoader.h"
+#import "BrowserNowPlayingController.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -96,6 +97,15 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     } else {
         playerItem = [AVPlayerItem playerItemWithURL:self.videoURL];
     }
+    if (self.videoTitle.length > 0) {
+        // Titel für Now Playing (iPhone-Fernbedienung, Kontrollzentrum) und die Infoleiste des Players.
+        AVMutableMetadataItem *titleItem = [AVMutableMetadataItem new];
+        titleItem.identifier = AVMetadataCommonIdentifierTitle;
+        titleItem.value = self.videoTitle;
+        titleItem.extendedLanguageTag = @"und";
+        playerItem.externalMetadata = @[titleItem];
+    }
+    [BrowserNowPlayingController activateAudioSession];
     self.player = [AVPlayer playerWithPlayerItem:playerItem];
     [self log:@"created player url=%@", self.videoURL.absoluteString ?: @""];
 
@@ -121,6 +131,7 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     [super viewDidAppear:animated];
     NSLog(@"%@ viewDidAppear", kBrowserNativePlayerInputLogPrefix);
     [self log:@"viewDidAppear play"];
+    [NSNotificationCenter.defaultCenter postNotificationName:BrowserNativePlayerDidAppearNotification object:self];
     [self.player play];
 }
 
@@ -128,6 +139,7 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     [super viewWillDisappear:animated];
     NSLog(@"%@ viewWillDisappear", kBrowserNativePlayerInputLogPrefix);
     [self log:@"viewWillDisappear pause"];
+    [NSNotificationCenter.defaultCenter postNotificationName:BrowserNativePlayerWillDisappearNotification object:self];
     [self.player pause];
 }
 

@@ -50,6 +50,7 @@
 		2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B44FC74AA71D336038E44239 /* SceneDelegate.m */; };
 		6921A70BFB3405E0FC80124C /* BrowserDNSProxy.m in Sources */ = {isa = PBXBuildFile; fileRef = 487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */; };
 		C3B8D8F6E019212DCDE82430 /* BrowserClickTargetTracker.m in Sources */ = {isa = PBXBuildFile; fileRef = 12AF0B04E82440158F9F69AB /* BrowserClickTargetTracker.m */; };
+		E5FDD435F08A7F5DB5E98B4B /* BrowserNowPlayingController.m in Sources */ = {isa = PBXBuildFile; fileRef = D7656CB165B5715007F9D501 /* BrowserNowPlayingController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -122,6 +123,8 @@
 		487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserDNSProxy.m; sourceTree = "<group>"; };
 		17D82DB08AB818694E35BA7C /* BrowserClickTargetTracker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserClickTargetTracker.h; sourceTree = "<group>"; };
 		12AF0B04E82440158F9F69AB /* BrowserClickTargetTracker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserClickTargetTracker.m; sourceTree = "<group>"; };
+		1CCAA4BA04B34355BD7ABEB1 /* BrowserNowPlayingController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserNowPlayingController.h; sourceTree = "<group>"; };
+		D7656CB165B5715007F9D501 /* BrowserNowPlayingController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserNowPlayingController.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -260,6 +263,8 @@
 				487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */,
 				17D82DB08AB818694E35BA7C /* BrowserClickTargetTracker.h */,
 				12AF0B04E82440158F9F69AB /* BrowserClickTargetTracker.m */,
+				1CCAA4BA04B34355BD7ABEB1 /* BrowserNowPlayingController.h */,
+				D7656CB165B5715007F9D501 /* BrowserNowPlayingController.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -448,6 +453,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				E5FDD435F08A7F5DB5E98B4B /* BrowserNowPlayingController.m in Sources */,
 				C3B8D8F6E019212DCDE82430 /* BrowserClickTargetTracker.m in Sources */,
 				6921A70BFB3405E0FC80124C /* BrowserDNSProxy.m in Sources */,
 				2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */,

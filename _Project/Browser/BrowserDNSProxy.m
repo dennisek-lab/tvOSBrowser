@@ -309,6 +309,11 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
 }
 
 + (BOOL)isEnabled {
+#if DEBUG
+    if ([NSProcessInfo.processInfo.environment[@"DNS_PROXY"] isEqualToString:@"off"]) {
+        return NO;
+    }
+#endif
     id value = [NSUserDefaults.standardUserDefaults objectForKey:kDNSOverCloudflareDefaultsKey];
     return value == nil ? YES : [value boolValue];
 }

@@ -265,6 +265,13 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *BrowserFeatureEntriesFor
     return entries;
 }
 
+static void BrowserSetIntegerSelectorIfAvailable(id object, NSString *selectorName, NSUInteger value) {
+    SEL selector = NSSelectorFromString(selectorName);
+    if (object != nil && [object respondsToSelector:selector]) {
+        ((void (*)(id, SEL, NSUInteger))objc_msgSend)(object, selector, value);
+    }
+}
+
 static void BrowserSetBooleanSelectorIfAvailable(id object, NSString *selectorName, BOOL value) {
     if (object == nil || selectorName.length == 0) {
         return;
@@ -537,6 +544,10 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     if (configuration != nil && [configuration respondsToSelector:allowsInlineMediaPlaybackSelector]) {
         ((void (*)(id, SEL, BOOL))objc_msgSend)(configuration, allowsInlineMediaPlaybackSelector, allowsInlineMediaPlayback);
     }
+    // Medien dürfen ohne Nutzergeste starten: Play/Pause der Fernbedienung und die Systembefehle
+    // (iPhone-Fernbedienung, Kontrollzentrum) rufen play() aus der App heraus auf.
+    BrowserSetIntegerSelectorIfAvailable(configuration, @"setMediaTypesRequiringUserActionForPlayback:", 0);
+    BrowserSetBooleanSelectorIfAvailable(configuration, @"setAllowsPictureInPictureMediaPlayback:", YES);
     BrowserConfigurePrivateMediaPreferences(configuration);
     BrowserInstallYouTubeCaptureUserScript(configuration);
     self.clickTargetTracker = [BrowserClickTargetTracker new];
@@ -582,16 +593,50 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     return [self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)];
 }
 
+- (NSArray<NSValue *> *)videoRects {
+    return [self.clickTargetTracker videoRectsForViewWidth:CGRectGetWidth(self.bounds)];
+}
+
+- (BOOL)videoPlaying {
+    return self.clickTargetTracker.videoPlaying;
+}
+
+- (void)sendVideoCommand:(NSString *)command atPoint:(CGPoint)point {
+    CGFloat scale = [self.clickTargetTracker cssScaleForViewWidth:CGRectGetWidth(self.bounds)];
+    CGPoint cssPoint = CGPointMake(point.x / scale, point.y / scale);
+    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:cssPoint command:command]];
+}
+
+- (void)sendVideoCommand:(NSString *)command {
+    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:CGPointMake(-1, -1) command:command]];
+}
+
+- (NSDictionary *)mediaInfo {
+    return self.clickTargetTracker.mediaInfo;
+}
+
 - (void)refreshClickTargets {
     [self evaluateJavaScriptAsync:[BrowserClickTargetTracker refreshScript]];
 }
 
 - (void)evaluateJavaScriptAsync:(NSString *)script {
+    [self evaluateJavaScriptAsync:script completion:nil];
+}
+
+- (void)evaluateJavaScriptAsync:(NSString *)script completion:(void (^)(id))completion {
     SEL selector = NSSelectorFromString(@"evaluateJavaScript:completionHandler:");
     if (script.length == 0 || self.runtimeWebView == nil || ![self.runtimeWebView respondsToSelector:selector]) {
+        if (completion != nil) {
+            completion(nil);
+        }
         return;
     }
-    ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, nil);
+    void (^handler)(id, NSError *) = completion == nil ? nil : ^(id result, __unused NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(result);
+        });
+    };
+    ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, handler);
 }
 
 - (void)layoutSubviews {

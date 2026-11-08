@@ -20,6 +20,23 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ziele in Koordinaten der WebView. `viewWidth` ist die Breite der WebView in Punkten.
 - (NSArray<NSValue *> *)targetRectsForViewWidth:(CGFloat)viewWidth;
 
+/// Sichtbare Videos (mindestens 120 × 80 CSS-Pixel), in Koordinaten der WebView.
+- (NSArray<NSValue *> *)videoRectsForViewWidth:(CGFloat)viewWidth;
+
+/// Ob auf der Seite gerade ein Video läuft (auch außerhalb des sichtbaren Bereichs).
+@property (nonatomic, readonly) BOOL videoPlaying;
+
+/// Angaben zum aktiven Video für „Now Playing“: title, artist, album, art (URL), dur, t, paused, rate, next, prev.
+/// nil, wenn kein Video angespielt wurde.
+@property (nonatomic, readonly, copy, nullable) NSDictionary *mediaInfo;
+
+/// Faktor Punkte pro CSS-Pixel, Stand der letzten Meldung.
+- (CGFloat)cssScaleForViewWidth:(CGFloat)viewWidth;
+
+/// JavaScript für einen Videobefehl an einem Punkt (CSS-Pixel im Viewport): "toggle", "seek:10", "seek:-10".
+/// Liegt dort kein Video, trifft der Befehl das laufende Video der Seite.
++ (NSString *)videoCommandScriptWithCSSPoint:(CGPoint)point command:(NSString *)command;
+
 /// Leert die Ziele (z. B. beim Start einer neuen Navigation).
 - (void)reset;
 

@@ -58,6 +58,8 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic) CFTimeInterval manualScrollLastTimestamp;
 @property (nonatomic) CFTimeInterval manualScrollLastMovementTimestamp;
 @property (nonatomic) CFTimeInterval lastDirectSelectPressTimestamp;
+@property (nonatomic) BOOL playPauseLongPressFired;
+@property (nonatomic) BOOL playPauseSinglePending;
 
 @end
 
@@ -93,6 +95,9 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         _playPauseDoubleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handlePlayPauseDoubleTap:)];
         _playPauseDoubleTapRecognizer.numberOfTapsRequired = 2;
         _playPauseDoubleTapRecognizer.allowedPressTypes = @[@(UIPressTypePlayPause)];
+        // Kurz, lang und doppelt werden selbst unterschieden (siehe handlePlayPause…), der Erkenner bleibt aus,
+        // sonst lösen Doppeltipps zusätzlich die Aktion für den einfachen Druck aus.
+        _playPauseDoubleTapRecognizer.enabled = NO;
         [rootView addGestureRecognizer:_playPauseDoubleTapRecognizer];
 
         _manualScrollPanRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleManualScrollPan:)];
@@ -504,6 +509,56 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     [self.host browserRemoteInputControllerHandleAdvancedMenuPress];
 }
 
+#pragma mark - Play/Pause
+
+static const NSTimeInterval kPlayPauseLongPressDelay = 0.6;
+static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
+
+- (BOOL)playPauseTimingApplies {
+    UIViewController *presented = [self.host browserRemoteInputControllerPresentedViewController];
+    if (presented != nil && ![presented isKindOfClass:UIAlertController.class]) {
+        return NO;
+    }
+    return ![self.host browserRemoteInputControllerTabOverviewVisible] &&
+        ![self.host browserRemoteInputControllerTopBarFocusActive];
+}
+
+- (void)playPausePressBegan {
+    self.playPauseLongPressFired = NO;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseLongPress) object:nil];
+    if ([self playPauseTimingApplies]) {
+        [self performSelector:@selector(firePlayPauseLongPress) withObject:nil afterDelay:kPlayPauseLongPressDelay];
+    }
+}
+
+- (void)firePlayPauseLongPress {
+    self.playPauseLongPressFired = YES;
+    self.playPauseSinglePending = NO;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseSinglePress) object:nil];
+    [self.host browserRemoteInputControllerHandlePlayPauseLongPress];
+}
+
+- (void)firePlayPauseSinglePress {
+    self.playPauseSinglePending = NO;
+    [self.host browserRemoteInputControllerHandlePlayPausePress];
+}
+
+- (void)playPausePressEnded {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseLongPress) object:nil];
+    if (self.playPauseLongPressFired) {
+        self.playPauseLongPressFired = NO;
+        return;
+    }
+    if (self.playPauseSinglePending) {
+        self.playPauseSinglePending = NO;
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseSinglePress) object:nil];
+        [self.host browserRemoteInputControllerHandleAdvancedMenuPress];
+        return;
+    }
+    self.playPauseSinglePending = YES;
+    [self performSelector:@selector(firePlayPauseSinglePress) withObject:nil afterDelay:kPlayPauseDoublePressWindow];
+}
+
 #pragma mark - Tasten
 
 - (BOOL)isClickpadPress:(UIPress *)press {
@@ -522,6 +577,9 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 - (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     (void)event;
     for (UIPress *press in presses) {
+        if (press.type == UIPressTypePlayPause) {
+            [self playPausePressBegan];
+        }
         if ([self isClickpadPress:press]) {
             // Beim Drücken bewegt sich der Finger minimal. Diese Bewegung soll den Zeiger nicht verschieben.
             self.pressInProgress = YES;
@@ -534,6 +592,8 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     (void)event;
     self.pressInProgress = NO;
     self.lastTouchLocation = CGPointMake(-1, -1);
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseLongPress) object:nil];
+    self.playPauseLongPressFired = NO;
 }
 
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
@@ -622,11 +682,14 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     }
 
     if (press.type == UIPressTypeMenu) {
-        [self.host browserRemoteInputControllerHandleMenuPress];
-        return YES;
+        return [self.host browserRemoteInputControllerHandleMenuPress];
     }
     if (press.type == UIPressTypePlayPause) {
-        [self.host browserRemoteInputControllerHandlePlayPausePress];
+        if ([self playPauseTimingApplies]) {
+            [self playPausePressEnded];
+        } else {
+            [self.host browserRemoteInputControllerHandlePlayPausePress];
+        }
         return YES;
     }
     return NO;

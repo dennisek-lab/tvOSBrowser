@@ -9,6 +9,7 @@
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
 #import "BrowserNavigationService.h"
+#import "BrowserNowPlayingController.h"
 #import "BrowserPageActionCoordinator.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserRemoteInputController.h"
@@ -42,6 +43,7 @@ static UIColor *kTextColor(void) {
 @property (nonatomic) BrowserTabCoordinator *tabCoordinator;
 @property (nonatomic) BrowserTabOverviewController *tabOverviewController;
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
+@property (nonatomic) BrowserNowPlayingController *nowPlayingController;
 @property (nonatomic) BrowserViewModel *viewModel;
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
@@ -70,6 +72,11 @@ static UIColor *kTextColor(void) {
     self.navigationService = [[BrowserNavigationService alloc] initWithPreferencesStore:self.preferencesStore];
     self.sessionStore = [BrowserSessionStore new];
     self.menuCoordinator = [[BrowserMenuCoordinator alloc] initWithHost:self preferencesStore:self.preferencesStore];
+    self.nowPlayingController = [BrowserNowPlayingController new];
+    __weak typeof(self) weakNowPlayingSelf = self;
+    self.nowPlayingController.commandHandler = ^(NSString *command) {
+        [weakNowPlayingSelf.webview sendVideoCommand:command];
+    };
     self.remoteInputController = [[BrowserRemoteInputController alloc] initWithHost:self rootView:self.view];
     [self.view addSubview:self.remoteInputController.cursorView];
     self.videoPlaybackCoordinator = [[BrowserVideoPlaybackCoordinator alloc] initWithHost:self
@@ -148,6 +155,35 @@ static UIColor *kTextColor(void) {
                 if ([step isEqualToString:@"click"]) {
                     NSLog(@"[SelfTest] click");
                     [self browserHandlePrimaryAction];
+                    return;
+                }
+                if ([step hasPrefix:@"url:"]) {
+                    NSURL *url = [NSURL URLWithString:[step substringFromIndex:4]];
+                    NSLog(@"[SelfTest] load %@", url);
+                    if (url != nil) {
+                        [self.webview loadRequest:[NSURLRequest requestWithURL:url]];
+                    }
+                    return;
+                }
+                if ([step isEqualToString:@"playpause"]) {
+                    NSLog(@"[SelfTest] playpause overVideo=%d playing=%d", [self pointerIsOverVideo], self.webview.videoPlaying);
+                    [self browserRemoteInputControllerHandlePlayPausePress];
+                    return;
+                }
+                if ([step isEqualToString:@"left"] || [step isEqualToString:@"right"]) {
+                    NSLog(@"[SelfTest] %@ overVideo=%d", step, [self pointerIsOverVideo]);
+                    if ([step isEqualToString:@"left"]) {
+                        [self browserRemoteInputControllerNavigateBack];
+                    } else {
+                        [self browserRemoteInputControllerNavigateForward];
+                    }
+                    return;
+                }
+                if ([step isEqualToString:@"video"]) {
+                    [self.webview evaluateJavaScriptAsync:@"(function(){var v=document.querySelector('video');return v?('t='+v.currentTime.toFixed(1)+' paused='+v.paused+' ready='+v.readyState+' net='+v.networkState+' err='+(v.error?v.error.code:0)+' playErr='+(window.__browserLastPlayError||'')):'none';})()"
+                                               completion:^(id result) {
+                        NSLog(@"[SelfTest] video %@ rects=%lu playing=%d idle=%d", result, (unsigned long)[self.webview videoRects].count, self.webview.videoPlaying, UIApplication.sharedApplication.idleTimerDisabled);
+                    }];
                     return;
                 }
                 NSArray<NSString *> *parts = [step componentsSeparatedByString:@","];
@@ -341,19 +377,19 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)showInputURLorSearchGoogle {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Enter URL or Search Terms"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Adresse oder Suchbegriff"
                                                                              message:@""
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeURL;
-        textField.placeholder = @"Enter URL or Search Terms";
+        textField.placeholder = @"z. B. computerbase.de oder Suchbegriff";
         textField.textColor = kTextColor();
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
 
     __weak typeof(self) weakSelf = self;
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Search Google"
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Mit Google suchen"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         UITextField *textField = alertController.textFields.firstObject;
@@ -364,7 +400,7 @@ static UIColor *kTextColor(void) {
             [weakSelf requestURLorSearchInput];
         }
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Go To Website"
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Website öffnen"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         UITextField *textField = alertController.textFields.firstObject;
@@ -389,40 +425,63 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)requestURLorSearchInput {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Quick Menu"
-                                                                             message:@""
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
+    NSString *host = self.webview.request.URL.host;
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Schnellmenü"
+                                                                             message:host.length > 0 ? host : @""
+                                                                      preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
 
-    if (self.webview.canGoForward) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Go Forward"
-                                                            style:UIAlertActionStyleDefault
-                                                          handler:^(__unused UIAlertAction *action) {
-            [self.webview goForward];
-        }]];
-    }
-
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Input URL or Search with Google"
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
-        [self showInputURLorSearchGoogle];
+        [weakSelf showInputURLorSearchGoogle];
     }]];
 
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Reload Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
-            self.tabCoordinator.previousURL = @"";
-            [self.webview reload];
+            weakSelf.tabCoordinator.previousURL = @"";
+            [weakSelf.webview reload];
         }]];
     }
 
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
+    if (self.webview.canGoForward) {
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Vor"
+                                                            style:UIAlertActionStyleDefault
+                                                          handler:^(__unused UIAlertAction *action) {
+            [weakSelf.webview goForward];
+        }]];
+    }
+
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Neuer Tab"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        [weakSelf browserCreateNewTabLoadingHomePage:YES];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Tabs anzeigen"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        [weakSelf browserShowTabOverview];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Startseite"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        [weakSelf loadHomePage];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Weitere Einstellungen …"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        [weakSelf showAdvancedMenu];
+    }]];
+
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 
 - (void)showHintsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Bedienung"
-                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor.\nZurück-Taste: Seite zurück.\nPlay/Pause: Schnellmenü, zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
+                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Schnellmenü. Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     __weak typeof(self) weakSelf = self;
@@ -477,6 +536,9 @@ static UIColor *kTextColor(void) {
     webView.clickTargetsDidChange = ^{
         if (weakSelf.webview == weakWebView) {
             [weakSelf.remoteInputController pointerTargetsDidChange];
+            // Kein Bildschirmschoner, solange auf der Seite ein Video läuft.
+            UIApplication.sharedApplication.idleTimerDisabled = weakWebView.videoPlaying;
+            [weakSelf.nowPlayingController updateWithMediaInfo:weakWebView.mediaInfo];
         }
     };
 }
@@ -730,33 +792,57 @@ static UIColor *kTextColor(void) {
     [self browserHandlePrimaryAction];
 }
 
-- (void)browserRemoteInputControllerHandleMenuPress {
-    UIAlertController *alertController = (UIAlertController *)self.presentedViewController;
-    if (alertController != nil) {
+- (BOOL)browserRemoteInputControllerHandleMenuPress {
+    if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
-    } else if (self.webview.canGoBack) {
-        [self.webview goBack];
-    } else {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Exit App?"
-                                                                       message:nil
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Exit"
-                                                  style:UIAlertActionStyleDestructive
-                                                handler:^(__unused UIAlertAction *action) {
-            exit(EXIT_SUCCESS);
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Dismiss" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+        return YES;
     }
+    if (self.webview.canGoBack) {
+        [self.webview goBack];
+        return YES;
+    }
+    // Erste Seite: wie jede tvOS-App zurück zum Home-Bildschirm.
+    [self.tabCoordinator persistSession];
+    return NO;
+}
+
+/// Steht der Zeiger auf einem Video? Gilt auch, wenn er gerade ausgeblendet ist (Video läuft, Zeiger ruht).
+- (BOOL)pointerIsOverVideo {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil || !self.remoteInputController.cursorModeEnabled) {
+        return NO;
+    }
+    CGPoint point = [self.view convertPoint:self.remoteInputController.cursorView.frame.origin toView:webView];
+    for (NSValue *value in [webView videoRects]) {
+        if (CGRectContainsPoint(value.CGRectValue, point)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (CGPoint)pointerPointInWebView {
+    return [self.view convertPoint:self.remoteInputController.cursorView.frame.origin toView:self.webview];
 }
 
 - (void)browserRemoteInputControllerHandlePlayPausePress {
-    UIAlertController *alertController = (UIAlertController *)self.presentedViewController;
-    if (alertController != nil) {
+    if (self.presentedViewController != nil) {
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
-    } else {
-        [self requestURLorSearchInput];
+        return;
     }
+    // Läuft ein Video oder steht der Zeiger auf einem, steuert Play/Pause das Video.
+    if (self.webview != nil && (self.webview.videoPlaying || [self pointerIsOverVideo])) {
+        [self.webview sendVideoCommand:@"toggle" atPoint:[self pointerPointInWebView]];
+        return;
+    }
+    [self requestURLorSearchInput];
+}
+
+- (void)browserRemoteInputControllerHandlePlayPauseLongPress {
+    if (self.presentedViewController != nil) {
+        return;
+    }
+    [self requestURLorSearchInput];
 }
 
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress {
@@ -794,12 +880,20 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)browserRemoteInputControllerNavigateBack {
+    if ([self pointerIsOverVideo]) {
+        [self.webview sendVideoCommand:@"seek:-10" atPoint:[self pointerPointInWebView]];
+        return;
+    }
     if (self.webview.canGoBack) {
         [self.webview goBack];
     }
 }
 
 - (void)browserRemoteInputControllerNavigateForward {
+    if ([self pointerIsOverVideo]) {
+        [self.webview sendVideoCommand:@"seek:10" atPoint:[self pointerPointInWebView]];
+        return;
+    }
     if (self.webview.canGoForward) {
         [self.webview goForward];
     }
