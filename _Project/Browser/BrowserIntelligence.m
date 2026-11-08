@@ -229,7 +229,8 @@ static BOOL BrowserNLSentenceLooksUsable(NSString *sentence, NSUInteger words) {
     dispatch_once(&once, ^{
         boilerplate = [NSRegularExpression regularExpressionWithPattern:
             @"(follow (topics|us|authors)|sign up|subscribe|newsletter|we use cookies|wir verwenden cookies|all rights reserved|read more|click here|share this|"
-             "folgen sie|abonnier|weiterlesen|mehr zum thema|alle rechte|melden sie sich)"
+             "folgen sie|abonnier|weiterlesen|mehr zum thema|alle rechte|melden sie sich|"
+             "mit ihrer zustimmung|ihre (zustimmung|einwilligung)|externe[rn]? (inhalt|podcast|video)|datenschutz|erfahren sie,? wie|your consent|privacy policy)"
                                                                 options:NSRegularExpressionCaseInsensitive error:nil];
     });
     return [boilerplate firstMatchInString:sentence options:0 range:NSMakeRange(0, length)] == nil;

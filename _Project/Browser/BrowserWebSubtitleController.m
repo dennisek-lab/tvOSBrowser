@@ -273,38 +273,32 @@
         case BrowserWebAudioCaptureStatusStopped:
             return nil;
         case BrowserWebAudioCaptureStatusWaitingForInteraction:
-            return @"Untertitel: Video einmal anklicken, damit der Ton freigegeben wird";
+            return @"Untertitel: Video einmal anklicken";
         case BrowserWebAudioCaptureStatusSilent:
             if ([detail isEqualToString:@"cors"]) {
-                return @"Untertitel: Kein Ton, das Video kommt von einem fremden Server (CORS). Seite neu laden holt den Ton zurück";
+                return @"Untertitel: Kein Ton. Seite neu laden";
             }
             if ([detail isEqualToString:@"muted"]) {
-                return @"Untertitel: Das Video ist stumm geschaltet";
+                return @"Untertitel: Video ist stumm";
             }
             if ([detail isEqualToString:@"hls"]) {
-                return @"Untertitel: Kein Ton abgreifbar (HLS direkt im Browser)";
+                return @"Untertitel für dieses Video nicht möglich";
             }
-            return @"Untertitel: Seit einigen Sekunden kein Ton";
+            return @"Untertitel: Kein Ton";
         case BrowserWebAudioCaptureStatusNoVideo:
-            if ([detail hasPrefix:@"iframes"]) {
-                return @"Untertitel: Kein Video gefunden. Steckt es in einem eingebetteten Player, die Seite neu laden";
-            }
-            return @"Untertitel: Kein Video auf der Seite";
+            return @"Untertitel: Kein Video gefunden";
         case BrowserWebAudioCaptureStatusBlocked:
             if ([detail isEqualToString:@"drm"]) {
-                return @"Untertitel: Kopiergeschütztes Video (DRM), Ton nicht abgreifbar";
+                return @"Untertitel: Video ist kopiergeschützt";
             }
-            if ([detail isEqualToString:@"hls"]) {
-                return @"Untertitel: Das Video läuft als HLS direkt im Browser, Ton nicht abgreifbar";
-            }
-            return @"Untertitel: Video von einem fremden Server ohne Freigabe (CORS), Ton nicht abgreifbar";
+            return @"Untertitel für dieses Video nicht möglich";
         case BrowserWebAudioCaptureStatusUnsupported:
-            return @"Untertitel: Diese WebKit-Version kann den Ton nicht abgreifen";
+            return @"Untertitel für dieses Video nicht möglich";
         case BrowserWebAudioCaptureStatusError:
             if ([detail hasPrefix:@"source"]) {
-                return @"Untertitel: Die Seite verarbeitet den Ton selbst, Abgriff nicht möglich";
+                return @"Untertitel für dieses Video nicht möglich";
             }
-            return @"Untertitel: Abgriff ließ sich nicht starten";
+            return @"Untertitel ließen sich nicht starten";
     }
     return nil;
 }

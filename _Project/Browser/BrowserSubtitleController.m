@@ -174,7 +174,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         NSLog(@"%@ vorhandene Untertitel aktiv, Erkennung pausiert", kSubtitleControllerLogPrefix);
         self.suppressedByExistingSubtitles = YES;
         [self stopRecognitionClearing:NO];
-        [self.overlay showStatus:@"Untertitel vorhanden, automatische Erkennung pausiert" duration:4.0];
+        [self.overlay showStatus:@"Video hat eigene Untertitel" duration:4.0];
     } else if (!existing && self.suppressedByExistingSubtitles && self.preferences.autoSubtitlesEnabled && !self.running) {
         self.suppressedByExistingSubtitles = NO;
         [self startRecognition];
@@ -309,14 +309,14 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         return;
     }
     if (![BrowserSubtitleEngine isCompiledWithWhisper]) {
-        [self.overlay showStatus:@"Automatische Untertitel nicht verfügbar (whisper fehlt im Build)" duration:5.0];
+        [self.overlay showStatus:@"Automatische Untertitel nicht verfügbar" duration:5.0];
         NSLog(@"%@ whisper.xcframework fehlt (tools/build_whisper.sh)", kSubtitleControllerLogPrefix);
         return;
     }
     NSString *language = self.preferences.autoSubtitlesLanguage;
     NSString *modelPath = [BrowserSubtitleEngine modelPathForLanguage:language];
     if (modelPath == nil) {
-        [self.overlay showStatus:@"Automatische Untertitel: kein Modell in der App" duration:5.0];
+        [self.overlay showStatus:@"Automatische Untertitel nicht verfügbar" duration:5.0];
         NSLog(@"%@ kein Modell im Paket (tools/fetch_whisper_model.sh)", kSubtitleControllerLogPrefix);
         return;
     }
@@ -324,7 +324,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     self.triedHLSFallback = NO;
     BrowserSubtitleEngine *engine = [[BrowserSubtitleEngine alloc] initWithModelPath:modelPath language:language];
     self.engine = engine;
-    [self.overlay showStatus:@"Automatische Untertitel: Modell wird geladen …" duration:10.0];
+    [self.overlay showStatus:@"Untertitel werden vorbereitet …" duration:10.0];
     __weak typeof(self) weakSelf = self;
     dispatch_async(self.engineQueue, ^{
         NSError *error = nil;

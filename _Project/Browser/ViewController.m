@@ -776,7 +776,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         }
         if (match.accepted) {
             [self_.commandRouter performCommandNamed:match.name argument:match.argument.length > 0 ? match.argument : nil
-                                              source:BrowserCommandSourceDictation feedbackNote:@"sinngemäß erkannt"];
+                                              source:BrowserCommandSourceDictation feedbackNote:nil];
             return;
         }
         [self_ openAddressOrSearch:text];
@@ -831,8 +831,8 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         [self dismissViewControllerAnimated:NO completion:nil];
     }
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:dictation ? @"Sprechen, um zu diktieren" : @"Suchen oder Adresse eingeben"
-                                                                             message:dictation ? @"Siri-Taste gedrückt halten und sprechen – z. B. „Reader“, „zurück“ oder „suche Wetter“."
-                                                                                               : @"Tipp: Siri-Taste gedrückt halten und sprechen, z. B. „suche Wetter“ oder „Reader“."
+                                                                             message:dictation ? @"Siri-Taste halten und sprechen."
+                                                                                               : nil
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
@@ -841,7 +841,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         // Auf tvOS steht der Platzhalter groß über der Tastatur (der Dialogtext nicht): Beispiel für einen Sprachbefehl.
-        textField.placeholder = @"Suchbegriff, Adresse oder z. B. „Reader“";
+        textField.placeholder = @"Suchbegriff oder Adresse";
         textField.returnKeyType = UIReturnKeySearch;
         [textField addTarget:weakSelf action:@selector(searchFieldDidEndOnExit:) forControlEvents:UIControlEventEditingDidEndOnExit];
     }];
@@ -1615,7 +1615,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     if (whisper == nil) {
         NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: @"nicht verfügbar";
         NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@): Platzhalter-Erkennung, zeigt nur den Pegel", reason, wanted);
-        self.webSubtitleRecognizerHint = [NSString stringWithFormat:@"Untertitel: %@, es wird nur der Tonpegel angezeigt", reason];
+        self.webSubtitleRecognizerHint = [NSString stringWithFormat:@"Untertitel: %@", reason];
         if (![current isKindOfClass:BrowserSpeechRecognizerStub.class]) {
             [controller stop];
             controller.recognizer = [BrowserSpeechRecognizerStub new];

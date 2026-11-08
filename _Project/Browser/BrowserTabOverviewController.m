@@ -210,6 +210,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 @property (nonatomic) UIVisualEffectView *panelView;
 @property (nonatomic) UICollectionView *collectionView;
 @property (nonatomic) UILabel *footerLabel;
+@property (nonatomic) UILabel *subtitleLabel;
 @property (nonatomic) NSInteger preferredFocusItemIndex;
 
 @end
@@ -264,7 +265,8 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
     UILabel *subtitleLabel = [UILabel new];
     subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitleLabel.text = @"Tab wechseln, einen neuen öffnen oder den markierten schließen.";
+    self.subtitleLabel = subtitleLabel;
+    [self updateSubtitle];
     subtitleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
     subtitleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     [panelView.contentView addSubview:subtitleLabel];
@@ -364,11 +366,17 @@ static CGFloat const kTabCardURLHeight = 64.0;
     if (itemCount > 0) {
         self.preferredFocusItemIndex = MIN(MAX(self.preferredFocusItemIndex, 0), itemCount - 1);
     }
+    [self updateSubtitle];
     [self.collectionView reloadData];
     dispatch_async(dispatch_get_main_queue(), ^{
         [self setNeedsFocusUpdate];
         [self updateFocusIfNeeded];
     });
+}
+
+- (void)updateSubtitle {
+    NSUInteger tabCount = self.overviewController.viewModel.tabs.count;
+    self.subtitleLabel.text = tabCount == 1 ? @"1 Tab" : [NSString stringWithFormat:@"%lu Tabs", (unsigned long)tabCount];
 }
 
 - (void)updateCardAtTabIndex:(NSInteger)tabIndex {

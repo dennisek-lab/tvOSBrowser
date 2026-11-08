@@ -130,7 +130,7 @@ static UIFont *BrowserIntelligenceBodyFont(CGFloat size, UIFontWeight weight) {
         _footerLabel.numberOfLines = 1;
         _footerLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
         [_contentView addSubview:_footerLabel];
-        _footerLabel.text = @"Zurück-Taste bricht ab";
+        _footerLabel.text = @"";
     }
     return self;
 }
@@ -676,15 +676,8 @@ static const CGFloat kAnswerPaddingY = 34.0;
         NSString *title = [info[@"title"] isKindOfClass:NSString.class] && [info[@"title"] length] > 0 ? info[@"title"] : host;
         [card setTitleText:[title isEqualToString:host] ? host : [NSString stringWithFormat:@"%@  ·  %@", title, host]];
         NSTimeInterval total = CFAbsoluteTimeGetCurrent() - start;
-        NSString *language = summary.language.length > 0 ? [BrowserIntelligence displayNameForLanguage:summary.language] : nil;
-        NSMutableArray<NSString *> *footer = [NSMutableArray arrayWithObject:@"Lokal auf dem Apple TV"];
-        [footer addObject:[NSString stringWithFormat:@"%lu von %lu Sätzen", (unsigned long)summary.sentences.count,
-                           (unsigned long)summary.candidateCount]];
-        if (language != nil) { [footer addObject:language]; }
-        [footer addObject:total < 0.1 ? @"unter 0,1 s"
-                                      : [[NSString stringWithFormat:@"%.1f s", total] stringByReplacingOccurrencesOfString:@"." withString:@","]];
-        [footer addObject:@"Zurück-Taste schließt"];
-        [card transitionToSentences:summary.sentences footer:[footer componentsJoinedByString:@"  ·  "]];
+        // Keine Fußzeile mit Kennzahlen (Satzanzahl, Sprache, Dauer): die gehören ins Log, nicht in die Oberfläche.
+        [card transitionToSentences:summary.sentences footer:@""];
         NSLog(@"[AI] Karte: %lu Sätze, Schrift %.0f pt, gesamt %.0f ms", (unsigned long)summary.sentences.count, card.sentenceFontSize, total * 1000.0);
     }];
 }
@@ -742,7 +735,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
 - (void)loadTranslation:(NSURL *)proxy inWebView:(BrowserWebView *)webView target:(NSString *)target {
     // Logins und Cookies der Originalseite gelten auf translate.goog nicht; Google sieht die Seite.
     [webView loadRequest:[NSURLRequest requestWithURL:proxy]];
-    [self feedback:[NSString stringWithFormat:@"Übersetze auf %@ (Google)", [BrowserIntelligence displayNameForLanguage:target]]
+    [self feedback:@"Wird übersetzt …"
             symbol:@"translate" success:YES];
 }
 
@@ -753,8 +746,8 @@ static const CGFloat kAnswerPaddingY = 34.0;
     }
     [self.hintView dismissWithCompletion:nil];
     NSString *name = [BrowserIntelligence displayNameForLanguage:language];
-    NSString *title = [NSString stringWithFormat:@"Seite auf %@ – übersetzen?", name];
-    NSString *detail = [NSString stringWithFormat:@"Play/Pause übersetzt  ·  Zurück-Taste: für %@ nicht mehr fragen", host];
+    NSString *title = @"Seite übersetzen?";
+    NSString *detail = [NSString stringWithFormat:@"%@  ·  Play/Pause zum Übersetzen", name];
     BrowserTranslateHintView *hint = [[BrowserTranslateHintView alloc] initWithTitle:title detail:detail];
     [hint presentInView:container];
     self.hintView = hint;
@@ -822,17 +815,11 @@ static const NSTimeInterval kAnswerDuration = 25.0;
 - (NSString *)answerFooterForIndex:(NSUInteger)index found:(BOOL)found {
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
     NSUInteger count = self.answer.passages.count;
-    [parts addObject:count > 1 ? [NSString stringWithFormat:@"Stelle %lu von %lu", (unsigned long)index + 1, (unsigned long)count] : @"Eine Stelle"];
-    if (!found) {
-        [parts addObject:@"in der Seite nicht markiert"];
-    }
     if (count > 1) {
-        [parts addObject:@"Play/Pause: nächste"];
+        [parts addObject:[NSString stringWithFormat:@"%lu von %lu", (unsigned long)index + 1, (unsigned long)count]];
+        [parts addObject:@"Play/Pause: nächste Stelle"];
     }
-    [parts addObject:@"Zurück-Taste schließt"];
-    NSTimeInterval total = self.answerElapsed;
-    [parts addObject:[NSString stringWithFormat:@"Lokal · %@", total < 0.1 ? @"unter 0,1 s"
-                      : [[NSString stringWithFormat:@"%.1f s", total] stringByReplacingOccurrencesOfString:@"." withString:@","]]];
+    (void)found;
     return [parts componentsJoinedByString:@"  ·  "];
 }
 
@@ -962,7 +949,7 @@ static const NSTimeInterval kAnswerDuration = 25.0;
             NSLog(@"[AI] Übersetzen abgelehnt für %@", host);
         }
         [self dismissTranslationHint];
-        [self feedback:[NSString stringWithFormat:@"Für %@ nicht mehr fragen", host ?: @"diese Seite"] symbol:@"translate" success:YES];
+        [self feedback:@"Wird hier nicht mehr angeboten" symbol:@"translate" success:YES];
         return YES;
     }
     return NO;

@@ -413,15 +413,15 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     if (reason != NULL) {
         NSString *page = [probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @"";
         if ([self isYouTubePage:page]) {
-            *reason = @"YouTube liefert seine Videos nur stückweise an die Webseite (keine Adresse, die der native Player öffnen kann). Das Video bleibt in der Webseite.";
+            *reason = @"Dieses Video läuft nur in der Webseite.";
         } else if (hasDASH) {
-            *reason = @"Dieses Video kommt als DASH-Stream. Den kann der native Player nicht abspielen, es bleibt in der Webseite.";
+            *reason = @"Dieses Video läuft nur in der Webseite.";
         } else if (hasUnsupportedFile) {
-            *reason = @"Dieses Video nutzt ein Format (z. B. WebM), das der native Player nicht abspielen kann. Es bleibt in der Webseite.";
+            *reason = @"Dieses Video läuft nur in der Webseite.";
         } else if (blobSource) {
-            *reason = @"Die Webseite setzt dieses Video selbst zusammen und hat keine Stream-Adresse (HLS) geladen, die der native Player öffnen kann. Es bleibt in der Webseite.";
+            *reason = @"Dieses Video läuft nur in der Webseite.";
         } else {
-            *reason = @"Für dieses Video wurde keine Adresse gefunden, die der native Player öffnen kann. Es bleibt in der Webseite.";
+            *reason = @"Dieses Video läuft nur in der Webseite.";
         }
     }
     NSLog(@"[NativeVideoPlayer] keine Adresse: cs=%@ hls=%@ dash=%@ reportedHLS=%@ reportedDASH=%@",
@@ -598,7 +598,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 innerSelf.activePlayer = nil;
                 innerSelf.handoverInProgress = NO;
                 [failedPlayer dismissViewControllerAnimated:YES completion:^{
-                    [innerSelf presentNativePlayerNoticeWithMessage:@"Der native Player kann dieses Video nicht abspielen. Es läuft weiter in der Webseite."];
+                    [innerSelf presentNativePlayerNoticeWithMessage:@"Dieses Video läuft nur in der Webseite."];
                 }];
             });
         };
@@ -695,10 +695,10 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         NSString *dash = [self.frameVideo[@"dash"] isKindOfClass:[NSString class]] ? self.frameVideo[@"dash"] : @"";
         NSString *frame = [self.frameVideo[@"frame"] isKindOfClass:[NSString class]] ? self.frameVideo[@"frame"] : @"";
         NSString *message = [self isYouTubePage:frame]
-            ? @"YouTube liefert seine Videos nur stückweise an die Webseite (keine Adresse, die der native Player öffnen kann). Das Video bleibt in der Webseite."
+            ? @"Dieses Video läuft nur in der Webseite."
             : (dash.length > 0
-               ? @"Dieses Video kommt als DASH-Stream. Den kann der native Player nicht abspielen, es bleibt in der Webseite."
-               : @"Für das eingebettete Video wurde keine Adresse gefunden, die der native Player öffnen kann. Es bleibt in der Webseite.");
+               ? @"Dieses Video läuft nur in der Webseite."
+               : @"Dieses Video läuft nur in der Webseite.");
         [self presentNativePlayerNoticeWithMessage:message];
         return;
     }
@@ -731,7 +731,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             innerSelf.activePlayer = nil;
             innerSelf.handoverInProgress = NO;
             [failedPlayer dismissViewControllerAnimated:YES completion:^{
-                [innerSelf presentNativePlayerNoticeWithMessage:@"Der native Player kann dieses Video nicht abspielen. Es bleibt in der Webseite."];
+                [innerSelf presentNativePlayerNoticeWithMessage:@"Dieses Video läuft nur in der Webseite."];
             }];
         });
     };
@@ -828,19 +828,19 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     if (sources.count > 0) {
         sourceSummary = [sources componentsJoinedByString:@"\n"];
     } else if (videoInfo.count > 0) {
-        sourceSummary = @"Die Seite nennt keine direkte Video-Adresse.";
+        sourceSummary = @"Keine";
     } else {
-        sourceSummary = @"Unter dem Zeiger wurde kein Video gefunden.";
+        sourceSummary = @"Kein Video unter dem Zeiger";
     }
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Nativer Player nicht verfügbar"
-                                                                             message:[NSString stringWithFormat:@"Diese Seite liefert keine Video-Adresse, die der native Player öffnen kann.\n\nGefundene Quellen:\n%@", sourceSummary]
+                                                                             message:[NSString stringWithFormat:@"Dieses Video läuft nur in der Webseite.\n\nQuellen:\n%@", sourceSummary]
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPresentViewController:alertController];
 }
 
 - (void)presentYouTubeExtractionError:(NSError *)error fallbackVideoInfo:(NSDictionary *)videoInfo {
-    NSString *message = error.localizedDescription ?: @"Die YouTube-Wiedergabeadresse konnte nicht gelesen werden.";
+    NSString *message = error.localizedDescription ?: @"Das Video konnte nicht geladen werden.";
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"YouTube-Video nicht lesbar"
                                                                              message:message
                                                                       preferredStyle:UIAlertControllerStyleAlert];

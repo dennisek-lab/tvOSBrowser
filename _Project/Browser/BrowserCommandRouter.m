@@ -147,7 +147,7 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             feedback = [NSString stringWithFormat:@"Öffne %@", address];
         } else if (argument.length > 0) {
             [host browserCommandSearch:argument];
-            feedback = [NSString stringWithFormat:@"Keine Adresse, Suche: %@", argument];
+            feedback = [NSString stringWithFormat:@"Suche: %@", argument];
         } else {
             [host browserCommandBeginAddressEditing];
         }

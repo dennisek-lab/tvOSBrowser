@@ -940,7 +940,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (NSArray<BrowserAdvancedMenuItem *> *)intelligenceMenuItems {
     NSMutableArray<BrowserAdvancedMenuItem *> *items = [NSMutableArray array];
     if ([self.host respondsToSelector:@selector(browserSummarizePage)]) {
-        [items addObject:[self advancedMenuItemWithTitle:@"Zusammenfassen" detail:@"Lokal auf dem Gerät" handler:^{
+        [items addObject:[self advancedMenuItemWithTitle:@"Zusammenfassen" detail:nil handler:^{
             [self.host browserSummarizePage];
         }]];
     }
