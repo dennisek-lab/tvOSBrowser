@@ -30,6 +30,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 18. [Animationen (Liquid Glass / schlicht)](#18-animationen-browsermotion)
 19. [Intelligente Funktionen: Zusammenfassen, Übersetzen, Sprachbefehle sinngemäß, Frag die Seite](#19-intelligente-funktionen-browserintelligence)
 20. [Formen und Eckenradien](#20-formen-und-eckenradien-browsershape)
+21. [Leistung: Messung, Optimierungen, Befunde](#21-leistung-messung-optimierungen-befunde)
 
 ---
 
@@ -957,6 +958,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `probe` | JS-Messung: Element `#red`, `scrollY`, `innerHeight/Width`, Treffer bei (20,20), `visualViewport.offsetTop` plus `webFrame`, `contentOffset`, `contentInset` (für Einschub/Versatz; setzt Testseite mit `#red` voraus) | `probe … webFrame=… offset=… inset=…` |
 | `label` | Text der Adress-Beschriftung der Leiste | `label <Text>` |
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |
+| `anims` | alle Ebenen der Fenster (mit Masken) mit laufenden Core-Animation-Animationen, z. B. um zu prüfen, ob der Glow unsichtbar weiterläuft (Abschnitt 21) | `anim <View> (<Ebene>) sichtbar=0\|1 keys=… speed=… drehung=…`, `anims N Ebenen mit Animationen` |
 | `menu` | Menütaste (`HandleMenuPress`) | `menu handled=0|1` |
 | `press:<taste>[@ms]` | Taste wie von der Fernbedienung: `menu`, `playpause`, `playpause2` (doppelt, 120 ms Abstand), `select`, `up`, `down`, `left`, `right`; `@ms` hält sie so lange (Vorgabe 80, lang: `playpause@900`). Geht an das fokussierte Element (sonst den obersten Controller) und läuft die Responder-Kette hoch, also auch durch offene Dialoge, Seitenleiste und Tab-Übersicht. Gestenerkenner (Menü im UIAlertController) und `UIApplication sendEvent:` sehen sie nicht | `press <taste> an <Responder> (oben <Controller>)`, nach 1,2 s `press <taste> danach presented=… tabs=… karte=… adresse=… url=… zurück=… tabzahl=…`; dazu `[Keys] Ende Typ=…` |
 | `address` | wie zweimal oben: Bearbeiten-Zustand mit Aufklapp-Bereich | `address active=1 tiles=N field=…`, Screenshot |
@@ -987,6 +989,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `ask:next` | nächste Fundstelle (wie Play/Pause bei offener Karte) | `[AI] Antwort 2/N …` |
 
 Zeichen `;` und `|` dürfen in `js:`/`url:`/`fill:` nicht vorkommen (Trenner).
+
+Zusätzliche Umgebungsvariable `PERF_STALLS=1` (nur DEBUG, unabhängig vom Selbsttest): Wächter auf dem Hauptthread, loggt Blockaden über 50 ms und alle 10 s eine Summe (Abschnitt 21).
 
 ### 14.3 Beispiele
 ```
@@ -1032,6 +1036,7 @@ POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:fra
 | `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
 | `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
+| `[Perf] main/didFinishLaunching/viewDidLoad/viewDidAppear/erste Seite … (+N ms seit Prozessstart)`, `[Perf] Cookies …`, `[Perf] WebView angelegt …`, `[Perf] Werbeblocker: N von M Listen bereit`, `[Perf] JS synchron N ms …` (ab 20 ms), `[Perf] BrowserWebView freigegeben`, `[Perf] scene…`, `[Perf] Hauptthread …` (nur mit `PERF_STALLS=1`) | `BrowserPerf.h`, `main.m`, `AppDelegate`, `SceneDelegate`, `ViewController`, `BrowserWebView`, `BrowserContentBlocker` (Abschnitt 21) | ja |
 | `[Keys] Ende Typ=… presented=… tabs=…` (jede Taste, die `ViewController pressesEnded:` erreicht), `[Tabs] Play/Pause: Fokus=…` | `ViewController`, `BrowserTabOverviewController` | ja |
 | `[Command] <name> arg=… quelle=diktat\|siri\|selbsttest ok\|nicht möglich\|unbekannt`, `[Command] Diktat "…" -> …`, `[Command] Diktat "…" ähnlich: ausführen\|Suche -> …` | `BrowserCommandRouter`, `ViewController handleEnteredAddressText:` | nein |
 | `[Siri] Befehl …`, `[Siri] Intent -> Befehl …` | `ViewController`, `BrowserAppIntents.swift` | nein |
@@ -1094,7 +1099,7 @@ swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
 
 **Was tvOS 26/27 bietet (SDK 27.2 geprüft).** `UIGlassEffect` (`interactive`, `tintColor`, Stil regular/clear) und `UIGlassContainerEffect` (`spacing`) sind `API_AVAILABLE(ios(26.0))` ohne tvOS-Ausschluss, also ab tvOS 26 vorhanden. Ebenfalls ab tvOS 26: `UIScrollEdgeEffect`/`topEdgeEffect`, `UIScrollEdgeElementContainerInteraction` (nutzt die Leiste schon), `UIBackgroundExtensionView`, `UICornerConfiguration`, `UIViewAnimationOptionFlushUpdates`, Glas-Knopfkonfigurationen (`glassButtonConfiguration` u. a.). Federn mit Dauer/Bounce (`animateWithSpringDuration:bounce:…`, `UISpringTimingParameters initWithDuration:bounce:`, `CASpringAnimation initWithPerceptualDuration:bounce:`) ab tvOS 17. `UIFocusEffect`/`UIFocusHaloEffect` sind auf tvOS **nicht** verfügbar. Quellen: WWDC25 „Meet Liquid Glass“ (219), „Build a UIKit app with the new design“ (284), WWDC23 „Animate with springs“ (10158), HIG Materials und Motion.
 
-**Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Der Regenbogen-Glow (`BrowserGlowView`) ändert seine Form beim Einrasten sofort, die Fläche federt; bei sehr unterschiedlichen Zielgrößen sieht man das kurz.
+**Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Der Regenbogen-Glow (`BrowserGlowView`) ändert seine Form beim Einrasten sofort, die Fläche federt; bei sehr unterschiedlichen Zielgrößen sieht man das kurz. Ist die Hervorhebung ausgeblendet (Alpha 0, nach dem Lösen oder bei Leerlauf-Ausblendung), stehen Drehung und Atmen des Glows (`BrowserGlowView animationsPaused`, Ebenen-`speed` 0) und laufen beim nächsten Einblenden an derselben Stelle weiter (Abschnitt 21).
 
 **Test.** Simulator, eigenes Gerät: `defaults write io.github.tvosbrowser.app LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
 
@@ -1265,4 +1270,38 @@ POINTER_SELFTEST="parse:geh eine Seite zurück|lade die Seite nochmal|Tabs vs Sp
 Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `BrowserShapeCapsuleRadius(height)`, `BrowserShapeConcentricRadius(outer, inset)`. Eigene Radien weiter in Gebrauch, weil an Inhalt gebunden: Aufklapp-Karte 40 (wächst aus der Kapsel-Leiste, gleiche Stufe wie die halbe Leistenhöhe), Favicon-Kacheln `iconSize × 0,24` (App-Icon-Form), Einrast-Hervorhebung/Glow (Kapsel bis 120 pt Höhe, sonst `MIN(34, Höhe/2)`, folgt dem Seitenelement), Antwort-Karte „Frag die Seite“ 44.
 
 **Neue Fläche:** Stufe aus `BrowserShape.h` nehmen, nicht frei wählen; liegt etwas mit Abstand in einer runden Fläche, Radius mit `BrowserShapeConcentricRadius` ableiten.
+
+---
+
+## 21. Leistung: Messung, Optimierungen, Befunde
+
+**Messweg (Simulator, Apple TV 4K 3. Generation, tvOS 27.2).** DEBUG-Build, Start mit `xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app` und Selbsttest (Abschnitt 14.2). Zeitmarken aus `[Perf]`-Zeilen (`BrowserPerf.h`, Millisekunden seit Prozessstart über `sysctl KERN_PROC_PID`), CPU mit `top -l` auf die Mac-Prozesse des Simulators (App, `com.apple.WebKit.WebContent`, `backboardd` als Render-Server), Speicher mit `footprint -p`, Hauptthread-Blockaden mit `PERF_STALLS=1`. Simulatorwerte schwanken stark (Pre-main 240–790 ms); Aussagen daher nur aus mehreren Läufen und immer A/B im selben Simulator.
+
+**Ergebnisse (Mittel aus 5 Starts, gespeicherte Cookies vorhanden, ms nach `main`):**
+
+| Messung | vorher | nachher |
+|:--|--:|--:|
+| Cookie-Wiederherstellung in `didFinishLaunching` | 598–1420 | 9 |
+| erste Seite `didStartProvisionalNavigation` | 788 (min 652) | 421 (min 357) |
+| erste Seite commit | 1112 (min 934) | 794 (min 692) |
+| erste Seite paint | 1662 (min 1477) | 1358 (min 1207) |
+| erste Seite finish | 2185 (min 1777) | 1662 (min 1479) |
+| `backboardd` bei ausgeblendetem Glow (Leerlauf) | 0,8–0,9 % | < 0,2 % |
+
+**Optimierung 1: Cookies beim Start nicht abwarten** (`BrowserWebView restoreCookiesFromData:`). Früher wurde jeder `setCookie:completionHandler:` per `BrowserPumpRunLoopUntil` abgewartet; die Bestätigung kommt erst, wenn der Netzwerkprozess läuft, also hing `didFinishLaunching` und die erste Seite startete später. WebKit reiht die Cookies vor dem Netzwerkprozess-Start ein und setzt sie vor der ersten Anfrage. Geprüft mit einem lokalen Server: die erste Anfrage nach dem Start (WebKit-Cookiedatei vorher gelöscht) trägt das wiederhergestellte Cookie; Gegenprobe ohne gespeicherte Cookies kommt ohne Cookie.
+
+**Optimierung 2: Glow pausiert, wenn unsichtbar** (`BrowserGlowView animationsPaused`, `BrowserRemoteInputController`). Drehung (`spin`) und Atmen (`breathe`) liefen nach dem Lösen der Hervorhebung bei Alpha 0 weiter und kosteten den Render-Server dauerhaft Zeit. Jetzt `layer.speed = 0` nach dem Ausblenden (`pauseGlowIfHighlightHidden` im Abschluss der Ausblend-Animation von `clearSnapAnimated:` und `hideCursorForIdle`), Fortsetzen vor dem Einblenden (`showHighlightForTarget:animated:`, `revealCursorIfIdle`). Sichtbar ändert sich nichts; mit `anims` geprüft, dass die Drehung beim Ausblenden steht und beim Einblenden an derselben Stelle weiterläuft.
+
+**Untersucht, ohne Handlungsbedarf:**
+- Synchrones JavaScript (`stringByEvaluatingJavaScriptFromString:`, 3–7 Aufrufe je Seite, Wartezeit bis 890 ms): der Pump lässt den Run-Loop weiterlaufen; ein asynchroner Umbau änderte die Hauptthread-Blockaden nicht messbar (vorher 407–520 ms, nachher 369–523 ms über fünf Seiten) und wurde verworfen.
+- Schriftgrößen-Durchlauf (`updateTextFontSize`, auch bei 100 %): heise 6 ms, spiegel 20 ms, Wikipedia 1 ms je Lauf (5–6 Läufe je Laden). Überspringen bei 100 % würde das Festschreiben (`font-size !important`) und damit Verhalten ändern; offen gelassen.
+- Klickziele (`collect()`): heise 3 ms (407 Ziele), spiegel 6 ms (787), YouTube 0,6 ms; im Leerlauf 0–3 Aufrufe in 33 s.
+- Leerlauf-CPU: App 0,0–0,1 %, Seitenprozess 0,8–2,7 % (Seiteninhalt); `backboardd` 3,4 % auf about:blank kommt aus dem UIKit-Glas (`UISDFElementView`, System).
+- Zeiger: 0,1–0,3 ms je Bild ohne JavaScript (Abschnitt 8.8).
+- WebView-Anlage 29–89 ms (Datenspeicher und `WKWebView`-Init in WebKit); Werbeblocker aus dem Speicher 160–320 ms nach `main` bereit, vor Navigationsbeginn; Scriptlets asynchron; Intelligenz und whisper werden erst bei Gebrauch geladen.
+- Geschlossene Tabs: `BrowserWebView` wird freigegeben (`[Perf] BrowserWebView freigegeben`); Seitenprozesse hält WebKit als Cache, ihr Speicher sinkt.
+- Speicher: App 39–46 MB, Seitenprozess 130–590 MB je nach Seite.
+- Schatten ohne `shadowPath` (Bedienungsdialog, Menüschalter, Tab-Karten, Untertitel): nur in Dialogen sichtbar, nicht im Leerlauf oder beim Lesen; Seitenwechsel-Schnappschuss nur einmal je Navigation (`afterScreenUpdates:NO`).
+
+**Am Gerät messen.** Start mehrfach mit `DEVICECTL_CHILD_POINTER_SELFTEST=wait` und die `[Perf]`-Zeilen vergleichen; `DEVICECTL_CHILD_PERF_STALLS=1` für Blockaden beim Laden; Glow-Kosten mit Instruments (Core Animation/Energie) mit und ohne eingerastetes Ziel; Schriftgrößen-Durchlauf mit dem `js:`-Schritt auf großen Seiten.
 

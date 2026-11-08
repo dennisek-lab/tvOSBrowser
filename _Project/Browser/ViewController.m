@@ -11,6 +11,7 @@
 #import "BrowserCommandRouter.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserGuideViewController.h"
+#import "BrowserPerf.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
 #import "BrowserIntelligence.h"
@@ -95,6 +96,7 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    BrowserPerfLog(@"viewDidLoad Beginn");
     self.definesPresentationContext = YES;
     self.scrollViewAllowBounces = YES;
 
@@ -175,11 +177,14 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                                                  name:kBrowserSiriCommandNotification
                                                object:nil];
 
+    BrowserPerfLog(@"viewDidLoad Dienste angelegt");
     [self.tabCoordinator restoreInitialStateOrCreateFirstTab];
+    BrowserPerfLog(@"viewDidLoad Ende (Tab angelegt)");
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    BrowserPerfLog(@"viewDidAppear");
     [self.tabCoordinator webViewDidAppear];
     if (!self.displayedHintsOnLaunch) {
         // Neue Fassung: einmal „Was ist neu“, sonst wie gewohnt die Bedienungshilfe (abschaltbar).
@@ -375,6 +380,33 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                 }
                 if ([step isEqualToString:@"label"]) {
                     NSLog(@"[SelfTest] label %@", self.topMenuView.URLLabel.text);
+                    return;
+                }
+                if ([step isEqualToString:@"anims"]) {
+                    // Leistung: Ebenen mit laufenden Animationen im ganzen Fenster (auch unsichtbare), mit Sichtbarkeit.
+                    __block NSUInteger count = 0;
+                    __block void (^dumpLayer)(CALayer *, BOOL, NSString *);
+                    __block __weak void (^weakDumpLayer)(CALayer *, BOOL, NSString *);
+                    weakDumpLayer = dumpLayer = ^(CALayer *layer, BOOL visible, NSString *owner) {
+                        BOOL shown = visible && !layer.hidden && layer.opacity > 0.0;
+                        id delegate = layer.delegate;
+                        NSString *name = [delegate isKindOfClass:UIView.class] ? NSStringFromClass([delegate class]) : owner;
+                        NSArray<NSString *> *keys = layer.animationKeys;
+                        if (keys.count > 0) {
+                            count += 1;
+                            double rotation = [[layer.presentationLayer ?: layer valueForKeyPath:@"transform.rotation.z"] doubleValue];
+                            NSLog(@"[SelfTest] anim %@ (%@) sichtbar=%d keys=%@ speed=%.0f drehung=%.3f", name, NSStringFromClass(layer.class), shown,
+                                  [keys componentsJoinedByString:@","], layer.superlayer.speed * layer.speed, rotation);
+                        }
+                        for (CALayer *sublayer in layer.sublayers) {
+                            weakDumpLayer(sublayer, shown, name);
+                        }
+                        if (layer.mask != nil) {
+                            weakDumpLayer(layer.mask, shown, name);
+                        }
+                    };
+                    dumpLayer(self.view.window.layer, YES, @"Fenster");
+                    NSLog(@"[SelfTest] anims %lu Ebenen mit Animationen", (unsigned long)count);
                     return;
                 }
                 if ([step isEqualToString:@"views"]) {

@@ -145,6 +145,8 @@ static const CGFloat kGlideMaxDistance = 140.0;
 @property (nonatomic, strong) NSArray<NSNumber *> *ringWidths;
 - (void)setGlowColor:(UIColor *)color;
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius animated:(BOOL)animated;
+/// Hält Drehen und Atmen an (Ebenenzeit steht), solange die Hervorhebung unsichtbar ist; Fortsetzen ohne Sprung.
+@property (nonatomic) BOOL animationsPaused;
 @end
 
 @implementation BrowserGlowView
@@ -305,6 +307,28 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
 
 - (void)setGlowColor:(UIColor *)color {
     self.layer.shadowColor = color.CGColor;
+}
+
+/// Leistung: Die Endlosanimationen (Drehen mit Weichzeichner, Atmen) laufen sonst auch bei Alpha 0 weiter und
+/// lassen den Render-Server jedes Bild neu zusammensetzen. Angehalten wird über die Ebenenzeit (speed 0); beim
+/// Fortsetzen läuft alles an derselben Stelle weiter (docs/ERWEITERUNGEN.md Abschnitt 21).
+- (void)setAnimationsPaused:(BOOL)paused {
+    if (_animationsPaused == paused) {
+        return;
+    }
+    _animationsPaused = paused;
+    CALayer *layer = self.layer;
+    if (paused) {
+        CFTimeInterval now = [layer convertTime:CACurrentMediaTime() fromLayer:nil];
+        layer.speed = 0.0;
+        layer.timeOffset = now;
+    } else {
+        CFTimeInterval pausedAt = layer.timeOffset;
+        layer.speed = 1.0;
+        layer.timeOffset = 0.0;
+        layer.beginTime = 0.0;
+        layer.beginTime = [layer convertTime:CACurrentMediaTime() fromLayer:nil] - pausedAt;
+    }
 }
 
 /// Ebeneneigenschaft vom sichtbaren Stand auf den neuen Modellwert federn (wie die Fläche über BrowserMotion).
@@ -874,6 +898,9 @@ enum { kHistoryCount = 32 };
         glow.rainbow = rainbow;
     }
     BOOL springs = animated && highlight.alpha > 0.0;
+    if (!self.cursorIdleHidden) {
+        glow.animationsPaused = NO;
+    }
     glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
     [glow setShapeSize:frame.size cornerRadius:radius animated:springs];
     [self updateLensForFrame:frame radius:radius];
@@ -971,9 +998,18 @@ enum { kHistoryCount = 32 };
     self.snappedTarget = CGRectNull;
     self.highlightShownTarget = CGRectNull;
     if (self.highlightView.alpha > 0.0) {
-        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ self.highlightView.alpha = 0.0; }];
+        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ self.highlightView.alpha = 0.0; } completion:^(__unused BOOL finished) {
+            [self pauseGlowIfHighlightHidden];
+        }];
     }
     [self setCursorImageVisible:YES];
+}
+
+/// Nach dem Ausblenden der Hervorhebung den Glow anhalten (nur wenn sie nicht inzwischen wieder sichtbar ist).
+- (void)pauseGlowIfHighlightHidden {
+    if (self.highlightView.alpha <= 0.0) {
+        self.highlightGlowView.animationsPaused = YES;
+    }
 }
 
 - (void)pointerTargetsDidChange {
@@ -1002,6 +1038,8 @@ enum { kHistoryCount = 32 };
     [UIView animateWithDuration:0.35 animations:^{
         self.cursorView.alpha = 0.0;
         self.highlightView.alpha = 0.0;
+    } completion:^(__unused BOOL finished) {
+        [self pauseGlowIfHighlightHidden];
     }];
 }
 
@@ -1013,6 +1051,9 @@ enum { kHistoryCount = 32 };
     }
     self.cursorIdleHidden = NO;
     [self updatePointerAnimated:NO];
+    if (!CGRectIsNull(self.snappedTarget)) {
+        self.highlightGlowView.animationsPaused = NO;
+    }
     [UIView animateWithDuration:0.15 animations:^{
         if (!CGRectIsNull(self.snappedTarget)) {
             self.highlightView.alpha = 1.0;

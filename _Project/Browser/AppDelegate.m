@@ -9,6 +9,7 @@
 #import "AppDelegate.h"
 #import "BrowserDNSProxy.h"
 #import "BrowserFeasibilityProbe.h"
+#import "BrowserPerf.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebView.h"
 
@@ -23,12 +24,23 @@
     if (cookieData.length == 0) {
         return;
     }
-
+#if DEBUG
+    CFTimeInterval perfStart = CACurrentMediaTime();
+#endif
     [BrowserWebView restoreCookiesFromData:cookieData];
+#if DEBUG
+    BrowserPerfLog(@"Cookies wiederhergestellt: %lu Bytes, %.0f ms", (unsigned long)cookieData.length, (CACurrentMediaTime() - perfStart) * 1000.0);
+#endif
 }
 
 - (void)saveCookiesToDefaults {
+#if DEBUG
+    CFTimeInterval perfStart = CACurrentMediaTime();
+#endif
     NSData *cookieData = [BrowserWebView cookieDataRepresentation];
+#if DEBUG
+    BrowserPerfLog(@"Cookies gelesen: %lu Bytes, %.0f ms", (unsigned long)cookieData.length, (CACurrentMediaTime() - perfStart) * 1000.0);
+#endif
     if (cookieData == nil) {
         return;
     }
@@ -50,8 +62,18 @@
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"MobileMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
+#if DEBUG
+    BrowserPerfStartStallMonitorIfRequested();
+    CFTimeInterval perfStart = CACurrentMediaTime();
+#endif
     [[BrowserDNSProxy sharedProxy] startAndWaitWithTimeout:1.0];
+#if DEBUG
+    CFTimeInterval perfProxy = CACurrentMediaTime();
+#endif
     [self restoreCookiesFromDefaults];
+#if DEBUG
+    BrowserPerfLog(@"didFinishLaunching: DNS-Proxy %.0f ms, Cookies %.0f ms", (perfProxy - perfStart) * 1000.0, (CACurrentMediaTime() - perfProxy) * 1000.0);
+#endif
     [BrowserFeasibilityProbe runIfRequested];
 	return YES;
 }

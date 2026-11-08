@@ -8,9 +8,11 @@
 
 #import <UIKit/UIKit.h>
 #import "AppDelegate.h"
+#import "BrowserPerf.h"
 
 int main(int argc, char * argv[]) {
 	@autoreleasepool {
+	    BrowserPerfLog(@"main");
 	    return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
 	}
 }
