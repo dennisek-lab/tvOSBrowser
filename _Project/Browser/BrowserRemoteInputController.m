@@ -60,6 +60,17 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic) CFTimeInterval lastDirectSelectPressTimestamp;
 @property (nonatomic) BOOL playPauseLongPressFired;
 @property (nonatomic) BOOL playPauseSinglePending;
+@property (nonatomic) CFTimeInterval lastUpPressTimestamp;
+
+// Kreisgeste am Clickpad-Ring: Drehung der Bewegungsrichtung aufsummieren.
+@property (nonatomic) CGPoint rotationSegment;
+@property (nonatomic) CGFloat rotationLastHeading;
+@property (nonatomic) BOOL rotationHasHeading;
+@property (nonatomic) CGFloat rotationAccumulated;
+@property (nonatomic) CGFloat rotationStepAccumulated;
+@property (nonatomic) BOOL rotationMode;
+@property (nonatomic) CGPoint gestureStartPoint;
+@property (nonatomic) CGRect gestureStartTarget;
 
 @end
 
@@ -664,6 +675,13 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         switch (press.type) {
             case UIPressTypeUpArrow:
                 [self revealCursorIfIdle];
+                // Zweimal kurz hintereinander oben: in die Adressleiste.
+                if (CACurrentMediaTime() - self.lastUpPressTimestamp < 0.4) {
+                    self.lastUpPressTimestamp = 0;
+                    [self.host browserRemoteInputControllerOpenAddressBar];
+                    return YES;
+                }
+                self.lastUpPressTimestamp = CACurrentMediaTime();
                 [self scrollPageByFraction:-kPageScrollFraction];
                 return YES;
             case UIPressTypeDownArrow:
@@ -711,6 +729,9 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     }
     self.lastTouchLocation = CGPointMake(-1, -1);
     self.lastTouchTimestamp = 0;
+    [self resetRotation];
+    self.gestureStartPoint = self.freePoint;
+    self.gestureStartTarget = self.snappedTarget;
     // Erste Berührung nach einer Pause zeigt nur den Zeiger, diese Wischbewegung verschiebt ihn nicht.
     self.revealOnlyTouch = [self revealCursorIfIdle];
     return YES;
@@ -761,6 +782,10 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     }
     [self scheduleIdleHide];
 
+    if (!tabOverviewVisible && [self trackRotationWithDelta:CGPointMake(dx, dy)]) {
+        return YES;
+    }
+
     CGFloat gain = [self gainForSpeed:hypot(dx, dy) / dt];
     CGPoint next = CGPointMake(self.freePoint.x + dx * gain, self.freePoint.y + dy * gain);
 
@@ -791,6 +816,120 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     return YES;
 }
 
+#pragma mark - Kreisgeste (Clickpad-Ring)
+
+static const CGFloat kRotationSegmentLength = 14.0;
+static const CGFloat kRotationEnterAngle = 200.0 * M_PI / 180.0;
+static const CGFloat kRotationStepAngle = 60.0 * M_PI / 180.0;
+static const CGFloat kRotationMaxTurnPerSegment = 1.3;
+
+- (void)resetRotation {
+    self.rotationSegment = CGPointZero;
+    self.rotationHasHeading = NO;
+    self.rotationAccumulated = 0;
+    self.rotationStepAccumulated = 0;
+    self.rotationMode = NO;
+}
+
+/// Sammelt die Drehung der Wischrichtung. YES, solange die Bewegung als Kreisgeste gilt (Zeiger bleibt dann stehen).
+- (BOOL)trackRotationWithDelta:(CGPoint)delta {
+    CGPoint segment = CGPointMake(self.rotationSegment.x + delta.x, self.rotationSegment.y + delta.y);
+    if (hypot(segment.x, segment.y) < kRotationSegmentLength) {
+        self.rotationSegment = segment;
+        return self.rotationMode;
+    }
+    self.rotationSegment = CGPointZero;
+    CGFloat heading = atan2(segment.y, segment.x);
+    if (!self.rotationHasHeading) {
+        self.rotationHasHeading = YES;
+        self.rotationLastHeading = heading;
+        return self.rotationMode;
+    }
+    CGFloat turn = heading - self.rotationLastHeading;
+    while (turn > M_PI) { turn -= 2.0 * M_PI; }
+    while (turn < -M_PI) { turn += 2.0 * M_PI; }
+    self.rotationLastHeading = heading;
+
+    if (!self.rotationMode) {
+        // Knick oder Richtungswechsel: kein Kreis, neu zählen.
+        if (fabs(turn) > kRotationMaxTurnPerSegment || (self.rotationAccumulated != 0 && turn * self.rotationAccumulated < 0 && fabs(turn) > 0.35)) {
+            self.rotationAccumulated = 0;
+            return NO;
+        }
+        self.rotationAccumulated += turn;
+        if (fabs(self.rotationAccumulated) < kRotationEnterAngle) {
+            return NO;
+        }
+        // Kreis erkannt: Zeiger dahin zurück, wo die Geste begann, dann einen Schritt weiter.
+        self.rotationMode = YES;
+        self.rotationStepAccumulated = 0;
+        self.freePoint = self.gestureStartPoint;
+        self.snappedTarget = self.gestureStartTarget;
+        [self updatePointerAnimated:NO];
+        [self stepTargetBy:self.rotationAccumulated > 0 ? 1 : -1];
+        return YES;
+    }
+
+    self.rotationStepAccumulated += turn;
+    if (fabs(self.rotationStepAccumulated) >= kRotationStepAngle) {
+        NSInteger direction = self.rotationStepAccumulated > 0 ? 1 : -1;
+        self.rotationStepAccumulated -= direction * kRotationStepAngle;
+        [self stepTargetBy:direction];
+    }
+    return YES;
+}
+
+/// Zum nächsten (1) bzw. vorherigen (-1) Element in Leserichtung springen.
+- (void)stepTargetBy:(NSInteger)direction {
+    NSArray<NSValue *> *targets = [[self.host browserRemoteInputControllerPointerTargets] sortedArrayUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
+        CGRect ra = a.CGRectValue, rb = b.CGRectValue;
+        CGFloat rowA = round(CGRectGetMidY(ra) / 24.0), rowB = round(CGRectGetMidY(rb) / 24.0);
+        if (rowA != rowB) {
+            return rowA < rowB ? NSOrderedAscending : NSOrderedDescending;
+        }
+        return CGRectGetMidX(ra) < CGRectGetMidX(rb) ? NSOrderedAscending : NSOrderedDescending;
+    }];
+    if (targets.count == 0) {
+        return;
+    }
+    NSInteger index = NSNotFound;
+    CGFloat bestDistance = CGFLOAT_MAX;
+    CGPoint reference = CGRectIsNull(self.snappedTarget) ? self.freePoint
+        : CGPointMake(CGRectGetMidX(self.snappedTarget), CGRectGetMidY(self.snappedTarget));
+    for (NSUInteger i = 0; i < targets.count; i++) {
+        CGRect rect = targets[i].CGRectValue;
+        CGFloat distance = hypot(CGRectGetMidX(rect) - reference.x, CGRectGetMidY(rect) - reference.y);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            index = (NSInteger)i;
+        }
+    }
+    BOOL onTarget = !CGRectIsNull(self.snappedTarget) && bestDistance < 2.0;
+    NSInteger next = onTarget ? index + direction : (direction > 0 ? index : index);
+    next = MIN(MAX(next, 0), (NSInteger)targets.count - 1);
+    CGRect target = targets[next].CGRectValue;
+    self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    self.snappedTarget = CGRectNull;
+    [self updatePointerAnimated:YES];
+}
+
+#if DEBUG
+- (NSInteger)debugRunGestureWithDeltas:(NSArray<NSValue *> *)deltas {
+    [self resetRotation];
+    self.gestureStartPoint = self.freePoint;
+    self.gestureStartTarget = self.snappedTarget;
+    NSInteger rotatingSamples = 0;
+    for (NSValue *value in deltas) {
+        if ([self trackRotationWithDelta:value.CGPointValue]) {
+            rotatingSamples += 1;
+        }
+    }
+    BOOL mode = self.rotationMode;
+    [self resetRotation];
+    return mode ? rotatingSamples : 0;
+}
+#endif
+
 - (void)movePointerToPoint:(CGPoint)point {
     self.cursorIdleHidden = NO;
     self.freePoint = point;
@@ -800,6 +939,7 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
 
 - (void)handleTouchesEnded {
     self.lastTouchLocation = CGPointMake(-1, -1);
+    [self resetRotation];
     self.revealOnlyTouch = NO;
     [self scheduleIdleHide];
 }

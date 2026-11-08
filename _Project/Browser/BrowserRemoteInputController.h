@@ -26,6 +26,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Einrastziele für den magnetischen Zeiger (Seitenelemente und Knöpfe der oberen Leiste), in Koordinaten von rootView.
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets;
 - (void)browserRemoteInputControllerNavigateBack;
+/// Zweimal oben gedrückt: Adressleiste öffnen.
+- (void)browserRemoteInputControllerOpenAddressBar;
 - (void)browserRemoteInputControllerNavigateForward;
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
@@ -55,6 +57,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pointerTargetsDidChange;
 /// Setzt die Fingerposition des Zeigers direkt (Selbsttest, später Schnellmenü). Einrasten greift wie beim Wischen.
 - (void)movePointerToPoint:(CGPoint)point;
+/// Zum nächsten (1) bzw. vorherigen (-1) Element in Leserichtung springen (wie die Kreisgeste).
+- (void)stepTargetBy:(NSInteger)direction;
+#if DEBUG
+/// Testet die Kreiserkennung mit künstlichen Bewegungen. Rückgabe: Anzahl der Proben im Kreismodus (0 = kein Kreis).
+- (NSInteger)debugRunGestureWithDeltas:(NSArray<NSValue *> *)deltas;
+#endif
 - (void)setCursorModeEnabled:(BOOL)cursorModeEnabled;
 - (void)refreshInteractionState;
 

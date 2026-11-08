@@ -205,6 +205,32 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     });
                     return;
                 }
+                if ([step isEqualToString:@"gestures"]) {
+                    NSArray *(^circle)(CGFloat, CGFloat, CGFloat) = ^NSArray *(CGFloat turns, CGFloat sign, CGFloat radius) {
+                        NSMutableArray *deltas = [NSMutableArray array];
+                        NSInteger count = (NSInteger)(turns * 48);
+                        for (NSInteger i = 0; i < count; i++) {
+                            CGFloat a0 = sign * 2 * M_PI * i / 48.0, a1 = sign * 2 * M_PI * (i + 1) / 48.0;
+                            [deltas addObject:[NSValue valueWithCGPoint:CGPointMake(radius * (cos(a1) - cos(a0)), radius * (sin(a1) - sin(a0)))]];
+                        }
+                        return deltas;
+                    };
+                    NSMutableArray *line = [NSMutableArray array];
+                    for (NSInteger i = 0; i < 80; i++) {
+                        [line addObject:[NSValue valueWithCGPoint:CGPointMake(6.0, 2.5 * sin(i * 0.7))]];
+                    }
+                    NSLog(@"[SelfTest] gestures cw1.5=%ld ccw1=%ld line=%ld quarter=%ld",
+                          (long)[self.remoteInputController debugRunGestureWithDeltas:circle(1.5, 1, 60)],
+                          (long)[self.remoteInputController debugRunGestureWithDeltas:circle(1.0, -1, 60)],
+                          (long)[self.remoteInputController debugRunGestureWithDeltas:line],
+                          (long)[self.remoteInputController debugRunGestureWithDeltas:circle(0.25, 1, 200)]);
+                    return;
+                }
+                if ([step isEqualToString:@"next"] || [step isEqualToString:@"prev"]) {
+                    [self.remoteInputController stepTargetBy:[step isEqualToString:@"next"] ? 1 : -1];
+                    NSLog(@"[SelfTest] %@ cursor=%@", step, NSStringFromCGPoint(self.remoteInputController.cursorView.frame.origin));
+                    return;
+                }
                 if ([step isEqualToString:@"label"]) {
                     NSLog(@"[SelfTest] label %@", self.topMenuView.URLLabel.text);
                     return;
@@ -600,7 +626,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 - (void)showHintsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Bedienung"
-                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Suche (dann Siri-Taste halten und sprechen). Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
+                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad zweimal oben drücken: Adressleiste.\nAm Clickpad-Ring kreisen: von Element zu Element springen.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Suche (dann Siri-Taste halten und sprechen). Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     __weak typeof(self) weakSelf = self;
@@ -1057,6 +1083,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     if (self.webview.canGoBack) {
         [self.webview goBack];
     }
+}
+
+- (void)browserRemoteInputControllerOpenAddressBar {
+    [self showInputURLorSearchGoogle];
 }
 
 - (void)browserRemoteInputControllerNavigateForward {
