@@ -262,6 +262,11 @@ static CGFloat const kTopBarClassicVerticalInset = 8.0;
                                            selector:@selector(userDefaultsDidChange:)
                                                name:NSUserDefaultsDidChangeNotification
                                              object:nil];
+    // Änderungen aus einem anderen Prozess melden die Standardwerte nicht; beim Aktivieren deshalb erneut vergleichen.
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(userDefaultsDidChange:)
+                                               name:UISceneDidActivateNotification
+                                             object:nil];
 }
 
 - (void)dealloc {
