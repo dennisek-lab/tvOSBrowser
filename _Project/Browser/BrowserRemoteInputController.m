@@ -83,6 +83,48 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
 @end
 
+/// Leuchten rund um die Form (wie die gewählte Karte der Tab-Übersicht): weicher Schein ohne Versatz,
+/// innen ausgespart, damit er nicht durch die Glasfläche scheint. Nur Formänderung rechnet neu, Farbe ist billig.
+@interface BrowserGlowView : UIView
+@property (nonatomic, strong) CAShapeLayer *maskLayer;
+- (void)setGlowColor:(UIColor *)color;
+- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius;
+@end
+
+@implementation BrowserGlowView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.userInteractionEnabled = NO;
+        self.backgroundColor = UIColor.clearColor;
+        self.layer.shadowColor = [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0].CGColor;
+        self.layer.shadowOffset = CGSizeZero;
+        self.layer.shadowOpacity = 0.95;
+        self.layer.shadowRadius = 17.0;
+        _maskLayer = [CAShapeLayer layer];
+        _maskLayer.fillRule = kCAFillRuleEvenOdd;
+        self.layer.mask = _maskLayer;
+    }
+    return self;
+}
+
+- (void)setGlowColor:(UIColor *)color {
+    self.layer.shadowColor = color.CGColor;
+}
+
+- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius {
+    CGRect shape = CGRectMake(0, 0, size.width, size.height);
+    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius];
+    self.layer.shadowPath = path.CGPath;
+    // Maske: großes Rechteck minus Form (gerade-ungerade Füllung) = nur außen.
+    UIBezierPath *outside = [UIBezierPath bezierPathWithRect:CGRectInset(shape, -60, -60)];
+    [outside appendPath:[UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:radius]];
+    self.maskLayer.path = outside.CGPath;
+}
+
+@end
+
 @interface BrowserRemoteInputController ()
 
 @property (nonatomic, weak) id<BrowserRemoteInputControllerHost> host;
@@ -90,6 +132,13 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic, readwrite) UIImageView *cursorView;
 @property (nonatomic) UIView *highlightView;
 @property (nonatomic) UIView *highlightSurfaceView;
+@property (nonatomic) BrowserGlowView *highlightGlowView;
+/// Linse: Momentaufnahme der Seite unter der Hervorhebung, in der Mitte leicht, am Rand stärker vergrößert.
+@property (nonatomic) UIView *lensContainer;
+@property (nonatomic) UIView *lensCenterSnapshot;
+@property (nonatomic) UIView *lensEdgeSnapshot;
+@property (nonatomic) CGRect lensRect;
+@property (nonatomic) CAShapeLayer *lensSeam;
 @property (nonatomic, readwrite) UIPanGestureRecognizer *manualScrollPanRecognizer;
 @property (nonatomic, readwrite) UITapGestureRecognizer *playPauseDoubleTapRecognizer;
 @property (nonatomic, readwrite, getter=isCursorModeEnabled) BOOL cursorModeEnabled;
@@ -160,10 +209,16 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         // Auswahl im Glas-Look: helle, halbdurchsichtige Fläche mit Glanz oben, Lichtkante und weichem Schatten.
         // Bewusst ohne echte Glaslinse – die bricht den Text darunter und kostet mehr Leistung.
         _highlightView.backgroundColor = UIColor.clearColor;
-        _highlightView.layer.shadowColor = UIColor.blackColor.CGColor;
-        _highlightView.layer.shadowOpacity = 0.28;
-        _highlightView.layer.shadowRadius = 14.0;
-        _highlightView.layer.shadowOffset = CGSizeMake(0.0, 6.0);
+        // Statt Schatten ein Leuchten außen herum (Farbe je Ziel, sonst Systemblau), s. BrowserGlowView.
+        BrowserGlowView *glow = [[BrowserGlowView alloc] initWithFrame:CGRectZero];
+        [_highlightView addSubview:glow];
+        _highlightGlowView = glow;
+        _lensContainer = [[UIView alloc] initWithFrame:CGRectZero];
+        _lensContainer.userInteractionEnabled = NO;
+        _lensContainer.clipsToBounds = YES;
+        _lensContainer.layer.cornerCurve = kCACornerCurveContinuous;
+        _lensRect = CGRectNull;
+        [_highlightView addSubview:_lensContainer];
         UIView *surface = [[BrowserGlassHighlightSurfaceView alloc] initWithFrame:CGRectZero];
         surface.userInteractionEnabled = NO;
         surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -354,11 +409,19 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     CGRect frame = CGRectInset(target, -6.0, -6.0);
     CGFloat radius = MIN(16.0, CGRectGetHeight(frame) / 2.0);
     UIView *surface = self.highlightSurfaceView;
+    BrowserGlowView *glow = self.highlightGlowView;
+    UIColor *glowColor = nil;
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerGlowColorForTarget:)]) {
+        glowColor = [self.host browserRemoteInputControllerGlowColorForTarget:target];
+    }
+    [glow setGlowColor:glowColor ?: [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0]];
+    glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    [glow setShapeSize:frame.size cornerRadius:radius];
+    [self updateLensForFrame:frame radius:radius];
     void (^apply)(void) = ^{
         highlight.frame = frame;
         highlight.layer.cornerRadius = radius;
         surface.layer.cornerRadius = radius;
-        highlight.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, frame.size.width, frame.size.height) cornerRadius:radius].CGPath;
         highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
     };
     if (animated && highlight.alpha > 0.0) {
@@ -372,10 +435,75 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
             highlight.frame = frame;
             highlight.layer.cornerRadius = radius;
             surface.layer.cornerRadius = radius;
-            highlight.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, frame.size.width, frame.size.height) cornerRadius:radius].CGPath;
-        }];
+            }];
         [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0; }];
     }
+}
+
+/// Linse nur bei neuer Lage oder Größe neu aufnehmen (nicht pro Frame): Seite unter dem Ziel als Snapshot,
+/// Mitte ~1,04-fach (Text bleibt lesbar), schmales Randband ~1,13-fach, dazu ein feiner heller Saum am Übergang.
+- (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius {
+    UIView *container = self.lensContainer;
+    UIView *source = nil;
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)]) {
+        source = [self.host browserRemoteInputControllerLensSourceView];
+    }
+    CGRect inSource = source != nil ? [source convertRect:frame fromView:self.rootView] : CGRectNull;
+    BOOL usable = source != nil && source.window != nil && CGRectContainsRect(CGRectInset(source.bounds, -2, -2), inSource)
+        && CGRectGetWidth(frame) > 20.0 && CGRectGetHeight(frame) > 12.0;
+    if (!usable) {
+        container.hidden = YES;
+        self.lensRect = CGRectNull;
+        return;
+    }
+    container.hidden = NO;
+    container.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    container.layer.cornerRadius = radius;
+    if (CGRectEqualToRect(self.lensRect, frame) && self.lensCenterSnapshot != nil) {
+        return;
+    }
+    self.lensRect = frame;
+    // Snapshot der WebView (liegt unter der Hervorhebung, enthält sie also nicht).
+    [self.lensCenterSnapshot removeFromSuperview];
+    [self.lensEdgeSnapshot removeFromSuperview];
+    CGRect bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    CGFloat band = MIN(6.0, CGRectGetHeight(bounds) / 4.0);
+    UIView *center = [source resizableSnapshotViewFromRect:inSource afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
+    UIView *edge = [source resizableSnapshotViewFromRect:inSource afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
+    if (center == nil || edge == nil) {
+        container.hidden = YES;
+        self.lensRect = CGRectNull;
+        return;
+    }
+    center.frame = bounds;
+    edge.frame = bounds;
+    // Rand: kräftigere Vergrößerung, nur im Ring sichtbar -> sichtbarer Sprung wie bei der Kante einer Glaslinse.
+    edge.transform = CGAffineTransformMakeScale(1.13, 1.13);
+    CAShapeLayer *ring = [CAShapeLayer layer];
+    ring.frame = bounds;
+    ring.fillRule = kCAFillRuleEvenOdd;
+    UIBezierPath *ringPath = [UIBezierPath bezierPathWithRoundedRect:bounds cornerRadius:radius];
+    [ringPath appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectInset(bounds, band, band) cornerRadius:MAX(2.0, radius - band)]];
+    ring.path = ringPath.CGPath;
+    UIView *edgeClip = [[UIView alloc] initWithFrame:bounds];
+    edgeClip.userInteractionEnabled = NO;
+    edgeClip.layer.mask = ring;
+    [edgeClip addSubview:edge];
+    center.transform = CGAffineTransformMakeScale(1.04, 1.04);
+    [container addSubview:center];
+    [container addSubview:edgeClip];
+    // Feiner heller Saum an der Innenkante des Rings.
+    CAShapeLayer *seam = [CAShapeLayer layer];
+    seam.frame = bounds;
+    seam.fillColor = UIColor.clearColor.CGColor;
+    seam.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.35].CGColor;
+    seam.lineWidth = 1.0;
+    seam.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(bounds, band, band) cornerRadius:MAX(2.0, radius - band)].CGPath;
+    [self.lensSeam removeFromSuperlayer];
+    [container.layer addSublayer:seam];
+    self.lensSeam = seam;
+    self.lensCenterSnapshot = center;
+    self.lensEdgeSnapshot = edgeClip;
 }
 
 - (void)clearSnapAnimated:(BOOL)animated {

@@ -1201,6 +1201,29 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self showAdvancedMenu];
 }
 
+- (UIView *)browserRemoteInputControllerLensSourceView {
+    return self.webview;
+}
+
+- (UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil || webView.window == nil) {
+        return nil;
+    }
+    CGPoint center = [webView convertPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) fromView:self.view];
+    if (!CGRectContainsPoint(webView.bounds, center)) {
+        return nil;
+    }
+    if ([self topBarAcceptsPointer]) {
+        CGRect bar = self.topMenuView.compact ? [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:self.view]
+                                              : [self.topMenuView.superview convertRect:self.topMenuView.frame toView:self.view];
+        if (CGRectContainsPoint(CGRectInset(bar, -20, -20), CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)))) {
+            return nil;
+        }
+    }
+    return [webView glowColorAtPoint:center];
+}
+
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
     BrowserWebView *webView = self.webview;
