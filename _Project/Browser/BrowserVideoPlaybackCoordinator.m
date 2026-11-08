@@ -144,7 +144,9 @@ typedef NS_ENUM(NSInteger, BrowserPageVideoTrigger) {
         NSString *title = [videoInfo[@"title"] isKindOfClass:[NSString class]] ? videoInfo[@"title"] : self.host.browserCurrentPageTitle;
         [self presentNativeVideoPlayerForURL:videoURL title:title];
     } else {
-        [self presentUnsupportedNativeVideoAlertForVideoInfo:videoInfo ?: @{}];
+        // Eigener Player der Seite (blob:/MSE, DRM …): Der Aktivierungsklick oben hat ihn schon gestartet. Kein
+        // Hinweisdialog, sonst verdeckt er das Video, das gerade in der Seite anläuft.
+        NSLog(@"[NativeVideoPlayer] Vollbild-Videowiedergabe: keine Adresse, Video bleibt in der Seite (%@)", videoInfo[@"src"] ?: @"");
     }
     return YES;
 }
@@ -231,6 +233,8 @@ static NSString *BrowserPageVideoProbeScript(NSInteger bid, CGPoint point) {
         "var vs=[].slice.call(document.querySelectorAll('video')), v=null, i;"
         "if (bid>0 && window.__browserVideoById) { v=window.__browserVideoById(bid); }"
         "if (!v && x>=0) { for (i=0;i<vs.length;i++){ var r=vs[i].getBoundingClientRect(); if (x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom) { v=vs[i]; } } }"
+        // Zeiger auf einem Player in einem iframe (Markierung der Player-Brücke): dessen Video, nicht eines der Hauptseite.
+        "if (!v && x>=0) { var fe=document.elementFromPoint(x,y); if (fe && /^I?FRAME$/.test(fe.tagName) && fe.hasAttribute('data-browser-player')) { return ''; } }"
         "if (!v) { for (i=0;i<vs.length;i++){ if (!vs[i].paused && !vs[i].ended) { v=vs[i]; break; } } }"
         "if (!v && window.__browserActiveVideo && window.__browserActiveVideo.isConnected) { v=window.__browserActiveVideo; }"
         "if (!v) { var best=0; for (i=0;i<vs.length;i++){ var q=vs[i].getBoundingClientRect(); var a=q.width*q.height; if (a>best) { best=a; v=vs[i]; } } }"
@@ -731,15 +735,26 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                                                                 webView:webView];
     player.initialPlaybackTime = time;
     __weak typeof(self) weakSelf = self;
+    __weak BrowserWebView *weakWebView = webView;
+    __block BOOL failed = NO;
     player.dismissHandler = ^(NSTimeInterval playbackTime) {
         weakSelf.activePlayer = nil;
         weakSelf.handoverInProgress = NO;
-        NSLog(@"[NativeVideoPlayer] Frame-Video geschlossen bei %.1f (Frame bleibt pausiert)", playbackTime);
+        // Position über die Player-Brücke zurück in den Frame (bleibt pausiert, wie beim Hauptframe).
+        if (!failed && isfinite(playbackTime) && frameString.length > 0) {
+            [weakWebView sendVideoCommand:[NSString stringWithFormat:@"seekto:%.2f", playbackTime] toFrameURL:frameString];
+        }
+        NSLog(@"[NativeVideoPlayer] Frame-Video geschlossen bei %.1f (Position zurück in den Frame, bleibt pausiert)", playbackTime);
     };
     player.failureHandler = ^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             typeof(self) innerSelf = weakSelf;
-            NSLog(@"[NativeVideoPlayer] Frame-Video fehlgeschlagen: %@", error);
+            failed = YES;
+            NSLog(@"[NativeVideoPlayer] Frame-Video fehlgeschlagen, spielt im Frame weiter: %@", error);
+            // pauseAllMediaPlayback hat den Frame angehalten: dort weiterspielen statt stehen zu bleiben.
+            if (frameString.length > 0) {
+                [weakWebView sendVideoCommand:@"play" toFrameURL:frameString];
+            }
             BrowserNativeVideoPlayerViewController *failedPlayer = innerSelf.activePlayer;
             innerSelf.activePlayer = nil;
             innerSelf.handoverInProgress = NO;

@@ -65,6 +65,8 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 @property (nonatomic) BOOL initialSeekInFlight;
 @property (nonatomic) BOOL didEndSession;
 @property (nonatomic) BOOL didReportFailure;
+/// Hat die Wiedergabe je begonnen (timeControlStatus „playing“)? Sonst greift der Startwächter.
+@property (nonatomic) BOOL didStartPlayback;
 @property (nonatomic) BOOL didSelectStreamSubtitles;
 
 @property (nonatomic, readwrite, getter=isPictureInPictureActive) BOOL pictureInPictureActive;
@@ -199,10 +201,12 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
         // Erst an die Position der Seite springen, dann spielen (sonst kurz ab 0).
         [self log:@"viewDidAppear, warte auf Startposition %.1f", self.initialPlaybackTime];
         self.playWhenReady = YES;
+        [self armStartWatchdog];
         return;
     }
     [self log:@"viewDidAppear play"];
     [self.player play];
+    [self armStartWatchdog];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -240,6 +244,33 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 - (void)dealloc {
     [self detachObservers];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - Startwächter
+
+/// Startet die Wiedergabe nicht (Server verweigert AVPlayer die Segmente, Stream hängt beim Puffern, Status bleibt
+/// „unknown“), meldet AVKit oft keinen Fehler, und der Nutzer säße vor einem schwarzen Bild, während das Video der
+/// Seite angehalten wartet. Nach `kBrowserNativePlayerStartTimeout` ohne Wiedergabe gilt die Übergabe als
+/// gescheitert: `failureHandler` schließt den Player und lässt das Video in der Seite weiterlaufen.
+static const NSTimeInterval kBrowserNativePlayerStartTimeout = 15.0;
+
+- (void)armStartWatchdog {
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBrowserNativePlayerStartTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf == nil || strongSelf.didStartPlayback || strongSelf.didEndSession || strongSelf.didReportFailure ||
+            strongSelf.pictureInPictureActive) {
+            return;
+        }
+        AVPlayerItem *item = strongSelf.player.currentItem;
+        [strongSelf log:@"Startwächter: nach %.0f s keine Wiedergabe (status=%ld, wartet: %@), zurück zur Seite",
+         kBrowserNativePlayerStartTimeout, (long)item.status, strongSelf.player.reasonForWaitingToPlay ?: @"-"];
+        strongSelf.didReportFailure = YES;
+        if (strongSelf.failureHandler != nil) {
+            strongSelf.failureHandler([NSError errorWithDomain:@"BrowserNativeVideoPlayer" code:-1
+                                                      userInfo:@{NSLocalizedDescriptionKey: @"Wiedergabe startet nicht"}]);
+        }
+    });
 }
 
 #pragma mark - Startposition
@@ -823,6 +854,7 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
                 break;
             case AVPlayerTimeControlStatusPlaying:
                 status = @"playing";
+                self.didStartPlayback = YES;
                 break;
         }
         [self log:@"timeControlStatus=%@ reason=%@", status, self.player.reasonForWaitingToPlay ?: @""];
