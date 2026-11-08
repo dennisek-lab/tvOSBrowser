@@ -19,31 +19,53 @@ static NSString *BrowserMediaSessionHookScript(void) {
     "})();";
 }
 
-/// Läuft vor den Seitenskripten: merkt sich HLS-/DASH-Manifeste (für MSE-Videos mit blob:-Adresse),
-/// fängt Vollbildwünsche für Videos ab und meldet den Start sichtbarer Videos an die App.
-/// Meldungen gehen an den Rückkanal `browserVideo`: {type:'fullscreen'|'playing', bid:Nummer}.
-static NSString *BrowserVideoHookScript(void) {
-    return @"(function(){"
-    "if (window.__browserVideoHook) { return; }"
-    "window.__browserVideoHook=1;"
-    "var man=window.__browserManifests={hls:'',dash:'',all:[]};"
-    "var nextId=1;"
+/// Gemeinsamer Teil von Haupt- und Frame-Skript: beobachtet `fetch`/`XMLHttpRequest` und merkt HLS- und
+/// DASH-Manifeste in `window.__browserManifests` ({hls, dash, all}). Erkannt an der Adresse (`.m3u8`, `.mpd`,
+/// `format=m3u8|mpd`, `/manifest/dash/`) oder am Content-Type der Antwort (`mpegurl`, `dash+xml`).
+/// Neue Manifeste gehen über den Rückkanal: {type:'manifest', kind:'hls'|'dash', url, top:1|0}.
+static NSString *BrowserManifestObserverJS(void) {
+    return @"var man=window.__browserManifests={hls:'',dash:'',all:[]};"
     "function post(m){ try { webkit.messageHandlers.browserVideo.postMessage(m); } catch(e) {} }"
-    "function note(u){"
+    "function dir(u){ return u.split('#')[0].split('?')[0].replace(/[^\\/]*$/,''); }"
+    "function kindOf(a,ct){"
+        "var p=a.split('#')[0].split('?')[0].toLowerCase(), q=a.toLowerCase(); ct=(ct||'').toLowerCase();"
+        "if (/\\.m3u8$/.test(p) || ct.indexOf('mpegurl')>=0 || /[?&]format=m3u8/.test(q)) { return 'hls'; }"
+        "if (/\\.mpd$/.test(p) || ct.indexOf('dash+xml')>=0 || /[?&]format=mpd/.test(q) || /\\/manifest\\/dash\\//.test(p)) { return 'dash'; }"
+        "return '';"
+    "}"
+    "function note(u,ct){"
         "try {"
             "if (!u) { return; }"
             "var a=new URL(String((u&&u.url)||u),location.href).href;"
-            "var p=a.split('#')[0].split('?')[0].toLowerCase();"
-            "if (/\\.m3u8$/.test(p)) {"
-                "if (man.all.indexOf(a)<0) { man.all.push(a); if (man.all.length>20) { man.all.shift(); } }"
-                // Hauptplaylist (alle Qualitäten) bevorzugen; Teil-Playlists tragen meist chunk/media/index_N im Namen.
+            "if (!/^https?:/.test(a)) { return; }"
+            "var k=kindOf(a,ct); if (!k || man.all.indexOf(a)>=0) { return; }"
+            "man.all.push(a); if (man.all.length>20) { man.all.shift(); }"
+            "if (k==='hls') {"
+                // Hauptplaylist (alle Qualitäten) behalten; Teil-Playlists tragen meist chunk/media/index_N im
+                // Namen oder liegen unter dem Ordner der Hauptplaylist. Eine Playlist anderswo = neuer Stream.
+                "var p=a.split('#')[0].split('?')[0].toLowerCase();"
                 "var variant=/(chunk|media_|segment|audio|video_|_\\d{3,4}p?|\\d{3,4}p)[^\\/]*$/.test(p);"
-                "if (!variant || !man.hls) { man.hls=a; }"
-            "} else if (/\\.mpd$/.test(p)) { man.dash=a; }"
+                "if (!man.hls || (!variant && dir(a).indexOf(dir(man.hls))!==0)) { man.hls=a; post({type:'manifest',kind:'hls',url:a,top:window===top?1:0}); }"
+            "} else if (man.dash!==a) { man.dash=a; post({type:'manifest',kind:'dash',url:a,top:window===top?1:0}); }"
         "} catch(e) {}"
     "}"
-    "try { var of=window.fetch; if (of) { window.fetch=function(i){ note(i); return of.apply(this,arguments); }; } } catch(e) {}"
-    "try { var oo=XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open=function(m,u){ note(u); return oo.apply(this,arguments); }; } catch(e) {}"
+    "try { var of=window.fetch; if (of) { window.fetch=function(i){ note(i); var r=of.apply(this,arguments);"
+        "try { r.then(function(x){ try { note(x.url, x.headers.get('content-type')); } catch(e) {} }, function(){}); } catch(e) {}"
+        "return r; }; } } catch(e) {}"
+    "try { var oo=XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open=function(m,u){ note(u);"
+        "try { this.addEventListener('load',function(){ try { note(this.responseURL, this.getResponseHeader('content-type')); } catch(e) {} }); } catch(e) {}"
+        "return oo.apply(this,arguments); }; } catch(e) {}";
+}
+
+/// Läuft vor den Seitenskripten (Hauptframe): merkt sich HLS-/DASH-Manifeste (für MSE-Videos mit blob:-Adresse),
+/// fängt Vollbildwünsche für Videos ab und meldet den Start sichtbarer Videos an die App.
+/// Meldungen gehen an den Rückkanal `browserVideo`: {type:'fullscreen'|'playing', bid:Nummer} und 'manifest' (siehe oben).
+static NSString *BrowserVideoHookScript(void) {
+    return [NSString stringWithFormat:@"(function(){"
+    "if (window.__browserVideoHook) { return; }"
+    "window.__browserVideoHook=1;"
+    "%@"
+    "var nextId=1;"
     "function bid(v){ if (!v.__bid) { v.__bid=nextId++; } return v.__bid; }"
     "window.__browserVideoById=function(id){ var vs=document.querySelectorAll('video'); for (var i=0;i<vs.length;i++){ if (vs[i].__bid===id) { return vs[i]; } } return null; };"
     "function videoOf(el){ if (!el) { return null; } if (el.tagName==='VIDEO') { return el; } if (el===document.documentElement||el===document.body||!el.querySelector) { return null; } return el.querySelector('video'); }"
@@ -67,7 +89,33 @@ static NSString *BrowserVideoHookScript(void) {
         "v.__bnoauto=true;"
         "post({type:'playing',bid:bid(v)});"
     "},true);"
-    "})();";
+    "})();", BrowserManifestObserverJS()];
+}
+
+/// Läuft in eingebetteten Frames (nicht im Hauptframe): Manifeste wie oben, dazu Videos in Frames
+/// (eingebettete Player). Meldet {type:'framevideo'|'framefullscreen', src, t, paused, hls, dash}.
+/// Kein automatisches Öffnen beim Abspielen (Werbung läuft oft in Frames), nur auf Vollbildwunsch oder per Menü.
+static NSString *BrowserFrameVideoScript(void) {
+    return [NSString stringWithFormat:@"(function(){"
+    "if (window===top || window.__browserFrameVideoHook) { return; }"
+    "window.__browserFrameVideoHook=1;"
+    "%@"
+    "function videoOf(el){ if (!el) { return null; } if (el.tagName==='VIDEO') { return el; } if (!el.querySelector) { return null; } return el.querySelector('video'); }"
+    "function info(type,v){ var s=v.currentSrc||''; return {type:type,src:/^https?:/.test(s)?s:'',t:v.currentTime||0,paused:v.paused?1:0,hls:man.hls,dash:man.dash,frame:location.href}; }"
+    "function big(v){ return v.clientWidth>=200 && v.clientHeight>=112 && !(v.muted && (v.loop || v.autoplay)); }"
+    "['playing','pause'].forEach(function(n){ document.addEventListener(n,function(e){ var v=e.target; if (v && v.tagName==='VIDEO' && big(v)) { post(info('framevideo',v)); } },true); });"
+    "function intercept(el){ var v=videoOf(el); if (!v) { return false; } post(info('framefullscreen',v)); return true; }"
+    "try {"
+        "['webkitEnterFullscreen','webkitEnterFullScreen'].forEach(function(n){"
+            "var o=HTMLVideoElement.prototype[n]; if (!o) { return; }"
+            "HTMLVideoElement.prototype[n]=function(){ if (intercept(this)) { return; } return o.apply(this,arguments); };"
+        "});"
+        "['requestFullscreen','webkitRequestFullscreen','webkitRequestFullScreen'].forEach(function(n){"
+            "var o=Element.prototype[n]; if (!o) { return; }"
+            "Element.prototype[n]=function(){ if (intercept(this)) { return Promise.resolve(); } return o.apply(this,arguments); };"
+        "});"
+    "} catch(e) {}"
+    "})();", BrowserManifestObserverJS()];
 }
 
 static NSString *BrowserClickTargetScript(void) {
@@ -308,6 +356,12 @@ static NSString *BrowserClickTargetScript(void) {
     videoHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(videoHook, scriptInit, BrowserVideoHookScript(), 0, YES);
     if (videoHook != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, videoHook);
+    }
+    // Eingebettete Frames (forMainFrameOnly NO; das Skript selbst überspringt den Hauptframe).
+    id frameHook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    frameHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(frameHook, scriptInit, BrowserFrameVideoScript(), 0, NO);
+    if (frameHook != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, frameHook);
     }
     id hook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
     // injectionTime 0 = WKUserScriptInjectionTimeAtDocumentStart.

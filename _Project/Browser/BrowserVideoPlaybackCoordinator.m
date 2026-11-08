@@ -16,7 +16,14 @@ static BOOL const kBrowserYouTubeNativeExtractionEnabled = NO;
 @property (nonatomic) BrowserYouTubeExtractor *youTubeExtractor;
 /// Läuft gerade eine Übergabe an den nativen Player (Skriptabfrage oder Player offen)?
 @property (nonatomic) BOOL handoverInProgress;
-@property (nonatomic, weak) BrowserNativeVideoPlayerViewController *activePlayer;
+/// Stark gehalten: im Bild-in-Bild hängt der Player nicht mehr in der Ansichtshierarchie.
+@property (nonatomic, nullable) BrowserNativeVideoPlayerViewController *activePlayer;
+/// Vom Seitenskript gemeldete Manifeste und Frame-Videos (Rückkanal `browserVideo`), gültig für `reportedPageURL`.
+@property (nonatomic, copy, nullable) NSString *reportedPageURL;
+@property (nonatomic, copy, nullable) NSString *reportedHLS;
+@property (nonatomic, copy, nullable) NSString *reportedDASH;
+@property (nonatomic, copy, nullable) NSDictionary *frameVideo;
+@property (nonatomic, nullable) NSDate *frameVideoDate;
 
 @end
 
@@ -200,6 +207,12 @@ typedef NS_ENUM(NSInteger, BrowserPageVideoTrigger) {
     }
 
     [self.host.browserWebView pauseAllMediaPlayback];
+    if (requestHeaders == nil) {
+        requestHeaders = [self requestHeadersForPageURL:[self pageURLOfWebView:self.host.browserWebView] userAgent:@""];
+    }
+    if (cookies == nil) {
+        cookies = [self webViewCookiesForURL:URL];
+    }
 
     BrowserNativeVideoPlayerViewController *playerViewController = [[BrowserNativeVideoPlayerViewController alloc] initWithURL:URL
                                                                                                                           title:title
@@ -211,7 +224,8 @@ typedef NS_ENUM(NSInteger, BrowserPageVideoTrigger) {
 #pragma mark - Übergabe von Seitenvideos an den nativen Player
 
 /// Wählt das Video (Kennung, Zeigerposition, sonst laufendes, aktives, größtes), merkt es sich als
-/// `window.__browserHandoverVideo` und liefert JSON mit Adressen, Position und Seitenangaben. Pausiert nicht.
+/// `window.__browserHandoverVideo` und liefert JSON mit Adressen, Position, Untertitelspuren und Seitenangaben
+/// (Titel, Vorschaubild, Beschreibung). Pausiert nicht.
 static NSString *BrowserPageVideoProbeScript(NSInteger bid, CGPoint point) {
     return [NSString stringWithFormat:@"(function(bid,x,y){"
         "var vs=[].slice.call(document.querySelectorAll('video')), v=null, i;"
@@ -223,22 +237,72 @@ static NSString *BrowserPageVideoProbeScript(NSInteger bid, CGPoint point) {
         "if (!v) { return ''; }"
         "window.__browserHandoverVideo=v; v.__bnoauto=true;"
         "var srcs=[], ss=v.querySelectorAll('source'); for (i=0;i<ss.length;i++){ if (ss[i].src) { srcs.push(ss[i].src); } }"
+        "var tracks=[], te=v.querySelectorAll('track'); for (i=0;i<te.length;i++){ var t=te[i]; var k=(t.kind||'subtitles').toLowerCase();"
+            "if (t.src && (k==='subtitles'||k==='captions')) { tracks.push({src:t.src,lang:t.srclang||'',label:t.label||'',on:!!(t.default||(t.track&&t.track.mode==='showing'))}); } }"
+        "var showing=''; try { for (i=0;i<v.textTracks.length;i++){ var tt=v.textTracks[i]; if (tt.mode==='showing' && (tt.kind==='subtitles'||tt.kind==='captions')) { showing=tt.language||'?'; } } } catch(e) {}"
+        "function mc(s){ var m=document.querySelector(s); return (m&&m.content)||''; }"
+        "var art=''; try { var md=navigator.mediaSession&&navigator.mediaSession.metadata; if (md&&md.artwork&&md.artwork.length) { art=md.artwork[md.artwork.length-1].src||''; } } catch(e) {}"
+        "if (!art) { art=v.poster||mc('meta[property=\"og:image\"]')||mc('meta[name=\"twitter:image\"]'); }"
+        "try { if (art) { art=new URL(art,location.href).href; } } catch(e) {}"
         "var m=window.__browserManifests||{};"
         "return JSON.stringify({cs:v.currentSrc||'',src:v.src||'',sources:srcs,hls:m.hls||'',hlsAll:m.all||[],dash:m.dash||'',"
-            "t:v.currentTime||0,ua:navigator.userAgent||'',page:location.href,title:document.title||'',paused:v.paused});"
+            "t:v.currentTime||0,dur:isFinite(v.duration)?v.duration:-1,ua:navigator.userAgent||'',page:location.href,title:document.title||'',paused:v.paused,"
+            "tracks:tracks,showing:showing,art:art,desc:mc('meta[property=\"og:description\"]')||mc('meta[name=\"description\"]')});"
         "})(%ld,%f,%f);", (long)bid, point.x, point.y];
 }
 
-static NSString * const kBrowserHandoverPauseScript = @"(function(){ var v=window.__browserHandoverVideo; if (!v) { return -1; } try { v.pause(); } catch(e) {} return v.currentTime||0; })();";
-static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=window.__browserHandoverVideo; if (v) { var p=v.play(); if (p && p.catch) { p.catch(function(){}); } } })();";
+/// Pausiert das gewählte Video und hält es angehalten, solange der native Player läuft (manche Seiten
+/// starten es sonst selbst wieder). Liefert die Position.
+static NSString * const kBrowserHandoverPauseScript = @"(function(){ var v=window.__browserHandoverVideo; if (!v) { return -1; }"
+    " try { v.pause(); } catch(e) {}"
+    " if (!v.__bhold) { v.__bhold=function(){ if (v.__bholding) { try { v.pause(); } catch(e) {} } }; v.addEventListener('play', v.__bhold, true); }"
+    " v.__bholding=true; return v.currentTime||0; })();";
+static NSString * const kBrowserHandoverReleaseJS = @"v.__bholding=false;";
+static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=window.__browserHandoverVideo; if (v) { v.__bholding=false; var p=v.play(); if (p && p.catch) { p.catch(function(){}); } } })();";
 
 - (BOOL)pageHasVideo {
     BrowserWebView *webView = self.host.browserWebView;
-    return webView != nil && (webView.videoRects.count > 0 || webView.mediaInfo != nil);
+    if (webView == nil) {
+        return NO;
+    }
+    if (webView.videoRects.count > 0 || webView.mediaInfo != nil) {
+        return YES;
+    }
+    [self discardReportsOfOtherPages];
+    return self.reportedHLS.length > 0 || self.frameVideo != nil;
 }
 
 - (void)openPageVideoInNativePlayer {
     [self openPageVideoWithID:0 trigger:BrowserPageVideoTriggerMenu];
+}
+
+- (BrowserNativeVideoPlayerViewController *)currentNativePlayer {
+    return self.activePlayer;
+}
+
+- (NSURL *)pageURLOfWebView:(BrowserWebView *)webView {
+    return webView.committedURL ?: webView.request.URL;
+}
+
+- (NSString *)currentPageKey {
+    NSURL *URL = [self pageURLOfWebView:self.host.browserWebView];
+    if (URL == nil) {
+        return @"";
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithURL:URL resolvingAgainstBaseURL:NO];
+    components.fragment = nil;
+    return components.string ?: @"";
+}
+
+/// Meldungen gelten nur für die Seite, auf der sie kamen.
+- (void)discardReportsOfOtherPages {
+    if (self.reportedPageURL != nil && ![self.reportedPageURL isEqualToString:[self currentPageKey]]) {
+        self.reportedPageURL = nil;
+        self.reportedHLS = nil;
+        self.reportedDASH = nil;
+        self.frameVideo = nil;
+        self.frameVideoDate = nil;
+    }
 }
 
 - (void)handlePageVideoEvent:(NSDictionary *)event {
@@ -251,10 +315,39 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             return;
         }
         [self openPageVideoWithID:bid trigger:BrowserPageVideoTriggerAutomatic];
+    } else if ([type isEqualToString:@"manifest"]) {
+        [self discardReportsOfOtherPages];
+        self.reportedPageURL = [self currentPageKey];
+        NSString *URLString = [event[@"url"] isKindOfClass:[NSString class]] ? event[@"url"] : @"";
+        if ([event[@"kind"] isEqual:@"hls"]) {
+            self.reportedHLS = URLString;
+        } else if ([event[@"kind"] isEqual:@"dash"]) {
+            self.reportedDASH = URLString;
+        }
+        NSLog(@"[NativeVideoPlayer] Manifest %@ %@ top=%@", event[@"kind"], URLString, event[@"top"]);
+    } else if ([type isEqualToString:@"framevideo"] || [type isEqualToString:@"framefullscreen"]) {
+        [self discardReportsOfOtherPages];
+        self.reportedPageURL = [self currentPageKey];
+        self.frameVideo = event;
+        self.frameVideoDate = [NSDate date];
+        if ([type isEqualToString:@"framefullscreen"]) {
+            NSLog(@"[NativeVideoPlayer] Vollbildwunsch im Frame %@", event[@"frame"]);
+            [self openFrameVideoWithTrigger:BrowserPageVideoTriggerFullscreen];
+        }
     }
 }
 
+/// DASH-Manifest? An der Endung, an `format=mpd` oder am YouTube-Pfad `/manifest/dash/`.
+- (BOOL)isDASHURL:(NSURL *)URL {
+    NSString *path = URL.path.lowercaseString ?: @"";
+    NSString *query = URL.query.lowercaseString ?: @"";
+    return [path hasSuffix:@".mpd"] || [path containsString:@"/manifest/dash/"] || [query containsString:@"format=mpd"];
+}
+
 - (BOOL)isExtensionUnsupportedByAVPlayerForURL:(NSURL *)URL {
+    if ([self isDASHURL:URL]) {
+        return YES;
+    }
     NSString *extension = URL.path.pathExtension.lowercaseString;
     NSSet<NSString *> *unsupported = [NSSet setWithObjects:@"mpd", @"webm", @"ogv", @"ogg", @"flv", @"mkv", @"avi", @"f4v", nil];
     return [unsupported containsObject:extension];
@@ -268,7 +361,15 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     return URL != nil && ![self isExtensionUnsupportedByAVPlayerForURL:URL];
 }
 
-/// Direkte Adresse des Videos, sonst das zuletzt beobachtete HLS-Manifest (MSE/blob:). DASH und WebM gehen nicht.
+- (BOOL)isYouTubePage:(NSString *)pageURLString {
+    NSString *host = [NSURL URLWithString:pageURLString ?: @""].host.lowercaseString ?: @"";
+    return [host isEqualToString:@"youtube.com"] || [host hasSuffix:@".youtube.com"] || [host isEqualToString:@"youtu.be"] ||
+        [host hasSuffix:@"youtube-nocookie.com"];
+}
+
+/// Reihenfolge: direkte Adresse des Videos (`currentSrc`, `src`, `<source>`), dann das zuletzt gesehene
+/// HLS-Manifest der Seite (MSE/blob:), dann ein per Rückkanal gemeldetes (auch aus Frames).
+/// DASH, WebM & Co. kann AVPlayer nicht: dann `nil` und ein Grund für den Hinweis.
 - (NSURL *)nativeURLFromProbe:(NSDictionary *)probe unsupportedReason:(NSString **)reason {
     NSMutableArray<NSString *> *candidates = [NSMutableArray array];
     for (NSString *key in @[@"cs", @"src"]) {
@@ -283,8 +384,13 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             }
         }
     }
+    BOOL blobSource = [probe[@"cs"] isKindOfClass:[NSString class]] && [[probe[@"cs"] lowercaseString] hasPrefix:@"blob:"];
     if ([probe[@"hls"] isKindOfClass:[NSString class]]) {
         [candidates addObject:probe[@"hls"]];
+    }
+    [self discardReportsOfOtherPages];
+    if (self.reportedHLS.length > 0) {
+        [candidates addObject:self.reportedHLS];
     }
     for (NSString *candidate in candidates) {
         if ([self isNativeCandidateURLString:candidate]) {
@@ -292,18 +398,34 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         }
     }
     NSString *dash = [probe[@"dash"] isKindOfClass:[NSString class]] ? probe[@"dash"] : @"";
-    BOOL hasUnsupportedFile = dash.length > 0;
+    BOOL hasDASH = dash.length > 0 || self.reportedDASH.length > 0;
+    BOOL hasUnsupportedFile = NO;
     for (NSString *candidate in candidates) {
         NSURL *URL = [NSURL URLWithString:candidate];
         if (URL != nil && [self isNativePlayableVideoURLString:candidate] && [self isExtensionUnsupportedByAVPlayerForURL:URL]) {
-            hasUnsupportedFile = YES;
+            if ([self isDASHURL:URL]) {
+                hasDASH = YES;
+            } else {
+                hasUnsupportedFile = YES;
+            }
         }
     }
     if (reason != NULL) {
-        *reason = hasUnsupportedFile
-            ? @"Dieses Video nutzt ein Format (DASH oder WebM), das der native Player nicht abspielen kann. Es bleibt in der Webseite."
-            : @"Für dieses Video wurde keine Adresse gefunden, die der native Player öffnen kann. Es bleibt in der Webseite.";
+        NSString *page = [probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @"";
+        if ([self isYouTubePage:page]) {
+            *reason = @"YouTube liefert seine Videos nur stückweise an die Webseite (keine Adresse, die der native Player öffnen kann). Das Video bleibt in der Webseite.";
+        } else if (hasDASH) {
+            *reason = @"Dieses Video kommt als DASH-Stream. Den kann der native Player nicht abspielen, es bleibt in der Webseite.";
+        } else if (hasUnsupportedFile) {
+            *reason = @"Dieses Video nutzt ein Format (z. B. WebM), das der native Player nicht abspielen kann. Es bleibt in der Webseite.";
+        } else if (blobSource) {
+            *reason = @"Die Webseite setzt dieses Video selbst zusammen und hat keine Stream-Adresse (HLS) geladen, die der native Player öffnen kann. Es bleibt in der Webseite.";
+        } else {
+            *reason = @"Für dieses Video wurde keine Adresse gefunden, die der native Player öffnen kann. Es bleibt in der Webseite.";
+        }
     }
+    NSLog(@"[NativeVideoPlayer] keine Adresse: cs=%@ hls=%@ dash=%@ reportedHLS=%@ reportedDASH=%@",
+          probe[@"cs"], probe[@"hls"], dash, self.reportedHLS ?: @"", self.reportedDASH ?: @"");
     return nil;
 }
 
@@ -336,11 +458,38 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     return matching;
 }
 
+/// User-Agent der Seite, Referer (Seitenadresse) und Origin, wie sie WebKit beim Laden schicken würde.
+- (NSDictionary<NSString *, NSString *> *)requestHeadersForPageURL:(NSURL *)pageURL userAgent:(NSString *)userAgent {
+    if (userAgent.length == 0) {
+        userAgent = [[BrowserPreferencesStore new] userAgent];
+    }
+    NSMutableDictionary<NSString *, NSString *> *headers = [NSMutableDictionary dictionary];
+    if (userAgent.length > 0) {
+        headers[@"User-Agent"] = userAgent;
+    }
+    if (pageURL.absoluteString.length > 0) {
+        headers[@"Referer"] = pageURL.absoluteString;
+        if (pageURL.scheme.length > 0 && pageURL.host.length > 0) {
+            NSString *port = pageURL.port != nil ? [NSString stringWithFormat:@":%@", pageURL.port] : @"";
+            headers[@"Origin"] = [NSString stringWithFormat:@"%@://%@%@", pageURL.scheme, pageURL.host, port];
+        }
+    }
+    return headers;
+}
+
 - (void)openPageVideoWithID:(NSInteger)bid trigger:(BrowserPageVideoTrigger)trigger {
     BrowserWebView *webView = self.host.browserWebView;
     BOOL automatic = trigger == BrowserPageVideoTriggerAutomatic;
-    if (webView == nil || self.handoverInProgress || self.activePlayer != nil) {
+    if (webView == nil || self.handoverInProgress) {
         return;
+    }
+    if (self.activePlayer != nil) {
+        // Läuft das vorige Video im Bild-in-Bild, beendet ein ausdrücklicher Wunsch es (Position geht zurück).
+        if (automatic || !self.activePlayer.pictureInPictureActive) {
+            return;
+        }
+        [self.activePlayer endSession];
+        self.activePlayer = nil;
     }
     UIViewController *presented = self.host.browserPresentedViewController;
     if (presented != nil && (automatic || [presented isKindOfClass:[BrowserNativeVideoPlayerViewController class]])) {
@@ -365,6 +514,11 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         }
         if (probe == nil) {
             strongSelf.handoverInProgress = NO;
+            // Kein Video im Hauptframe: vielleicht in einem eingebetteten Player.
+            if (!automatic && strongSelf.frameVideo != nil) {
+                [strongSelf openFrameVideoWithTrigger:trigger];
+                return;
+            }
             if (!automatic) {
                 [strongSelf presentNativePlayerNoticeWithMessage:@"Auf dieser Seite wurde kein Video gefunden."];
             }
@@ -374,6 +528,10 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         NSURL *videoURL = [strongSelf nativeURLFromProbe:probe unsupportedReason:&reason];
         if (videoURL == nil) {
             strongSelf.handoverInProgress = NO;
+            if (!automatic && strongSelf.frameVideo != nil && [strongSelf frameVideoURL] != nil) {
+                [strongSelf openFrameVideoWithTrigger:trigger];
+                return;
+            }
             if (!automatic) {
                 [strongSelf presentNativePlayerNoticeWithMessage:reason];
             }
@@ -395,41 +553,24 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         if (time < 0.0 || !isfinite(time)) {
             time = [probe[@"t"] doubleValue];
         }
+        // Am Ende angekommen: von vorn.
+        double duration = [probe[@"dur"] doubleValue];
+        if (duration > 0.0 && time >= duration - 1.0) {
+            time = 0.0;
+        }
 
         NSURL *pageURL = [NSURL URLWithString:[probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @""];
         NSString *userAgent = [probe[@"ua"] isKindOfClass:[NSString class]] ? probe[@"ua"] : @"";
-        if (userAgent.length == 0) {
-            userAgent = [[BrowserPreferencesStore new] userAgent];
-        }
-        NSMutableDictionary<NSString *, NSString *> *headers = [NSMutableDictionary dictionary];
-        if (userAgent.length > 0) {
-            headers[@"User-Agent"] = userAgent;
-        }
-        if (pageURL.absoluteString.length > 0) {
-            headers[@"Referer"] = pageURL.absoluteString;
-            if (pageURL.scheme.length > 0 && pageURL.host.length > 0) {
-                NSString *port = pageURL.port != nil ? [NSString stringWithFormat:@":%@", pageURL.port] : @"";
-                headers[@"Origin"] = [NSString stringWithFormat:@"%@://%@%@", pageURL.scheme, pageURL.host, port];
-            }
-        }
+        NSDictionary<NSString *, NSString *> *headers = [strongSelf requestHeadersForPageURL:pageURL userAgent:userAgent];
         NSArray<NSHTTPCookie *> *cookies = [strongSelf webViewCookiesForURL:videoURL];
 
-        NSString *title = weakWebView.reportedPageTitle;
-        if (title.length == 0) {
-            title = weakWebView.reportedSiteName;
-        }
-        if (title.length == 0) {
-            title = [probe[@"title"] isKindOfClass:[NSString class]] ? probe[@"title"] : nil;
-        }
-        if (title.length == 0) {
-            title = pageURL.host;
-        }
-
-        BrowserNativeVideoPlayerViewController *player = [[BrowserNativeVideoPlayerViewController alloc] initWithURL:videoURL
-                                                                                                              title:title
-                                                                                                     requestHeaders:headers
-                                                                                                            cookies:cookies];
+        BrowserNativeVideoPlayerViewController *player = [strongSelf playerForURL:videoURL
+                                                                          headers:headers
+                                                                          cookies:cookies
+                                                                            probe:probe
+                                                                          webView:weakWebView];
         player.initialPlaybackTime = time;
+        [strongSelf applyTextTracksOfProbe:probe toPlayer:player];
         __block BOOL failed = NO;
         player.dismissHandler = ^(NSTimeInterval playbackTime) {
             typeof(self) innerSelf = weakSelf;
@@ -439,8 +580,10 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             if (failed || innerWebView == nil) {
                 return;
             }
-            // Neue Position zurück in die Seite, das Video bleibt pausiert.
-            NSString *script = [NSString stringWithFormat:@"(function(){ var v=window.__browserHandoverVideo; if (v) { try { v.currentTime=%f; v.pause(); } catch(e) {} } })();", playbackTime];
+            // Neue Position zurück in die Seite (nicht bei Livestreams), das Video bleibt pausiert.
+            NSString *seek = isfinite(playbackTime) ? [NSString stringWithFormat:@"v.currentTime=%f;", playbackTime] : @"";
+            NSString *script = [NSString stringWithFormat:@"(function(){ var v=window.__browserHandoverVideo; if (v) { try { %@ %@ v.pause(); } catch(e) {} } })();", kBrowserHandoverReleaseJS, seek];
+            NSLog(@"[NativeVideoPlayer] Position zurück in die Seite: %.1f", playbackTime);
             [innerWebView evaluateJavaScriptAsync:script];
             [innerWebView refreshClickTargets];
         };
@@ -462,6 +605,139 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         strongSelf.activePlayer = player;
         [strongSelf.host browserPresentViewController:player];
     }];
+}
+
+/// Player mit Titel, Sitename, Beschreibung und Vorschaubild der Seite.
+- (BrowserNativeVideoPlayerViewController *)playerForURL:(NSURL *)videoURL
+                                                headers:(NSDictionary<NSString *, NSString *> *)headers
+                                                cookies:(NSArray<NSHTTPCookie *> *)cookies
+                                                  probe:(NSDictionary *)probe
+                                                webView:(BrowserWebView *)webView {
+    NSString *title = webView.reportedPageTitle;
+    if (title.length == 0) {
+        title = [probe[@"title"] isKindOfClass:[NSString class]] ? probe[@"title"] : nil;
+    }
+    NSURL *pageURL = [NSURL URLWithString:[probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @""] ?: [self pageURLOfWebView:webView];
+    NSString *siteName = webView.reportedSiteName.length > 0 ? webView.reportedSiteName : pageURL.host;
+    if (title.length == 0) {
+        title = siteName;
+    }
+    NSString *mediaTitle = [webView.mediaInfo[@"title"] isKindOfClass:[NSString class]] ? webView.mediaInfo[@"title"] : nil;
+    if (mediaTitle.length > 0) {
+        title = mediaTitle;
+    }
+
+    BrowserNativeVideoPlayerViewController *player = [[BrowserNativeVideoPlayerViewController alloc] initWithURL:videoURL
+                                                                                                          title:title
+                                                                                                 requestHeaders:headers
+                                                                                                        cookies:cookies];
+    if (siteName.length > 0 && ![siteName isEqualToString:title]) {
+        player.videoSubtitle = siteName;
+    }
+    NSString *description = [probe[@"desc"] isKindOfClass:[NSString class]] ? probe[@"desc"] : nil;
+    player.videoDescription = description.length > 0 ? description : nil;
+    NSString *art = [webView.mediaInfo[@"art"] isKindOfClass:[NSString class]] ? webView.mediaInfo[@"art"] : nil;
+    if (art.length == 0) {
+        art = [probe[@"art"] isKindOfClass:[NSString class]] ? probe[@"art"] : nil;
+    }
+    player.artworkURL = art.length > 0 ? [NSURL URLWithString:art] : nil;
+    return player;
+}
+
+- (void)applyTextTracksOfProbe:(NSDictionary *)probe toPlayer:(BrowserNativeVideoPlayerViewController *)player {
+    NSMutableArray<BrowserNativeVideoTextTrack *> *tracks = [NSMutableArray array];
+    NSArray *entries = [probe[@"tracks"] isKindOfClass:[NSArray class]] ? probe[@"tracks"] : @[];
+    for (NSDictionary *entry in entries) {
+        if (![entry isKindOfClass:[NSDictionary class]] || ![entry[@"src"] isKindOfClass:[NSString class]]) {
+            continue;
+        }
+        NSURL *URL = [NSURL URLWithString:entry[@"src"]];
+        if (URL == nil || !([URL.scheme isEqualToString:@"https"] || [URL.scheme isEqualToString:@"http"])) {
+            continue;
+        }
+        BrowserNativeVideoTextTrack *track = [BrowserNativeVideoTextTrack new];
+        track.URL = URL;
+        track.language = [entry[@"lang"] isKindOfClass:[NSString class]] ? entry[@"lang"] : @"";
+        track.label = [entry[@"label"] isKindOfClass:[NSString class]] ? entry[@"label"] : @"";
+        track.preferred = [entry[@"on"] boolValue];
+        [tracks addObject:track];
+    }
+    player.pageTextTracks = tracks;
+    NSString *showing = [probe[@"showing"] isKindOfClass:[NSString class]] ? probe[@"showing"] : @"";
+    player.preferredSubtitleLanguage = showing.length > 0 ? showing : nil;
+}
+
+#pragma mark - Videos in eingebetteten Frames
+
+/// Adresse des zuletzt gemeldeten Frame-Videos: direkte Datei, sonst HLS des Frames.
+- (NSURL *)frameVideoURL {
+    for (NSString *key in @[@"src", @"hls"]) {
+        NSString *candidate = [self.frameVideo[key] isKindOfClass:[NSString class]] ? self.frameVideo[key] : @"";
+        if ([self isNativeCandidateURLString:candidate]) {
+            return [NSURL URLWithString:candidate];
+        }
+    }
+    if (self.reportedHLS.length > 0 && [self isNativeCandidateURLString:self.reportedHLS]) {
+        return [NSURL URLWithString:self.reportedHLS];
+    }
+    return nil;
+}
+
+/// Frames erreicht `evaluateJavaScript` nicht: Pausieren über WebKit (alle Medien), Position aus der letzten
+/// Meldung plus verstrichene Zeit. Die neue Position geht nicht zurück in den Frame.
+- (void)openFrameVideoWithTrigger:(BrowserPageVideoTrigger)trigger {
+    BrowserWebView *webView = self.host.browserWebView;
+    if (webView == nil || self.handoverInProgress || self.activePlayer != nil || self.host.browserPresentedViewController != nil) {
+        return;
+    }
+    NSURL *videoURL = [self frameVideoURL];
+    if (videoURL == nil) {
+        NSString *dash = [self.frameVideo[@"dash"] isKindOfClass:[NSString class]] ? self.frameVideo[@"dash"] : @"";
+        NSString *frame = [self.frameVideo[@"frame"] isKindOfClass:[NSString class]] ? self.frameVideo[@"frame"] : @"";
+        NSString *message = [self isYouTubePage:frame]
+            ? @"YouTube liefert seine Videos nur stückweise an die Webseite (keine Adresse, die der native Player öffnen kann). Das Video bleibt in der Webseite."
+            : (dash.length > 0
+               ? @"Dieses Video kommt als DASH-Stream. Den kann der native Player nicht abspielen, es bleibt in der Webseite."
+               : @"Für das eingebettete Video wurde keine Adresse gefunden, die der native Player öffnen kann. Es bleibt in der Webseite.");
+        [self presentNativePlayerNoticeWithMessage:message];
+        return;
+    }
+    double time = [self.frameVideo[@"t"] doubleValue];
+    if (![self.frameVideo[@"paused"] boolValue] && self.frameVideoDate != nil) {
+        time += -[self.frameVideoDate timeIntervalSinceNow];
+    }
+    [webView pauseAllMediaPlayback];
+    NSURL *pageURL = [self pageURLOfWebView:webView];
+    NSString *frameString = [self.frameVideo[@"frame"] isKindOfClass:[NSString class]] ? self.frameVideo[@"frame"] : @"";
+    NSURL *frameURL = [NSURL URLWithString:frameString] ?: pageURL;
+    NSDictionary *probe = @{@"page": pageURL.absoluteString ?: @"", @"title": webView.reportedPageTitle ?: @""};
+    BrowserNativeVideoPlayerViewController *player = [self playerForURL:videoURL
+                                                                headers:[self requestHeadersForPageURL:frameURL userAgent:@""]
+                                                                cookies:[self webViewCookiesForURL:videoURL]
+                                                                  probe:probe
+                                                                webView:webView];
+    player.initialPlaybackTime = time;
+    __weak typeof(self) weakSelf = self;
+    player.dismissHandler = ^(NSTimeInterval playbackTime) {
+        weakSelf.activePlayer = nil;
+        weakSelf.handoverInProgress = NO;
+        NSLog(@"[NativeVideoPlayer] Frame-Video geschlossen bei %.1f (Frame bleibt pausiert)", playbackTime);
+    };
+    player.failureHandler = ^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            typeof(self) innerSelf = weakSelf;
+            NSLog(@"[NativeVideoPlayer] Frame-Video fehlgeschlagen: %@", error);
+            BrowserNativeVideoPlayerViewController *failedPlayer = innerSelf.activePlayer;
+            innerSelf.activePlayer = nil;
+            innerSelf.handoverInProgress = NO;
+            [failedPlayer dismissViewControllerAnimated:YES completion:^{
+                [innerSelf presentNativePlayerNoticeWithMessage:@"Der native Player kann dieses Video nicht abspielen. Es bleibt in der Webseite."];
+            }];
+        });
+    };
+    NSLog(@"[NativeVideoPlayer] Frame-Video %@ t=%.1f trigger=%ld", videoURL.absoluteString, time, (long)trigger);
+    self.activePlayer = player;
+    [self.host browserPresentViewController:player];
 }
 
 - (void)presentNativePlayerNoticeWithMessage:(NSString *)message {
