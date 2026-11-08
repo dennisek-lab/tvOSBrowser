@@ -9,6 +9,9 @@ static CGFloat sBrowserNativePendingScrubPixels = 0.0;
 static CGPoint sBrowserNativeLastTouchLocation = {0, 0};
 static CFTimeInterval sBrowserNativeLastArrowPressTimestamp = 0.0;
 static UIPressType sBrowserNativeLastArrowPressType = (UIPressType)-1;
+/// Menü-Druck, dessen Beginn den nativen Player geschlossen hat: Rest des Drucks (Ende) ebenfalls verwerfen.
+/// Sonst landet das Ende nach dem Schließen bei der Seite und blättert sie zurück.
+static BOOL sBrowserSwallowRestOfMenuPress = NO;
 static CGFloat const kBrowserNativeScrubPixelStep = 18.0;
 static CFTimeInterval const kBrowserNativeArrowDoubleTapInterval = 0.35;
 
@@ -184,8 +187,19 @@ static UIViewController *BrowserFindPresentedNativeVideoPlayerViewController(UIA
                   nativeVideoPlayerViewController == nil ? @"(nil)" : NSStringFromClass([nativeVideoPlayerViewController class]));
         }
 
+        if (press.type == UIPressTypeMenu && sBrowserSwallowRestOfMenuPress &&
+            press.phase != UIPressPhaseBegan && press.phase != UIPressPhaseStationary) {
+            if (press.phase == UIPressPhaseEnded || press.phase == UIPressPhaseCancelled) {
+                sBrowserSwallowRestOfMenuPress = NO;
+            }
+            NSLog(@"[InputTrace][App] swallow Menu %@ after native player", BrowserPressPhaseString(press.phase));
+            return;
+        }
+
         if (press.type == UIPressTypeMenu && press.phase == UIPressPhaseBegan) {
+            sBrowserSwallowRestOfMenuPress = NO;
             if (nativeVideoPlayerClass != Nil && nativeVideoPlayerViewController != nil) {
+                sBrowserSwallowRestOfMenuPress = YES;
                 NSLog(@"[InputTrace][App] swallow Menu for native player");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [nativeVideoPlayerViewController dismissViewControllerAnimated:YES completion:nil];

@@ -74,6 +74,21 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 
 @end
 
+#if DEBUG
+/// Selbsttest `press:`: künstliche Taste (Typ und Phase fest), geht wie eine echte an den fokussierten Responder
+/// und läuft von dort die Responder-Kette hoch. Gestenerkenner (z. B. Menü im UIAlertController) und
+/// UIApplication sendEvent: sehen sie nicht.
+@interface BrowserSelfTestPress : UIPress
+@property (nonatomic) UIPressType selfTestType;
+@property (nonatomic) UIPressPhase selfTestPhase;
+@end
+
+@implementation BrowserSelfTestPress
+- (UIPressType)type { return self.selfTestType; }
+- (UIPressPhase)phase { return self.selfTestPhase; }
+@end
+#endif
+
 @implementation ViewController
 
 #pragma mark - Lifecycle
@@ -378,6 +393,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     dump(self.view.window, 0);
                     return;
                 }
+                if ([step hasPrefix:@"press:"]) {
+                    [self runSelfTestPress:[step substringFromIndex:6]];
+                    return;
+                }
                 if ([step isEqualToString:@"menu"]) {
                     BOOL handled = [self browserRemoteInputControllerHandleMenuPress];
                     NSLog(@"[SelfTest] menu handled=%d", handled);
@@ -607,6 +626,52 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                 [self.remoteInputController movePointerToPoint:point];
             });
         }];
+    });
+}
+
+/// press:<taste>[@ms] – Taste über die Responder-Kette wie von der Fernbedienung: menu, playpause, playpause2
+/// (doppelt), select, up, down, left, right; @ms hält die Taste so lange (Vorgabe 80 ms, lang: playpause@900).
+- (void)runSelfTestPress:(NSString *)spec {
+    NSArray<NSString *> *parts = [spec componentsSeparatedByString:@"@"];
+    NSString *name = parts.firstObject ?: @"";
+    NSTimeInterval hold = parts.count > 1 ? parts[1].doubleValue / 1000.0 : 0.08;
+    NSDictionary<NSString *, NSNumber *> *types = @{
+        @"menu": @(UIPressTypeMenu), @"playpause": @(UIPressTypePlayPause), @"playpause2": @(UIPressTypePlayPause),
+        @"select": @(UIPressTypeSelect), @"up": @(UIPressTypeUpArrow), @"down": @(UIPressTypeDownArrow),
+        @"left": @(UIPressTypeLeftArrow), @"right": @(UIPressTypeRightArrow),
+    };
+    NSNumber *type = types[name];
+    if (type == nil) {
+        NSLog(@"[SelfTest] press unbekannt: %@", name);
+        return;
+    }
+    // Wie UIKit: an das fokussierte Element, sonst an den obersten Controller; Ende an denselben Responder.
+    id focused = [UIFocusSystem focusSystemForEnvironment:self].focusedItem;
+    UIViewController *top = self;
+    while (top.presentedViewController != nil) {
+        top = top.presentedViewController;
+    }
+    UIResponder *target = [focused isKindOfClass:UIResponder.class] ? focused : top;
+    NSInteger count = [name isEqualToString:@"playpause2"] ? 2 : 1;
+    NSLog(@"[SelfTest] press %@ an %@ (oben %@)", spec, NSStringFromClass(target.class), NSStringFromClass(top.class));
+    for (NSInteger i = 0; i < count; i++) {
+        NSTimeInterval start = i * (hold + 0.12);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(start * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            BrowserSelfTestPress *press = [BrowserSelfTestPress new];
+            press.selfTestType = (UIPressType)type.integerValue;
+            press.selfTestPhase = UIPressPhaseBegan;
+            [target pressesBegan:[NSSet setWithObject:press] withEvent:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(hold * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                press.selfTestPhase = UIPressPhaseEnded;
+                [target pressesEnded:[NSSet setWithObject:press] withEvent:nil];
+            });
+        });
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((count * (hold + 0.12) + 1.2) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSLog(@"[SelfTest] press %@ danach presented=%@ tabs=%d karte=%d adresse=%d url=%@ zurück=%d tabzahl=%lu",
+              spec, NSStringFromClass(self.presentedViewController.class), self.tabOverviewController.visible,
+              self.intelligenceController.summaryVisible, self.addressPanel != nil,
+              self.webview.request.URL.absoluteString ?: @"-", self.webview.canGoBack, (unsigned long)self.viewModel.tabs.count);
     });
 }
 #endif
@@ -1623,6 +1688,11 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 }
 
 - (void)browserShowTabOverview {
+    // Die Übersicht ist selbst ein Dialog. Liegt schon einer oben, scheitert die Präsentation still und die
+    // Übersicht gälte als offen, ohne zu sehen zu sein (Zeiger weg, Tasten gehen ins Leere).
+    if (self.presentedViewController != nil && !self.tabOverviewController.visible) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
     [self deactivateTopBarFocusMode];
     [self.tabCoordinator prepareTabOverviewThumbnails];
     [self.tabOverviewController show];
@@ -1923,18 +1993,19 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 }
 
 - (BOOL)browserRemoteInputControllerHandleMenuPress {
-    // Vollbild der Seite zuerst verlassen. Klappt das nicht, geht der nächste Druck normal weiter.
+    // Oberste Ebene zuerst: Dialog, dann Karte „Zusammenfassung“ (bzw. „Übersetzen?“ für diesen Host ablehnen),
+    // erst danach das Vollbild der Seite, das darunter liegt.
+    if (self.presentedViewController != nil) {
+        [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
+        return YES;
+    }
+    if ([self.intelligenceController handleMenuPress]) {
+        return YES;
+    }
+    // Vollbild der Seite verlassen. Klappt das nicht, geht der nächste Druck normal weiter.
     if (self.webview.pageFullscreen && CACurrentMediaTime() - self.lastFullscreenExitAttempt > 2.0) {
         self.lastFullscreenExitAttempt = CACurrentMediaTime();
         [self.webview exitPageFullscreen];
-        return YES;
-    }
-    // Karte „Zusammenfassung“ schließen bzw. „Übersetzen?“ für diesen Host ablehnen.
-    if (self.presentedViewController == nil && [self.intelligenceController handleMenuPress]) {
-        return YES;
-    }
-    if (self.presentedViewController != nil) {
-        [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return YES;
     }
     if (self.addressPanel != nil) {
@@ -1995,13 +2066,43 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     [self requestURLorSearchInput];
 }
 
+/// Play/Pause lang oder doppelt bei offenem Dialog bzw. offener Zusammenfassung: nur diese Ebene schließen
+/// (wie Play/Pause kurz), nicht die Suche oder das Seitenmenü darüber bzw. stattdessen öffnen.
+- (BOOL)closeDialogForPlayPause {
+    if (self.presentedViewController != nil) {
+        [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
+        return YES;
+    }
+    if (self.intelligenceController.summaryVisible) {
+        [self.intelligenceController dismissSummary];
+        return YES;
+    }
+    return NO;
+}
+
 - (void)browserRemoteInputControllerHandlePlayPauseLongPress {
+    if ([self closeDialogForPlayPause]) {
+        return;
+    }
     // Direkt in die Suche, bereit fürs Diktat mit der Siri-Taste.
     [self showInputURLorSearchGoogle];
 }
 
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress {
+    if ([self closeDialogForPlayPause]) {
+        return;
+    }
+    // Aufklapp-Bereich der Adresse nicht unter der Seitenleiste offen lassen.
+    [self endAddressEditingAnimated:YES];
     [self showAdvancedMenu];
+}
+
+- (BOOL)browserRemoteInputControllerOverlayCardVisible {
+    return self.presentedViewController == nil && self.intelligenceController.summaryVisible;
+}
+
+- (void)browserRemoteInputControllerDismissOverlayCard {
+    [self.intelligenceController dismissSummary];
 }
 
 - (UIView *)browserRemoteInputControllerLensSourceView {
@@ -2295,6 +2396,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+#if DEBUG
+    NSLog(@"[Keys] Ende Typ=%ld presented=%@ tabs=%d", (long)presses.anyObject.type,
+          NSStringFromClass(self.presentedViewController.class), self.tabOverviewController.visible);
+#endif
     if ([self.remoteInputController handlePressesEnded:presses withEvent:event]) {
         return;
     }

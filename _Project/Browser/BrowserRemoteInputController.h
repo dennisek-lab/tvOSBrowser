@@ -48,6 +48,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)browserRemoteInputControllerAddressPanelActive;
 /// Eckenradius der Hervorhebung für ein Ziel (Koordinaten von rootView); negativ = Standard.
 - (CGFloat)browserRemoteInputControllerCornerRadiusForTarget:(CGRect)target;
+/// Abgedunkelte Karte über der Seite (Zusammenfassung): wirkt wie ein Dialog. Zeiger und Pfeile ruhen,
+/// Klick schließt sie (browserRemoteInputControllerDismissOverlayCard), Menü und Play/Pause laufen über den Host.
+- (BOOL)browserRemoteInputControllerOverlayCardVisible;
+- (void)browserRemoteInputControllerDismissOverlayCard;
 @required
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;

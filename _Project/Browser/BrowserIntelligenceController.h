@@ -34,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// „Frag die Seite“: passendste Stelle suchen, in der Seite hervorheben, hinscrollen, Antwort-Karte unten.
 /// Kein Treffer: Rückmeldung „Keine passende Stelle gefunden“.
 - (void)askCurrentPage:(NSString *)question;
+/// Karte „Zusammenfassung“ schließen (Klick, Play/Pause oder Menü bei offener Karte).
+- (void)dismissSummary;
 
 - (void)pageDidStartLoadInWebView:(BrowserWebView *)webView;
 /// Prüft nach kurzer Pause die Sprache und blendet bei fremder Sprache „Übersetzen?“ ein.
