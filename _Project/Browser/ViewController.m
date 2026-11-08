@@ -417,6 +417,28 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     [self showAdvancedMenu];
                     return;
                 }
+                if ([step isEqualToString:@"scrollend"]) {
+                    // Scrollt die Liste im gezeigten Dialog ans Ende (für Screenshots langer Menüs).
+                    UIViewController *top = self.view.window.rootViewController ?: self;
+                    while (top.presentedViewController != nil) {
+                        top = top.presentedViewController;
+                    }
+                    NSLog(@"[SelfTest] scrollend in %@", NSStringFromClass(top.class));
+                    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:top.view];
+                    while (queue.count > 0) {
+                        UIView *view = queue.firstObject;
+                        [queue removeObjectAtIndex:0];
+                        if ([view isKindOfClass:UICollectionView.class] || [view isKindOfClass:UITableView.class]) {
+                            UIScrollView *scroll = (UIScrollView *)view;
+                            CGFloat maxY = MAX(scroll.contentSize.height + scroll.adjustedContentInset.bottom - CGRectGetHeight(scroll.bounds), 0.0);
+                            [scroll setContentOffset:CGPointMake(0.0, maxY) animated:YES];
+                            NSLog(@"[SelfTest] scrollend %@ maxY=%.0f size=%@", NSStringFromClass(scroll.class), maxY, NSStringFromCGSize(scroll.contentSize));
+                            break;
+                        }
+                        [queue addObjectsFromArray:view.subviews];
+                    }
+                    return;
+                }
                 if ([step isEqualToString:@"guide"]) {
                     [self showHintsAlert];
                     return;

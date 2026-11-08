@@ -87,10 +87,13 @@ static UIColor *BrowserMenuTintForSection(NSString *title) {
     return tints[title] ?: UIColor.systemGrayColor;
 }
 
-static CGFloat const kMenuRowHeight = 72.0;
-static CGFloat const kMenuIconSide = 48.0;
-static CGFloat const kMenuSwitchWidth = 66.0;
-static CGFloat const kMenuSwitchHeight = 38.0;
+// Zwei Spalten großer Schaltflächen. Kachelradius konzentrisch zum Panel (50 − 14 = 36).
+static CGFloat const kMenuPanelWidth = 1060.0;
+static CGFloat const kMenuTileHeight = 112.0;
+static CGFloat const kMenuTileSpacing = 16.0;
+static CGFloat const kMenuIconSide = 60.0;
+static CGFloat const kMenuSwitchWidth = 72.0;
+static CGFloat const kMenuSwitchHeight = 42.0;
 
 @interface BrowserAdvancedMenuItem : NSObject
 
@@ -139,59 +142,48 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 
 @end
 
-/// Zeile der Seitenleiste: farbiger Symbolkreis, Titel, rechts Wert oder Schalter. Fokus als Glas-Kapsel
-/// (konzentrisch zu den Panel-Ecken), leicht angehoben; keine zusätzliche Aufhellung des Inhalts.
-@interface BrowserAdvancedMenuCell : UITableViewCell
+/// Schaltfläche der Seitenleiste: Kachel mit farbigem Symbolkreis, Titel, darunter der Wert, rechts ggf. ein
+/// Schalter. Ruhend dezente Glasfläche, im Fokus heller mit Lichtkante, angehoben und mit Schatten.
+@interface BrowserAdvancedMenuTile : UICollectionViewCell
 - (void)configureWithItem:(BrowserAdvancedMenuItem *)item tint:(UIColor *)tint;
-- (void)setHighlightedForFocus:(BOOL)focused animated:(BOOL)animated;
 @end
 
-@implementation BrowserAdvancedMenuCell {
+@implementation BrowserAdvancedMenuTile {
     UIView *_platter;
     UIView *_iconCircle;
     UIImageView *_iconView;
     UILabel *_titleLabel;
     UILabel *_detailLabel;
+    UIStackView *_texts;
     UIView *_switchTrack;
     UIView *_switchKnob;
     NSLayoutConstraint *_knobLeading;
-    NSLayoutConstraint *_titleToDetail;
-    NSLayoutConstraint *_titleToSwitch;
+    NSLayoutConstraint *_textsToEdge;
+    NSLayoutConstraint *_textsToSwitch;
 }
 
-- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
-    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = UIColor.clearColor;
-        self.contentView.backgroundColor = UIColor.clearColor;
-        self.clipsToBounds = NO;
         self.contentView.clipsToBounds = NO;
-        self.preservesSuperviewLayoutMargins = NO;
-        self.layoutMargins = UIEdgeInsetsZero;
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
-        if ([self respondsToSelector:@selector(setFocusStyle:)]) {
-            [self setValue:@(1) forKey:@"focusStyle"]; // UITableViewCellFocusStyleCustom
-        }
+        self.clipsToBounds = NO;
+        CGFloat radius = BrowserShapeConcentricRadius(BrowserShapePanelRadius, BrowserShapePanelInset);
+        CGFloat inset = (kMenuTileHeight - kMenuIconSide) / 2.0;
 
         _platter = [UIView new];
         _platter.translatesAutoresizingMaskIntoConstraints = NO;
-        _platter.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
         _platter.layer.borderWidth = 1.0;
-        _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.22].CGColor;
         _platter.layer.shadowColor = UIColor.blackColor.CGColor;
-        _platter.layer.shadowOpacity = 0.25;
-        _platter.layer.shadowRadius = 16.0;
-        _platter.layer.shadowOffset = CGSizeMake(0.0, 8.0);
-        BrowserShapeApply(_platter.layer, BrowserShapeCapsuleRadius(kMenuRowHeight - 4.0));
-        _platter.alpha = 0.0;
+        _platter.layer.shadowRadius = 18.0;
+        _platter.layer.shadowOffset = CGSizeMake(0.0, 10.0);
+        BrowserShapeApply(_platter.layer, radius);
         [self.contentView addSubview:_platter];
 
-        // Symbolkreis konzentrisch in der Kapsel: Abstand (Zeilenhöhe − Kreis) / 2 rundum.
         _iconCircle = [UIView new];
         _iconCircle.translatesAutoresizingMaskIntoConstraints = NO;
         BrowserShapeApply(_iconCircle.layer, kMenuIconSide / 2.0);
         [self.contentView addSubview:_iconCircle];
-
         _iconView = [UIImageView new];
         _iconView.translatesAutoresizingMaskIntoConstraints = NO;
         _iconView.contentMode = UIViewContentModeCenter;
@@ -199,23 +191,20 @@ static CGFloat const kMenuSwitchHeight = 38.0;
         [_iconCircle addSubview:_iconView];
 
         _titleLabel = [UILabel new];
-        _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        _titleLabel.font = [UIFont systemFontOfSize:30.0 weight:UIFontWeightMedium];
+        _titleLabel.font = [UIFont systemFontOfSize:29.0 weight:UIFontWeightSemibold];
+        _titleLabel.numberOfLines = 2;
         _titleLabel.adjustsFontSizeToFitWidth = YES;
-        _titleLabel.minimumScaleFactor = 0.75;
-        [_titleLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-        [self.contentView addSubview:_titleLabel];
-
+        _titleLabel.minimumScaleFactor = 0.8;
         _detailLabel = [UILabel new];
-        _detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        _detailLabel.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightRegular];
+        _detailLabel.font = [UIFont systemFontOfSize:23.0 weight:UIFontWeightRegular];
         _detailLabel.textColor = UIColor.secondaryLabelColor;
-        _detailLabel.textAlignment = NSTextAlignmentRight;
         _detailLabel.adjustsFontSizeToFitWidth = YES;
-        _detailLabel.minimumScaleFactor = 0.7;
-        [_detailLabel setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-        [_detailLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
-        [self.contentView addSubview:_detailLabel];
+        _detailLabel.minimumScaleFactor = 0.75;
+        _texts = [[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel, _detailLabel]];
+        _texts.translatesAutoresizingMaskIntoConstraints = NO;
+        _texts.axis = UILayoutConstraintAxisVertical;
+        _texts.spacing = 2.0;
+        [self.contentView addSubview:_texts];
 
         _switchTrack = [UIView new];
         _switchTrack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -231,31 +220,26 @@ static CGFloat const kMenuSwitchHeight = 38.0;
         _switchKnob.layer.shadowOffset = CGSizeMake(0.0, 1.0);
         [_switchTrack addSubview:_switchKnob];
 
-        CGFloat iconInset = (kMenuRowHeight - kMenuIconSide) / 2.0;
         _knobLeading = [_switchKnob.leadingAnchor constraintEqualToAnchor:_switchTrack.leadingAnchor constant:3.0];
-        _titleToDetail = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_detailLabel.leadingAnchor constant:-16.0];
-        _titleToSwitch = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_switchTrack.leadingAnchor constant:-16.0];
+        _textsToEdge = [_texts.trailingAnchor constraintLessThanOrEqualToAnchor:self.contentView.trailingAnchor constant:-inset];
+        _textsToSwitch = [_texts.trailingAnchor constraintLessThanOrEqualToAnchor:_switchTrack.leadingAnchor constant:-14.0];
         [NSLayoutConstraint activateConstraints:@[
             [_platter.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor],
             [_platter.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor],
-            [_platter.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:2.0],
-            [_platter.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-2.0],
+            [_platter.topAnchor constraintEqualToAnchor:self.contentView.topAnchor],
+            [_platter.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor],
 
-            [_iconCircle.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:iconInset],
+            [_iconCircle.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:inset],
             [_iconCircle.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
             [_iconCircle.widthAnchor constraintEqualToConstant:kMenuIconSide],
             [_iconCircle.heightAnchor constraintEqualToConstant:kMenuIconSide],
             [_iconView.centerXAnchor constraintEqualToAnchor:_iconCircle.centerXAnchor],
             [_iconView.centerYAnchor constraintEqualToAnchor:_iconCircle.centerYAnchor],
 
-            [_titleLabel.leadingAnchor constraintEqualToAnchor:_iconCircle.trailingAnchor constant:20.0],
-            [_titleLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_texts.leadingAnchor constraintEqualToAnchor:_iconCircle.trailingAnchor constant:20.0],
+            [_texts.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
 
-            [_detailLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-28.0],
-            [_detailLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
-            [_detailLabel.widthAnchor constraintLessThanOrEqualToAnchor:self.contentView.widthAnchor multiplier:0.42],
-
-            [_switchTrack.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-(kMenuRowHeight - kMenuSwitchHeight) / 2.0],
+            [_switchTrack.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-inset],
             [_switchTrack.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
             [_switchTrack.widthAnchor constraintEqualToConstant:kMenuSwitchWidth],
             [_switchTrack.heightAnchor constraintEqualToConstant:kMenuSwitchHeight],
@@ -264,6 +248,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
             [_switchKnob.heightAnchor constraintEqualToConstant:kMenuSwitchHeight - 6.0],
             _knobLeading,
         ]];
+        [self applyFocused:NO];
     }
     return self;
 }
@@ -273,37 +258,66 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     _titleLabel.text = item.title;
     _titleLabel.textColor = destructive ? UIColor.systemRedColor : UIColor.labelColor;
     _iconCircle.backgroundColor = destructive ? UIColor.systemRedColor : tint;
-    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:22.0 weight:UIImageSymbolWeightSemibold];
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:27.0 weight:UIImageSymbolWeightSemibold];
     _iconView.image = [UIImage systemImageNamed:BrowserMenuSymbolForTitle(item.title) withConfiguration:config]
         ?: [UIImage systemImageNamed:@"circle.fill" withConfiguration:config];
 
-    // „An“/„Aus“ als Schalter, alles andere als Wert rechts.
+    // „An“/„Aus“ als Schalter, sonst der Wert unter dem Titel.
     BOOL isSwitch = [item.detail isEqualToString:@"An"] || [item.detail isEqualToString:@"Aus"];
     BOOL isOn = [item.detail isEqualToString:@"An"];
     _switchTrack.hidden = !isSwitch;
-    _detailLabel.hidden = isSwitch;
-    _detailLabel.text = isSwitch ? nil : item.detail;
-    _titleToSwitch.active = isSwitch;
-    _titleToDetail.active = !isSwitch;
+    _detailLabel.text = item.detail;
+    _detailLabel.hidden = isSwitch || item.detail.length == 0;
+    _textsToSwitch.active = isSwitch;
+    _textsToEdge.active = !isSwitch;
     _switchTrack.backgroundColor = isOn ? UIColor.systemGreenColor : [UIColor colorWithWhite:1.0 alpha:0.22];
     _knobLeading.constant = isOn ? kMenuSwitchWidth - kMenuSwitchHeight + 3.0 : 3.0;
 }
 
-- (void)setHighlightedForFocus:(BOOL)focused animated:(BOOL)animated {
-    void (^changes)(void) = ^{
-        self->_platter.alpha = focused ? 1.0 : 0.0;
-        self.contentView.transform = focused ? CGAffineTransformMakeScale(1.025, 1.025) : CGAffineTransformIdentity;
-    };
-    if (animated) {
-        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:changes completion:nil];
-    } else {
-        changes();
-    }
+- (void)applyFocused:(BOOL)focused {
+    _platter.backgroundColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.2 : 0.07];
+    _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.32 : 0.08].CGColor;
+    _platter.layer.shadowOpacity = focused ? 0.3 : 0.0;
+    self.contentView.transform = focused ? CGAffineTransformMakeScale(1.04, 1.04) : CGAffineTransformIdentity;
+}
+
+- (void)didUpdateFocusInContext:(UIFocusUpdateContext *)context withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
+    [super didUpdateFocusInContext:context withAnimationCoordinator:coordinator];
+    BOOL focused = self.isFocused;
+    [coordinator addCoordinatedAnimations:^{
+        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+            [self applyFocused:focused];
+        } completion:nil];
+    } completion:nil];
 }
 
 @end
 
-@interface BrowserAdvancedMenuViewController : UIViewController <UITableViewDataSource, UITableViewDelegate>
+/// Abschnittsüberschrift über beide Spalten.
+@interface BrowserAdvancedMenuHeader : UICollectionReusableView
+@property (nonatomic, readonly) UILabel *label;
+@end
+
+@implementation BrowserAdvancedMenuHeader
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _label = [UILabel new];
+        _label.translatesAutoresizingMaskIntoConstraints = NO;
+        _label.font = [UIFont systemFontOfSize:22.0 weight:UIFontWeightSemibold];
+        _label.textColor = UIColor.secondaryLabelColor;
+        [self addSubview:_label];
+        [NSLayoutConstraint activateConstraints:@[
+            [_label.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:BrowserShapePanelInset + 24.0],
+            [_label.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-24.0],
+            [_label.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-10.0],
+        ]];
+    }
+    return self;
+}
+@end
+
+@interface BrowserAdvancedMenuViewController : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
 
 - (instancetype)initWithTitle:(NSString *)title
                      sections:(NSArray<BrowserAdvancedMenuSection *> *)sections
@@ -318,7 +332,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 @property (nonatomic, copy) NSString *footerText;
 @property (nonatomic) UIView *dimView;
 @property (nonatomic) UIVisualEffectView *panelView;
-@property (nonatomic) UITableView *tableView;
+@property (nonatomic) UICollectionView *collectionView;
 @property (nonatomic) NSLayoutConstraint *panelTrailingConstraint;
 @property (nonatomic) CGFloat panelWidth;
 @property (nonatomic) BOOL didAnimateIn;
@@ -337,7 +351,7 @@ static CGFloat const kMenuSwitchHeight = 38.0;
             return (UIVisualEffect *)effect;
         }
     }
-    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
 }
 
 - (instancetype)initWithTitle:(NSString *)title
@@ -357,13 +371,12 @@ static CGFloat const kMenuSwitchHeight = 38.0;
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
-
-    self.panelWidth = MIN(MAX(CGRectGetWidth(UIScreen.mainScreen.bounds) * 0.38, 480.0), 700.0);
+    self.panelWidth = MIN(kMenuPanelWidth, CGRectGetWidth(UIScreen.mainScreen.bounds) - 64.0);
     self.usingNativeGlassEffect = (NSClassFromString(@"UIGlassEffect") != Nil);
 
     UIView *dimView = [UIView new];
     dimView.translatesAutoresizingMaskIntoConstraints = NO;
-    dimView.backgroundColor = self.usingNativeGlassEffect ? UIColor.clearColor : [UIColor colorWithWhite:0.0 alpha:0.45];
+    dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:self.usingNativeGlassEffect ? 0.25 : 0.45];
     dimView.alpha = 0.0;
     [self.view addSubview:dimView];
     self.dimView = dimView;
@@ -373,81 +386,54 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     panelView.backgroundColor = UIColor.clearColor;
     BrowserShapeApply(panelView.layer, BrowserShapePanelRadius);
     panelView.layer.masksToBounds = YES;
-    panelView.layer.borderWidth = self.usingNativeGlassEffect ? 0.0 : 1.0;
-    panelView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.28].CGColor;
+    panelView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [self.view addSubview:panelView];
     self.panelView = panelView;
-
-    UIView *panelTint = nil;
-    if (!self.usingNativeGlassEffect) {
-        panelTint = [UIView new];
-        panelTint.translatesAutoresizingMaskIntoConstraints = NO;
-        panelTint.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.08];
-        [panelView.contentView addSubview:panelTint];
-    }
 
     UILabel *titleLabel = [UILabel new];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     titleLabel.text = self.menuTitle;
-    titleLabel.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightBold];
-    titleLabel.textAlignment = NSTextAlignmentLeft;
-    if (@available(tvOS 13.0, *)) {
-        titleLabel.textColor = UIColor.labelColor;
-    } else {
-        titleLabel.textColor = UIColor.whiteColor;
-    }
+    titleLabel.font = [UIFont systemFontOfSize:40.0 weight:UIFontWeightBold];
+    titleLabel.textColor = UIColor.labelColor;
     [panelView.contentView addSubview:titleLabel];
-
-    UIView *separator = [UIView new];
-    separator.translatesAutoresizingMaskIntoConstraints = NO;
-    if (@available(tvOS 13.0, *)) {
-        separator.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
-    } else {
-        separator.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.2];
-    }
-    [panelView.contentView addSubview:separator];
 
     UILabel *footerLabel = [UILabel new];
     footerLabel.translatesAutoresizingMaskIntoConstraints = NO;
     footerLabel.text = self.footerText;
-    footerLabel.textAlignment = NSTextAlignmentCenter;
     footerLabel.font = [UIFont systemFontOfSize:20.0 weight:UIFontWeightRegular];
-    if (@available(tvOS 13.0, *)) {
-        footerLabel.textColor = UIColor.secondaryLabelColor;
-    } else {
-        footerLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.7];
-    }
+    footerLabel.textColor = UIColor.tertiaryLabelColor;
     [panelView.contentView addSubview:footerLabel];
 
-    UITableView *tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
-    tableView.translatesAutoresizingMaskIntoConstraints = NO;
-    tableView.dataSource = self;
-    tableView.delegate = self;
-    tableView.rowHeight = kMenuRowHeight;
-    tableView.backgroundColor = UIColor.clearColor;
-    tableView.preservesSuperviewLayoutMargins = NO;
-    tableView.layoutMargins = UIEdgeInsetsZero;
-    if (@available(tvOS 11.0, *)) {
-        tableView.directionalLayoutMargins = NSDirectionalEdgeInsetsZero;
-        tableView.insetsLayoutMarginsFromSafeArea = NO;
-    }
-    tableView.cellLayoutMarginsFollowReadableWidth = NO;
-    tableView.clipsToBounds = NO;
-    tableView.layer.cornerRadius = 0.0;
-    tableView.remembersLastFocusedIndexPath = YES;
-    tableView.contentInset = UIEdgeInsetsZero;
-    tableView.showsVerticalScrollIndicator = NO;
-    if (@available(tvOS 11.0, *)) {
-        tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
-        tableView.insetsContentViewsToSafeArea = NO;
-    }
-    [panelView.contentView addSubview:tableView];
-    self.tableView = tableView;
+    CGFloat contentWidth = self.panelWidth - 2.0 * BrowserShapePanelInset;
+    UICollectionViewFlowLayout *layout = [UICollectionViewFlowLayout new];
+    layout.scrollDirection = UICollectionViewScrollDirectionVertical;
+    layout.minimumInteritemSpacing = kMenuTileSpacing;
+    layout.minimumLineSpacing = kMenuTileSpacing;
+    layout.itemSize = CGSizeMake(floor((contentWidth - kMenuTileSpacing) / 2.0), kMenuTileHeight);
+    layout.headerReferenceSize = CGSizeMake(contentWidth, 64.0);
+    layout.sectionInset = UIEdgeInsetsMake(0.0, BrowserShapePanelInset, 6.0, BrowserShapePanelInset);
+
+    UICollectionView *collectionView = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    collectionView.translatesAutoresizingMaskIntoConstraints = NO;
+    collectionView.backgroundColor = UIColor.clearColor;
+    collectionView.dataSource = self;
+    collectionView.delegate = self;
+    // Beschnitten, damit gescrollte Kacheln nicht über den Titel laufen; die Ränder (Abschnittsabstand
+    // seitlich, Inset oben) lassen der vergrößerten Fokus-Kachel Platz.
+    collectionView.clipsToBounds = YES;
+    collectionView.remembersLastFocusedIndexPath = YES;
+    collectionView.showsVerticalScrollIndicator = NO;
+    collectionView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    collectionView.contentInset = UIEdgeInsetsMake(8.0, 0.0, 24.0, 0.0);
+    [collectionView registerClass:BrowserAdvancedMenuTile.class forCellWithReuseIdentifier:@"tile"];
+    [collectionView registerClass:BrowserAdvancedMenuHeader.class
+       forSupplementaryViewOfKind:UICollectionElementKindSectionHeader withReuseIdentifier:@"header"];
+    [panelView.contentView addSubview:collectionView];
+    self.collectionView = collectionView;
 
     self.panelTrailingConstraint = [panelView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
                                                                              constant:self.panelWidth + 32.0];
-
-    NSMutableArray<NSLayoutConstraint *> *constraints = [NSMutableArray arrayWithArray:@[
+    [NSLayoutConstraint activateConstraints:@[
         [dimView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [dimView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [dimView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
@@ -459,31 +445,15 @@ static CGFloat const kMenuSwitchHeight = 38.0;
         self.panelTrailingConstraint,
 
         [titleLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset + 24.0],
-        [titleLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-32.0],
-        [titleLabel.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:34.0],
+        [titleLabel.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:30.0],
+        [footerLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-(BrowserShapePanelInset + 28.0)],
+        [footerLabel.lastBaselineAnchor constraintEqualToAnchor:titleLabel.lastBaselineAnchor],
 
-        [separator.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset + 24.0],
-        [separator.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-(BrowserShapePanelInset + 24.0)],
-        [separator.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:22.0],
-        [separator.heightAnchor constraintEqualToConstant:1.0],
-
-        // Zeilen mit gleichem Abstand zum Rand wie unten: Kapsel-Zeilen liegen konzentrisch in den Panel-Ecken.
-        [tableView.topAnchor constraintEqualToAnchor:separator.bottomAnchor constant:6.0],
-        [tableView.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:BrowserShapePanelInset],
-        [tableView.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-BrowserShapePanelInset],
-        [tableView.bottomAnchor constraintEqualToAnchor:footerLabel.topAnchor constant:-8.0],
-
-        [footerLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:24.0],
-        [footerLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-24.0],
-        [footerLabel.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor constant:-18.0],
+        [collectionView.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:0.0],
+        [collectionView.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor],
+        [collectionView.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor],
+        [collectionView.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor],
     ]];
-    if (panelTint != nil) {
-        [constraints addObject:[panelTint.leadingAnchor constraintEqualToAnchor:panelView.contentView.leadingAnchor]];
-        [constraints addObject:[panelTint.trailingAnchor constraintEqualToAnchor:panelView.contentView.trailingAnchor]];
-        [constraints addObject:[panelTint.topAnchor constraintEqualToAnchor:panelView.contentView.topAnchor]];
-        [constraints addObject:[panelTint.bottomAnchor constraintEqualToAnchor:panelView.contentView.bottomAnchor]];
-    }
-    [NSLayoutConstraint activateConstraints:constraints];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -537,71 +507,41 @@ static CGFloat const kMenuSwitchHeight = 38.0;
     }];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(__unused UITableView *)tableView {
+- (NSInteger)numberOfSectionsInCollectionView:(__unused UICollectionView *)collectionView {
     return (NSInteger)self.sections.count;
 }
 
-- (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+- (NSInteger)collectionView:(__unused UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
     if (section < 0 || section >= (NSInteger)self.sections.count) {
         return 0;
     }
     return (NSInteger)self.sections[(NSUInteger)section].items.count;
 }
 
-- (UIView *)tableView:(__unused UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    UIView *header = [UIView new];
-    UILabel *label = [UILabel new];
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    label.text = [self.sections[(NSUInteger)section].title uppercaseString];
-    label.font = [UIFont systemFontOfSize:21.0 weight:UIFontWeightSemibold];
-    label.textColor = UIColor.secondaryLabelColor;
-    [header addSubview:label];
-    [NSLayoutConstraint activateConstraints:@[
-        [label.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24.0],
-        [label.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24.0],
-        [label.bottomAnchor constraintEqualToAnchor:header.bottomAnchor constant:-6.0],
-    ]];
+- (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
+    BrowserAdvancedMenuTile *tile = [collectionView dequeueReusableCellWithReuseIdentifier:@"tile" forIndexPath:indexPath];
+    BrowserAdvancedMenuSection *section = self.sections[(NSUInteger)indexPath.section];
+    [tile configureWithItem:section.items[(NSUInteger)indexPath.item] tint:BrowserMenuTintForSection(section.title)];
+    return tile;
+}
+
+- (UICollectionReusableView *)collectionView:(UICollectionView *)collectionView
+           viewForSupplementaryElementOfKind:(NSString *)kind
+                                 atIndexPath:(NSIndexPath *)indexPath {
+    BrowserAdvancedMenuHeader *header = [collectionView dequeueReusableSupplementaryViewOfKind:kind withReuseIdentifier:@"header" forIndexPath:indexPath];
+    header.label.text = [self.sections[(NSUInteger)indexPath.section].title uppercaseString];
     return header;
 }
 
-- (CGFloat)tableView:(__unused UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return section == 0 ? 46.0 : 70.0;
+- (CGSize)collectionView:(UICollectionView *)collectionView
+                  layout:(UICollectionViewLayout *)collectionViewLayout
+referenceSizeForHeaderInSection:(NSInteger)section {
+    return CGSizeMake(CGRectGetWidth(collectionView.bounds), section == 0 ? 52.0 : 72.0);
 }
 
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    static NSString * const kCellIdentifier = @"BrowserAdvancedMenuCell";
-    BrowserAdvancedMenuCell *cell = [tableView dequeueReusableCellWithIdentifier:kCellIdentifier];
-    if (cell == nil) {
-        cell = [[BrowserAdvancedMenuCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kCellIdentifier];
-    }
+- (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
     BrowserAdvancedMenuSection *section = self.sections[(NSUInteger)indexPath.section];
-    BrowserAdvancedMenuItem *item = section.items[(NSUInteger)indexPath.row];
-    [cell configureWithItem:item tint:BrowserMenuTintForSection(section.title)];
-    [cell setHighlightedForFocus:cell.isFocused animated:NO];
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView
-didUpdateFocusInContext:(UITableViewFocusUpdateContext *)context
-withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
-    NSIndexPath *previousIndexPath = context.previouslyFocusedIndexPath;
-    NSIndexPath *nextIndexPath = context.nextFocusedIndexPath;
-    BrowserAdvancedMenuCell *previousCell = previousIndexPath ? (BrowserAdvancedMenuCell *)[tableView cellForRowAtIndexPath:previousIndexPath] : nil;
-    BrowserAdvancedMenuCell *nextCell = nextIndexPath ? (BrowserAdvancedMenuCell *)[tableView cellForRowAtIndexPath:nextIndexPath] : nil;
-    [coordinator addCoordinatedAnimations:^{
-        if ([previousCell isKindOfClass:BrowserAdvancedMenuCell.class]) {
-            [previousCell setHighlightedForFocus:NO animated:YES];
-        }
-        if ([nextCell isKindOfClass:BrowserAdvancedMenuCell.class]) {
-            [nextCell setHighlightedForFocus:YES animated:YES];
-        }
-    } completion:nil];
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    BrowserAdvancedMenuSection *section = self.sections[(NSUInteger)indexPath.section];
-    BrowserAdvancedMenuItem *item = section.items[(NSUInteger)indexPath.row];
+    BrowserAdvancedMenuItem *item = section.items[(NSUInteger)indexPath.item];
     BrowserAdvancedMenuItemHandler handler = item.handler;
     [self dismissMenuWithCompletion:^{
         if (handler != nil) {
@@ -611,7 +551,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 }
 
 - (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {
-    return @[self.tableView];
+    return @[self.collectionView];
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {

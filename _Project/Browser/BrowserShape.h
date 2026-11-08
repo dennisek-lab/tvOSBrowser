@@ -13,7 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 static const CGFloat BrowserShapeCardRadius = 84.0;
 /// Innenabstand großer Karten, aus dem sich die konzentrischen Radien ergeben.
 static const CGFloat BrowserShapeCardInset = 44.0;
-/// Seitenleiste (•••) und Tab-Übersicht: Kapsel-Zeilen von 72 pt mit 14 pt Abstand zum Rand.
+/// Seitenleiste (•••) und Tab-Übersicht: Kacheln mit 14 pt Abstand zum Rand, Radius konzentrisch 36.
 static const CGFloat BrowserShapePanelRadius = 50.0;
 static const CGFloat BrowserShapePanelInset = 14.0;
 /// Kacheln (Favoriten, Tabs): mittlere Stufe; Inhalte darin konzentrisch.
