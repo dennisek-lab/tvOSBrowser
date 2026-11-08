@@ -67,6 +67,11 @@ static bool BrowserWhisperAbort(void *userData) {
 @property (atomic, copy, readwrite, nullable) NSString *lockedLanguage;
 /// Stimmen je erkannter Sprache (nur Abschnitte mit behaltenen Segmenten), bis zur Festlegung.
 @property (nonatomic, strong) NSCountedSet<NSString *> *languageVotes;
+/// Bei fest eingestellter Untertitelsprache: die tatsächlich gesprochene (whisper_lang_auto_detect auf den ersten
+/// Abschnitten mit Sprache). Weicht sie ab, übersetzt whisper – dann ohne Satzkontext (siehe contextBeforeTime:).
+@property (atomic, copy, nullable) NSString *spokenLanguage;
+@property (nonatomic, strong) NSCountedSet<NSString *> *spokenVotes;
+@property (nonatomic) NSUInteger spokenChecks;
 @property (nonatomic) NSUInteger speechWindows;
 /// Zuletzt erkannte Untertitel (Satzkontext für den nächsten Abschnitt, siehe contextBeforeTime:).
 @property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *recentCues;
@@ -511,6 +516,16 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoContext"]) {
         return @"";   // Vergleichsmessung ohne Satzkontext
     }
+    // Übersetzen (feste Sprache ≠ gesprochene, oder noch nicht geprüft): ohne Kontext. Im Simulator gemessen
+    // (Tears of Steel, englisch, Untertitel Deutsch): mit Kontext verfiel whisper in Schleifen („… nicht mehr hier“,
+    // dann nur „Und“) und ließ ganze Sätze aus; ohne Kontext kamen deutlich mehr und vollständigere Sätze.
+    NSString *decoding = [self decodingLanguage];
+    if (![decoding isEqualToString:@"auto"] && self.lockedLanguage == nil) {
+        NSString *spoken = self.spokenLanguage;
+        if (spoken == nil || ![spoken isEqualToString:decoding]) {
+            return @"";
+        }
+    }
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
     NSUInteger length = 0;
     for (BrowserSubtitleCue *cue in self.recentCues.reverseObjectEnumerator) {
@@ -543,6 +558,36 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         [self.recentCues removeObjectsInRange:NSMakeRange(0, self.recentCues.count - 40)];
     }
 }
+
+#if BROWSER_HAS_WHISPER
+/// Feste Untertitelsprache: gesprochene Sprache auf den Mel-Daten des eben ausgewerteten Abschnitts bestimmen (ein
+/// zusätzlicher Encoder-Lauf, nur bis feststeht: zwei gleiche Ergebnisse oder höchstens sechs Versuche).
+- (void)checkSpokenLanguageAfterWindowOfSeconds:(double)seconds decodingLanguage:(NSString *)decodingLanguage threads:(int)threads {
+    if ([decodingLanguage isEqualToString:@"auto"] || self.lockedLanguage != nil || self.spokenLanguage != nil ||
+        seconds < 2.5 || self.spokenChecks >= 6) {
+        return;
+    }
+    self.spokenChecks += 1;
+    CFAbsoluteTime begin = CFAbsoluteTimeGetCurrent();
+    int lang = whisper_lang_auto_detect(_context, 0, threads, NULL);
+    const char *name = lang >= 0 ? whisper_lang_str(lang) : NULL;
+    if (name == NULL) {
+        return;
+    }
+    NSString *spoken = [NSString stringWithUTF8String:name];
+    if (self.spokenVotes == nil) {
+        self.spokenVotes = [NSCountedSet set];
+    }
+    [self.spokenVotes addObject:spoken];
+    if ([self.spokenVotes countForObject:spoken] >= 2) {
+        self.spokenLanguage = spoken;
+    }
+    NSLog(@"%@ gesprochene Sprache %@ (%.2f s)%@", kSubtitleLogPrefix, spoken, CFAbsoluteTimeGetCurrent() - begin,
+          self.spokenLanguage == nil ? @"" : ([spoken isEqualToString:decodingLanguage]
+              ? @" = Untertitelsprache: mit Satzkontext"
+              : [NSString stringWithFormat:@" ≠ %@: whisper übersetzt, ohne Satzkontext", decodingLanguage]));
+}
+#endif
 
 - (NSArray<BrowserSubtitleCue *> *)transcribeSamples:(const float *)samples count:(NSUInteger)count startTime:(NSTimeInterval)startTime {
 #if BROWSER_HAS_WHISPER
@@ -590,8 +635,8 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
     // Ende eines 8-s-Satzes schon am Satzanfang im Bild).
     params.token_timestamps = true;
     // Satzkontext: der zuletzt erkannte Satz direkt vor diesem Abschnitt als Vorgabe (initial prompt). Hilft bei
-    // Abschnitten, die mitten im Gedanken beginnen (Mithören, Vorauslesen nach einer Satzpause), und vor allem, wenn
-    // eine feste Untertitelsprache von der gesprochenen abweicht (whisper übersetzt dann, ohne Kontext schlechter).
+    // Abschnitten, die mitten im Gedanken beginnen (Mithören, Vorauslesen nach einer Satzpause). Nicht beim Übersetzen
+    // (feste Sprache ≠ gesprochene), dort schadet er (siehe contextBeforeTime:).
     __attribute__((objc_precise_lifetime)) NSString *context = [self contextBeforeTime:startTime];
     params.initial_prompt = context.length > 0 ? context.UTF8String : NULL;
     params.abort_callback = BrowserWhisperAbort;
@@ -606,6 +651,8 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
     }
     _totalCompute += compute;
     _totalAudio += seconds;
+
+    [self checkSpokenLanguageAfterWindowOfSeconds:seconds decodingLanguage:decodingLanguage threads:params.n_threads];
 
     NSString *windowLanguage = nil;
     if ([decodingLanguage isEqualToString:@"auto"]) {
