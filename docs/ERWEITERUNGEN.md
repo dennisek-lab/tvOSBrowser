@@ -520,6 +520,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `gestures` | Ring-Erkennung mit künstlichen Bewegungen (`debugRunGestureWithDeltas:`) | `gestures cw1.5=… ccw1=… line=… quarter=…` (Kreise > 0, `line` und `quarter` = 0) |
 | `fill:v1\|v2\|…\|i` | aktuellen Eingabedialog (UIAlertController) ausfüllen; letzter Wert *i* ist der Index der zu drückenden Aktion | `fill alert=<Titel> fields=N types=[textContentType…]`, `tap <Aktion>` |
 | `dictate:<Text>` | Play/Pause lang (Suchdialog), Text einsetzen (simuliert Diktat) | `dictate field=ok text=…` |
+| `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Spike, siehe `docs/SIRI_STEUERUNG.md`): back, forward, reload, home, tabs, favorite, newtab, address, reader | `siri <befehl>`, `[Siri] Befehl …` |
 | `probe` | JS-Messung: Element `#red`, `scrollY`, `innerHeight/Width`, Treffer bei (20,20), `visualViewport.offsetTop` plus `webFrame`, `contentOffset`, `contentInset` (für Einschub/Versatz; setzt Testseite mit `#red` voraus) | `probe … webFrame=… offset=… inset=…` |
 | `label` | Text der Adress-Beschriftung der Leiste | `label <Text>` |
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |

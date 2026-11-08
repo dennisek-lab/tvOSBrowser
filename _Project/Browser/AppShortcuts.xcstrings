@@ -1,0 +1,118 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Reader in ${applicationName} starten": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reader in ${applicationName} starten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start reader in ${applicationName}"
+          }
+        }
+      }
+    },
+    "Starte den Reader in ${applicationName}": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starte den Reader in ${applicationName}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open reader in ${applicationName}"
+          }
+        }
+      }
+    },
+    "${applicationName} Reader": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} Reader"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} reader"
+          }
+        }
+      }
+    },
+    "Adresse in ${applicationName} öffnen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse in ${applicationName} öffnen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open address in ${applicationName}"
+          }
+        }
+      }
+    },
+    "In ${applicationName} suchen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In ${applicationName} suchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search in ${applicationName}"
+          }
+        }
+      }
+    },
+    "${command} in ${applicationName}": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${command} in ${applicationName}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${command} in ${applicationName}"
+          }
+        }
+      }
+    },
+    "${applicationName} ${command}": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} ${command}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} ${command}"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
