@@ -1050,13 +1050,25 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+/// Erkennt Adblock-Sperren („Bitte Werbeblocker deaktivieren“) und pausiert den Werbeblocker dann für diese Seite.
+- (BrowserAdvancedMenuItem *)adBlockAutoPauseMenuItem {
+    BOOL enabled = self.preferencesStore.adBlockAutoPauseOnWall;
+    return [self advancedMenuItemWithTitle:@"Werbeblocker bei Sperre automatisch pausieren"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.adBlockAutoPauseOnWall = !enabled;
+        [[BrowserContentBlocker sharedBlocker] preferencesDidChange];
+    }];
+}
+
 /// Schaltet den Werbeblocker für den Host der aktuellen Seite aus bzw. wieder ein.
 - (BrowserAdvancedMenuItem *)adBlockSiteMenuItem {
     NSURL *url = [[self.host browserWebView] request].URL;
     NSString *host = [BrowserContentBlocker exceptionKeyForURL:url];
     BOOL excepted = [[BrowserContentBlocker sharedBlocker] isExceptionForURL:url];
+    BOOL automatic = excepted && [[BrowserContentBlocker sharedBlocker] isAutoExceptionForURL:url];
     return [self advancedMenuItemWithTitle:@"Werbeblocker hier"
-                                    detail:host == nil ? @"–" : (excepted ? @"Aus" : @"An")
+                                    detail:host == nil ? @"–" : (automatic ? @"Pausiert (Sperre)" : (excepted ? @"Aus" : @"An"))
                                    handler:^{
         if (host == nil) {
             return;
@@ -1166,6 +1178,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (NSArray<BrowserAdvancedMenuItem *> *)extensionMenuItems {
     return @[
         [self adBlockMenuItem],
+        [self adBlockAutoPauseMenuItem],
         [self cookieBannerMenuItem],
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],

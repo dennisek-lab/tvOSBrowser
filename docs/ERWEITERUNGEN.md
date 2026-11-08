@@ -273,6 +273,15 @@ swiftc -O tools/validate_adblock_rules.swift -o /tmp/validate_adblock
 ```
 Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `gorhill/uBlock`, `platform/mv3/rulesets.json`, Gruppen „default“ und „malware“, dazu EasyList Germany). Nach einem Lauf ändern sich die Hashes im `manifest.json`; die App kompiliert beim nächsten Start neu und räumt alte Stände weg. Ergebnisdateien committen. `tools/add_resource.py ContentBlocker` trägt den Ordner nur einmalig als Ordnerreferenz ein; neue Dateien darin brauchen keine Projektänderung.
 
+### 6.8 Automatische Ausnahme bei Adblock-Sperre
+- **Zweck:** Seiten wie bild.de zeigen „Aufgrund Ihres Blockers zeigen wir BILD.de nicht an“. Die App erkennt solche Sperren und pausiert den Werbeblocker für diese Seite.
+- **Dateien:** `ContentBlocker/adblock-wall.js` (Erkennung), Logik in `BrowserContentBlocker.m` (`handleWallMessage:`, `refreshWallController:`). Handler `browserAdblockWall`. Einstellungen: `adBlockAutoPauseOnWall` (Standard an), `adBlockAutoExceptionHosts` (Teilmenge von `adBlockExceptionHosts`). Menü: `adBlockAutoPauseMenuItem`; `adBlockSiteMenuItem` zeigt „Pausiert (Sperre)“.
+- **Erkennung:** Nutzerskript document-end, alle Frames, nur im Controller, wenn Werbeblocker und Automatik an sind und die Seite keine Ausnahme hat (Ein-/Ausbau mit der Live-Ansicht-Kopie wie in Abschnitt 4). Prüft alle 1,5 s bis zu 10-mal. Treffer nur bei Blocker-Wort (Adblocker, Werbeblocker, „Ihres Blockers“, ad blocker …) **und** Aufforderung (deaktivieren, whitelist, disable …) im selben Text, und nur in einem großen sichtbaren fixierten/modalen Container, einem ganzen Sperr-iframe, einer fast leeren Seite, einer Seite mit „adblock/blocker“ im Pfad (bild.de: `/adblockwall.html`) oder einer kurzen Seite mit passender Überschrift.
+- **Reaktion:** Host der Hauptseite (aus `message.webView.URL`) wird per `setException:YES` ausgenommen, in `adBlockAutoExceptionHosts` vermerkt, Seite einmal neu geladen. Schleifenschutz: pro Host einmal je App-Lauf. Eine Menüentscheidung des Nutzers (`setException:`) entfernt den Auto-Vermerk.
+- **Log (DEBUG):** `[AdBlockWall] host … erkannt → Ausnahme, neu laden`.
+- **Keine eingebaute Hostliste:** Die Filterliste „Adblock Warning Removal List“ (EasyList, antiadblockfilters) ist gepflegt, besteht aber aus Netzwerk-/Kosmetikregeln, nicht aus einer Liste von Sperr-Seiten. Eine Vorab-Ausnahme würde unnötig Werbung zeigen, daher nur Erkennung.
+- **Test:** `POINTER_SELFTEST="clearall;url:https://www.bild.de;wait;wait;wait;wait;wait;wait;wait;wait"`. Gegenprobe ohne Treffer: spiegel.de, heise.de, `de.wikipedia.org/wiki/Werbeblocker`. Sperrtexte fehlen? `BLOCKER`/`ACTION` in `adblock-wall.js` ergänzen.
+
 ---
 
 ## 7. Klickziele, Seitenfarbe, Glow-Farbe (`BrowserClickTargetTracker`)
