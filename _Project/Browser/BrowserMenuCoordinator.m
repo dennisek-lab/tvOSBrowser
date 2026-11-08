@@ -39,6 +39,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Verlauf": @"clock.arrow.circlepath",
             @"Tabs anzeigen": @"square.on.square",
             @"Neuer Tab": @"plus.square.on.square",
+            @"Unbenutzte Tabs nach 30 Min. schließen": @"clock.badge.xmark",
             @"Werbeblocker": @"hand.raised.fill",
             @"Werbeblocker bei Sperre automatisch pausieren": @"pause.circle",
             @"Cookie-Banner ablehnen": @"checkmark.shield.fill",
@@ -1252,6 +1253,16 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Pop-ups und im Hintergrund geöffnete Links, die der Nutzer nie angesehen hat, schließen sich nach 30 Minuten.
+- (BrowserAdvancedMenuItem *)closeUnusedTabsMenuItem {
+    BOOL enabled = self.preferencesStore.closeUnusedTabsEnabled;
+    return [self advancedMenuItemWithTitle:@"Unbenutzte Tabs nach 30 Min. schließen"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.closeUnusedTabsEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)favoritesMenuItem {
     return [self advancedMenuItemWithTitle:@"Favoriten"
                                      style:UIAlertActionStyleDefault
@@ -1582,6 +1593,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self historyMenuItem],
             [self showTabsMenuItem],
             [self newTabMenuItem],
+            [self closeUnusedTabsMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Erweiterungen"
                                                items:[self extensionMenuItems]],

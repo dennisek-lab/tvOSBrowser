@@ -55,6 +55,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ersteinrichtung (Favoriten, Startseite, Schutz, Design) abgeschlossen. Standard: nein.
 @property (nonatomic) BOOL setupCompleted;
 
+/// Unbenutzte Tabs (Pop-ups, im Hintergrund geöffnete Links) nach 30 Minuten automatisch schließen. Standard: an.
+@property (nonatomic) BOOL closeUnusedTabsEnabled;
+/// Ablaufzeit für unbenutzte Tabs in Sekunden, 0 = aus. 30 Minuten; im DEBUG-Build per Umgebungsvariable
+/// TAB_EXPIRY_SECONDS kürzer (nur wenn die Einstellung an ist).
+@property (nonatomic, readonly) NSTimeInterval unusedTabExpiryInterval;
+
 - (void)ensureUserAgentConsistency;
 
 @end

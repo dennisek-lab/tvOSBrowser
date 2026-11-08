@@ -13,6 +13,8 @@
         _savedScrollOffset = CGPointZero;
         _hasSavedScrollOffset = NO;
         _needsScrollRestore = NO;
+        _openedAt = NSDate.date.timeIntervalSince1970;
+        _userInteracted = YES;
     }
     return self;
 }
@@ -29,6 +31,8 @@
     NSString *URLString = [sessionRepresentation[@"URLString"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"URLString"] : @"";
     NSNumber *scrollOffsetX = [sessionRepresentation[@"scrollOffsetX"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetX"] : nil;
     NSNumber *scrollOffsetY = [sessionRepresentation[@"scrollOffsetY"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetY"] : nil;
+    NSNumber *openedAt = [sessionRepresentation[@"openedAt"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"openedAt"] : nil;
+    NSNumber *used = [sessionRepresentation[@"used"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"used"] : nil;
     
     self.requestURL = requestURL;
     self.previousURL = previousURL;
@@ -40,6 +44,11 @@
         self.hasSavedScrollOffset = YES;
         self.needsScrollRestore = YES;
     }
+    if (openedAt != nil) {
+        self.openedAt = openedAt.doubleValue;
+    }
+    // Alte Sitzungen kennen das Flag nicht: deren Tabs gelten als benutzt und schließen sich nie von selbst.
+    self.userInteracted = used != nil ? used.boolValue : YES;
     
     return self;
 }
@@ -54,6 +63,8 @@
         representation[@"scrollOffsetX"] = @(self.savedScrollOffset.x);
         representation[@"scrollOffsetY"] = @(self.savedScrollOffset.y);
     }
+    representation[@"openedAt"] = @(self.openedAt);
+    representation[@"used"] = @(self.userInteracted);
     return representation;
 }
 

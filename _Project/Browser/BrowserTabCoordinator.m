@@ -413,6 +413,8 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
         return;
     }
 
+    // Angezeigt = benutzt: Ein Tab, zu dem der Nutzer wechselt, schließt sich nie mehr von selbst.
+    [self markTabUsed:tab];
     [self updateThumbnailStagingViewFrame];
     for (BrowserTabViewModel *candidate in self.viewModel.tabs) {
         BrowserWebView *candidateWebView = self.webViewsByTabIdentifier[candidate.identifier];
@@ -621,6 +623,66 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
     [self.activeWebView loadRequest:request];
     [self persistSession];
     return YES;
+}
+
+- (void)markTabUsed:(BrowserTabViewModel *)tab {
+    if (tab == nil || tab.userInteracted) {
+        return;
+    }
+    tab.userInteracted = YES;
+    NSLog(@"[Tabs] Tab benutzt: %@", tab.URLString.length > 0 ? tab.URLString : tab.requestURL);
+}
+
+- (BrowserTabViewModel *)createBackgroundTabWithRequest:(NSURLRequest *)request {
+    if (request == nil || request.URL == nil) {
+        return nil;
+    }
+    BrowserTabViewModel *tab = [self.viewModel addBackgroundTab];
+    if (tab == nil) {
+        return nil;
+    }
+    tab.userInteracted = NO;
+    tab.openedAt = NSDate.date.timeIntervalSince1970;
+    NSString *URLString = request.URL.absoluteString ?: @"";
+    tab.requestURL = URLString;
+    tab.URLString = URLString;
+    tab.title = request.URL.host.length > 0 ? request.URL.host : @"Neuer Tab";
+
+    // Unsichtbar neben dem Bildschirm laden (wie die Vorschauen der Tab-Übersicht); Medien hält
+    // webViewDidFinishLoad: dort an.
+    BrowserWebView *webView = [self createConfiguredWebView];
+    self.webViewsByTabIdentifier[tab.identifier] = webView;
+    [self parkWebViewForThumbnailing:webView];
+    [webView loadRequest:request];
+    [self.rootView bringSubviewToFront:self.cursorView];
+    [self persistSession];
+    return tab;
+}
+
+- (NSUInteger)closeUnusedTabsOlderThan:(NSTimeInterval)expiry {
+    if (expiry <= 0.0) {
+        return 0;
+    }
+    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+    NSUInteger closed = 0;
+    for (NSInteger index = (NSInteger)self.viewModel.tabs.count - 1; index >= 0; index--) {
+        if (self.viewModel.tabs.count <= 1) {
+            break; // Der letzte Tab bleibt immer.
+        }
+        if (index >= (NSInteger)self.viewModel.tabs.count || index == self.viewModel.activeTabIndex) {
+            continue; // Der sichtbare Tab schließt sich nie von selbst.
+        }
+        BrowserTabViewModel *tab = self.viewModel.tabs[index];
+        NSTimeInterval age = now - tab.openedAt;
+        if (tab.userInteracted || age < expiry) {
+            continue;
+        }
+        NSLog(@"[Tabs] unbenutzten Tab automatisch geschlossen nach %.0f s: %@", age,
+              tab.URLString.length > 0 ? tab.URLString : tab.requestURL);
+        [self closeTabAtIndex:index];
+        closed++;
+    }
+    return closed;
 }
 
 - (void)switchToTabAtIndex:(NSInteger)tabIndex {

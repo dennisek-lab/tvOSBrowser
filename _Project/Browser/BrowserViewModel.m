@@ -38,6 +38,19 @@ static NSUInteger const kMaximumTabCount = 5;
     return tab;
 }
 
+- (BrowserTabViewModel *)addBackgroundTab {
+    if (self.tabs.count >= kMaximumTabCount) {
+        return nil;
+    }
+
+    BrowserTabViewModel *tab = [BrowserTabViewModel new];
+    [self.tabs addObject:tab];
+    if (self.activeTabIndex == NSNotFound || self.activeTabIndex < 0 || self.activeTabIndex >= (NSInteger)self.tabs.count) {
+        self.activeTabIndex = self.tabs.count - 1;
+    }
+    return tab;
+}
+
 - (BrowserTabViewModel *)ensureActiveTab {
     BrowserTabViewModel *tab = [self activeTab];
     if (tab != nil) {

@@ -28,6 +28,8 @@ static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLangu
 static NSString * const kWebSubtitlesEnabledDefaultsKey = @"WebSubtitlesEnabled";
 static NSString * const kClassicDesignEnabledDefaultsKey = @"ClassicDesign";
 static NSString * const kSetupCompletedDefaultsKey = @"SetupCompleted";
+static NSString * const kCloseUnusedTabsDefaultsKey = @"CloseUnusedTabs";
+static NSTimeInterval const kUnusedTabExpiryInterval = 30.0 * 60.0;
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -324,6 +326,29 @@ static NSUInteger const kMaximumTextFontSize = 200;
 - (void)setWebSubtitlesEnabled:(BOOL)webSubtitlesEnabled {
     [[self defaults] setBool:webSubtitlesEnabled forKey:kWebSubtitlesEnabledDefaultsKey];
     [[self defaults] synchronize];
+}
+
+- (BOOL)closeUnusedTabsEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kCloseUnusedTabsDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setCloseUnusedTabsEnabled:(BOOL)closeUnusedTabsEnabled {
+    [[self defaults] setBool:closeUnusedTabsEnabled forKey:kCloseUnusedTabsDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSTimeInterval)unusedTabExpiryInterval {
+    if (!self.closeUnusedTabsEnabled) {
+        return 0.0;
+    }
+#if DEBUG
+    double debugSeconds = [NSProcessInfo.processInfo.environment[@"TAB_EXPIRY_SECONDS"] doubleValue];
+    if (debugSeconds > 0.0) {
+        return debugSeconds;
+    }
+#endif
+    return kUnusedTabExpiryInterval;
 }
 
 @end
