@@ -3,7 +3,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// Erweiterte Werbeblocker-Regeln (Scriptlets und prozedurales CSS), die der WebKit-Content-Blocker nicht kann.
-/// Die Regeln liegen als Domain->Regeln-Zuordnung im Paket (Scriptlets/, erzeugt von tools/build_scriptlets.py).
+/// Die Regeln liegen als Domain->Regeln-Zuordnung im Paket (Scriptlets/, erzeugt von tools/build_scriptlets.py);
+/// neuere lädt BrowserFilterListUpdater ohne App-Update nach (der neuere Stand gewinnt).
 /// Je Navigation wird nur ein WKUserScript mit den Regeln für die Hosts der aktuellen Seite (Hauptframe und
 /// Unterframes) eingespielt: document-start, alle Frames, Seitenwelt. Jeder Frame wendet die Regeln seines Hosts an.
 /// Der Schalter „Werbeblocker“ und die Ausnahme pro Seite von BrowserContentBlocker schalten auch die Scriptlets ab.
@@ -23,6 +24,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Anzahl Scriptlet- und CSS-Regeln, die für einen Host gelten (für Tests und Statusanzeigen).
 - (NSUInteger)ruleCountForHost:(nullable NSString *)host;
+
+/// Entpackt scriptlets.json.z und prüft den Aufbau (names/fn/rules/css/hosts). nil, wenn unbrauchbar.
+/// Darf von jedem Thread aufgerufen werden.
++ (nullable NSDictionary *)scriptletDataFromPackedData:(NSData *)packed;
+
+/// Neuer Regelstand (BrowserFilterListUpdater, bereits mit scriptletDataFromPackedData: geprüft). Gilt ab der
+/// nächsten Navigation. Hauptthread.
+- (void)activateScriptletData:(NSDictionary *)data;
 
 @end
 

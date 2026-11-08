@@ -55,7 +55,7 @@ Funktionen
 - **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), moderne Zeigerbilder in drei Stilen.
 - **Tabs:** Tab-Übersicht mit Vorschaubildern, Sitzung bleibt nach Neustart erhalten.
 - **Reader-Modus:** Artikel ohne Ablenkung (Readability), Knopf links neben •••.
-- **Werbeblocker:** Filterlisten von uBlock Origin Lite als WebKit-Inhaltsregeln, dazu erweiterte Regeln (Scriptlets, prozedurales CSS) je Seite. Erkennt eine Seite den Blocker und sperrt sie (z. B. bild.de), wird für diese Seite automatisch eine Ausnahme gesetzt.
+- **Werbeblocker:** Filterlisten von uBlock Origin Lite als WebKit-Inhaltsregeln, dazu erweiterte Regeln (Scriptlets, prozedurales CSS) je Seite. Erkennt eine Seite den Blocker und sperrt sie (z. B. bild.de), wird für diese Seite automatisch eine Ausnahme gesetzt. Die Listen aktualisieren sich ohne App-Update: Ein GitHub-Workflow baut sie täglich neu, die App holt höchstens einmal am Tag den neuen Stand (geprüft per SHA-256, umgeschaltet erst nach erfolgreichem Kompilieren; sonst bleiben die bisherigen bzw. mitgelieferten Listen).
 - **Cookie-Banner:** werden automatisch abgelehnt (autoconsent). Bei „Zustimmen oder bezahlen“-Seiten wird optional zugestimmt.
 - **Video:** Videos lassen sich im nativen Player öffnen (mit Bild-in-Bild, Spulen, Metadaten, Rückschreiben der Position in die Seite), Steuerung auch über das iPhone (Now Playing).
 - **Automatische Untertitel** (lokal mit whisper.cpp, GPU über Metal): im nativen Player und – über einen Ton-Abgriff per Web Audio – auch für Videos direkt in der Webseite.
@@ -71,7 +71,7 @@ Einstellungen (•••)
 |:--|:--|
 | Diese Seite | Startseite öffnen, Zusammenfassen, Übersetzen, als Startseite setzen, Werbeblocker hier, Cookie-Banner hier ablehnen |
 | Navigation | Tabs, Neuer Tab, Favoriten, Verlauf |
-| Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitel (Webseite), Cloudflare-DNS |
+| Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Filterlisten aktualisieren (mit Stand), Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitel (Webseite), Cloudflare-DNS |
 | Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt: Leiste, Symbole und Zeiger wie im Original, ohne Glas), Glow-Animation (aus: stehender Verlauf; bei „Bewegung reduzieren“ immer stehend), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
 | Daten | Cache leeren, Cookies löschen |
 | Hilfe | Bedienung, Was ist neu |
@@ -97,4 +97,5 @@ Für Entwickler
 - `docs/ERWEITERUNGEN.md` – alle Eigenbauten, Risiken, Selbsttests, Logpräfixe
 - `docs/BERICHT-STABILITAET-LEISTUNG.md` – Stabilitäts- und Leistungsprüfung vom 8. November 2026 mit Messwerten am Apple TV
 - `docs/SIRI_STEUERUNG.md`, `docs/APPLE_INTELLIGENCE.md` – Befunde zu Siri und Apple Intelligence auf tvOS
+- `.github/workflows/filterlisten.yml` – baut die Werbeblocker-Listen täglich und veröffentlicht sie am Release `filterlisten-latest` (Abschnitt 6.10 in `docs/ERWEITERUNGEN.md`)
 - `THIRD_PARTY_NOTICES.md` – Lizenzen (u. a. uBlock-Origin-Filterlisten, autoconsent, Readability, AdGuard Scriptlets, whisper.cpp)
