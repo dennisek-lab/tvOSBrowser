@@ -31,6 +31,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSArray<NSString *> *cookieBannerExceptionHosts;
 /// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
+/// Automatische Untertitel (whisper.cpp) im nativen Player. Standard: aus.
+@property (nonatomic) BOOL autoSubtitlesEnabled;
+/// Sprache der automatischen Untertitel: „en“ (Standard, Modell base.en) oder „auto“ (mehrsprachiges Modell, erkennt die Sprache selbst).
+@property (nonatomic, copy) NSString *autoSubtitlesLanguage;
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
 /// Zeigertempo (Faktor auf die Beschleunigungskurve des Clickpads). Standard 1.0, begrenzt auf 0.3 bis 3.0.
@@ -38,6 +42,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) double pointerSpeed;
 /// Zeiger gleitet nach schnellem Wischen kurz weiter und läuft sanft aus. Standard: an.
 @property (nonatomic) BOOL pointerGlideEnabled;
+/// Liquid-Glass-Animationen (Federn, Glas materialisiert, Standard: an); aus: schlichte Überblendungen, s. BrowserMotion.
+@property (nonatomic) BOOL liquidGlassAnimationsEnabled;
+
+/// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
+@property (nonatomic) NSUInteger cursorStyle;
+/// Untertitel für Videos in der Webseite (Tonabgriff per Web Audio, Weg B). Standard: aus.
+@property (nonatomic) BOOL webSubtitlesEnabled;
 
 - (void)ensureUserAgentConsistency;
 

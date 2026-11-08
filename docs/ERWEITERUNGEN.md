@@ -19,13 +19,15 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 7. [Klickziele, Seitenfarbe, Glow-Farbe](#7-klickziele-seitenfarbe-glow-farbe-browserclicktargettracker)
 8. [Fernbedienung](#8-fernbedienung-browserremoteinputcontroller)
 9. [Obere Leiste](#9-obere-leiste-browsertopbarview) (mit 9.1 [Reader-Modus](#91-reader-modus-browserreadermode))
-10. [Video: Hooks, nativer Player, Asset-Loader, YouTube](#10-video)
+10. [Video: Hooks, nativer Player, Asset-Loader, YouTube, automatische Untertitel](#10-video)
 11. [DNS-Proxy (Cloudflare)](#11-dns-proxy-browserdnsproxy)
 12. [Weitere Eingriffe in Systemklassen](#12-weitere-eingriffe-in-systemklassen)
 13. [Start-/Verlaufsansicht, Bedienungsdialog, Tab-Übersicht](#13-start-und-verlaufsansicht-bedienungsdialog-tab-übersicht)
 14. [Selbsttest und Gerätezyklus](#14-selbsttest-und-gerätezyklus)
 15. [Alle Logpräfixe](#15-logpräfixe)
 16. [Offen/unklar](#16-offenunklar)
+17. [App-Icon und Top Shelf](#17-app-icon-und-top-shelf)
+18. [Animationen (Liquid Glass / schlicht)](#18-animationen-browsermotion)
 
 ---
 
@@ -39,19 +41,24 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Nutzerskripte, `userScripts`-Handling | `BrowserCookieConsentBlocker.m` (`refreshController:…`), `BrowserWebView.m`, `BrowserClickTargetTracker.m` | hoch |
 | Cookie-Ablehner (autoconsent) + Bezahlschranken | `BrowserCookieConsentBlocker.m/.h`, `Autoconsent/bridge.js`, `Autoconsent/autoconsent.standalone.js` | mittel (Drittcode) bis hoch (Brücke hängt an Interna des Bundles) |
 | Werbeblocker | `BrowserContentBlocker.m/.h`, `ContentBlocker/*`, `tools/build_adblock_rules.py`, `tools/validate_adblock_rules.swift` | hoch (Store-Pfad, Regelformat) |
+| Werbeblocker, erweiterte Regeln (Scriptlets, prozedurales CSS) | `BrowserScriptletInjector.m/.h`, `Scriptlets/*`, `tools/build_scriptlets.py`, `tools/scriptlets_convert.mjs`, `tools/scriptlets-extra/` | mittel (Drittcode) bis hoch (YouTube ändert laufend, `_removeUserScript:` privat) |
 | Klickziele, Seitenfarbe, Glow-Farbe, Videomeldungen | `BrowserClickTargetTracker.m/.h` | mittel |
 | Fernbedienung (GameController, Presses, Ring, Magnetic Buttons, Lupe) | `BrowserRemoteInputController.m/.h`, `UIApplication+BrowserSelectPressForwarding.m`, Host-Methoden in `ViewController.m` | hoch (GameController-Verhalten, `sendEvent:`-Tausch) |
 | Obere Leiste | `BrowserTopBarView.m/.h`, `BrowserTabCoordinator.m` (`updateTopNavAndWebView`) | mittel (`UIGlassEffect`) |
 | Nativer Videoplayer, Handover | `BrowserVideoPlaybackCoordinator.m`, `BrowserNativeVideoPlayerViewController.m`, `BrowserNativeVideoAssetLoader.m` | mittel |
+| Automatische Untertitel (whisper.cpp) | `BrowserSubtitle*.m/.h`, `vendor/whisper.xcframework`, `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | mittel (MTAudioProcessingTap, eigener HLS-Leser, Drittcode) |
 | Video-Hooks, Media-Session | `BrowserClickTargetTracker.m` (`BrowserVideoHookScript`, `BrowserMediaSessionHookScript`), `BrowserNowPlayingController.m` | mittel |
+| Untertitel in der Webseite (Web-Audio-Abgriff, Weg B) | `WebSubtitles/web_audio_tap.js`, `BrowserWebAudioCapture.m`, `BrowserWebSubtitleController.m`, `BrowserWebSubtitleOverlay.m` | mittel (Web Audio, CORS/DRM) |
 | YouTube-Erfassung/-Extraktor | `BrowserWebView.m` (`BrowserYouTubeRequestCaptureScript`), `BrowserYouTubeExtractor.m` | hoch (Extraktion ist abgeschaltet) |
 | DNS-Proxy (Cloudflare DoH) | `BrowserDNSProxy.m/.h`, `SceneDelegate.m`, `AppDelegate.m` | hoch (`nw_*`-Privacy-Context, `proxyConfigurations`) |
 | Eingabedialog für Formulare (Passwörter) | `BrowserPageActionCoordinator.m`, `BrowserDOMInteractionService.m` | niedrig bis mittel |
 | Adress-Bearbeiten mit Aufklapp-Bereich (Favoriten, Oft, Zuletzt), Favicons | `BrowserAddressPanelView.m`, `BrowserFaviconCache.m`, `BrowserHistoryStore.m` (alte Vollbild-Startansicht `BrowserStartViewController.m` nicht mehr eingebunden) | niedrig |
 | Bedienungsdialog | `BrowserGuideViewController.m` | niedrig |
+| Sprachbefehle (Befehlstabelle, Parser, Router, Rückmeldung) | `BrowserCommand.m/.h`, `BrowserCommandParser.m/.h`, `BrowserCommandRouter.m/.h`, Host in `ViewController.m` | niedrig |
 | Tab-Übersicht, Sitzung | `BrowserTabOverviewController.m`, `BrowserTabCoordinator.m`, `BrowserSessionStore.m` | niedrig |
 | Systemklassen-Hacks | `WebCoreNSURLSessionTaskTransactionMetrics+AddPrivacyStance.m` (aktiv), `AVPlayerViewController+BrowserFullscreenBlock.m` und `WebAVPlayerViewController+FullscreenSubviewHack.m` (beide per Schalter aus) | hoch |
 | Machbarkeitstest | `BrowserFeasibilityProbe.m` | niedrig |
+| Animationen (Liquid Glass / schlicht) | `BrowserMotion.m/.h`, Aufrufer in Leiste, Aufklapp-Karte, Seitenleiste, Dialogen, Hervorhebung | niedrig bis mittel (`UIGlassEffect`-Materialisieren) |
 | Selbsttest | `ViewController.m` (`runPointerSelfTestIfRequested`, nur DEBUG) | niedrig |
 
 ---
@@ -66,7 +73,7 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 2. **Lädt eine Seite?** Logzeilen `[Load] commit/layout/paint/finish +N ms`. Fehlen `layout`/`paint`: `_webView:renderingProgressDidChange:` kommt nicht mehr an (Abschnitt 3).
 3. **Datenspeicher:** Log `[DataStore] eigener Speicher in Caches, N Verzeichnisse gesetzt, store=ok`. Bei `nicht verfügbar` oder `store=nil` gehen Logins/LocalStorage nach Neustart verloren. Verzeichnisanzahl mit dem Vorwert vergleichen (aktuell bis zu 14 Selektoren, nicht alle müssen greifen).
 4. **Zoom und Layout:** Selbsttest `zoom` (loggt `_viewScale`), Wikipedia öffnen (Überzoom-Fix), Klickziele bei 150 % treffen.
-5. **Werbeblocker:** Logzeilen `[AdBlock] … aus Store` bzw. `kompiliert`; `Fehler`/`nicht lesbar` heißt Regelformat oder Store defekt. Danach Testseite mit Werbung.
+5. **Werbeblocker:** Logzeilen `[AdBlock] … aus Store` bzw. `kompiliert`; `Fehler`/`nicht lesbar` heißt Regelformat oder Store defekt. Danach Testseite mit Werbung. Scriptlets: `[Scriptlets] geladen: …` beim Start, im DEBUG-Build je Seite `[Scriptlets] <host> N Regeln`; YouTube-Test aus 6.9.
 6. **Cookie-Ablehner:** Selbsttest mit `clearsite:`/`clearall` und `url:`, dann `[CookieBlock] …`-Zeilen. Prüfen, dass andere Nutzerskripte (Zeiger-Ziele, Video-Hooks) nach dem Umschalten noch laufen (Abschnitt 4).
 7. **Fernbedienung:** Log `[Input] Clickpad über GameController: …` beim Start; sonst läuft nur der UIKit-Fallback. Mit echter Fernbedienung Zeiger, oben/unten, links/rechts, Ring, Play/Pause, Menü prüfen.
 8. **Magnetic Buttons und Linse:** Zeiger auf einen Link ziehen, Glas-Hervorhebung/Glow prüfen (Snapshot-Linse: `resizableSnapshotViewFromRect:`).
@@ -141,8 +148,10 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 | `BrowserVideoHookScript` | document-start, Hauptframe | ebenda |
 | `BrowserFrameVideoScript` (Manifeste und Videos in eingebetteten Frames) | document-start, alle Frames (überspringt den Hauptframe selbst) | ebenda |
 | `BrowserMediaSessionHookScript` | document-start, Hauptframe | ebenda |
+| `WebSubtitles/web_audio_tap.js` (nur wenn Untertitel in der Webseite an) | document-start, **alle** Frames | `BrowserWebAudioCapture installIntoUserContentController:` (in `commonInit` nach dem Cookie-Ablehner oder beim Einschalten) |
+| Scriptlets (`Scriptlets/runtime.js` plus Regeln der Seite) | document-start, **alle** Frames, Seitenwelt; wird **je Navigation getauscht** | `BrowserScriptletInjector updateUserContentController:forNavigationToURL:mainFrame:` (Abschnitt 6.9) |
 
-Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
+Nachrichten-Handler (Rückkanal, `addScriptMessageHandler:name:`): `browserTargets`, `browserVideo` (beide Tracker), `browserAutoconsent` (Cookie-Ablehner), `browserWebAudio` (Untertitel in der Webseite, Abschnitt 10.6). Die Handler-Klassen (`BrowserClickTargetMessageProxy`, `BrowserVideoMessageProxy`, `BrowserCookieConsentMessageProxy`, `BrowserWebAudioMessageProxy`) bekommen das Protokoll `WKScriptMessageHandler` per `class_addProtocol` zur Laufzeit angehängt, weil WebKit nicht gelinkt ist. Das Protokoll wird per `objc_getProtocol("WKScriptMessageHandler")` gesucht; fehlt es, wird nicht angehängt und WebKit lehnt den Handler eventuell ab.
 
 **Die Falle.** `WKUserContentController userScripts` ist eine **Live-Ansicht** auf die interne Liste. Der Cookie-Ablehner muss sein Skript ein- und ausbauen (Schalter, Ausnahme pro Seite), WebKit kennt aber kein Einzel-Entfernen, nur `removeAllUserScripts`. Deshalb in `BrowserCookieConsentBlocker refreshController:exception:force:`:
 
@@ -155,6 +164,8 @@ for (id script in scripts) { if (script != oldScript) addScript(controller, scri
 `[… copy]` wäre falsch: `copy` auf der Live-Ansicht gibt dieselbe Ansicht zurück, die nach `removeAllUserScripts` leer ist; dann würden **alle** anderen Skripte (Zeigerziele, Video-Hooks, Viewport-Fix, YouTube-Erfassung) verloren gehen. Symptom: Nach Umschalten von Cookie-Ablehner oder Seitenwechsel auf eine Ausnahme-Seite rasten Zeiger nicht mehr ein, Videos werden nicht mehr erkannt, Wikipedia überzoomt. Ändert Apple den Rückgabetyp von `userScripts` (z. B. `NSArray` zu Proxy-Objekt), muss die Kopie weiterhin eine echte `NSArray` mit eigenem Speicher sein.
 
 Auch für anderen Code, der Skripte ändert: neue Nutzerskripte immer **vor** dem ersten Umschalten des Cookie-Ablehners installieren oder zusätzlich in dieser Routine berücksichtigen (sie fasst nur das eigene Skript an, lässt die übrigen aber stehen).
+
+Der Scriptlet-Einspieler (6.9) tauscht sein Skript bei vielen Hauptframe-Navigationen. Er entfernt nur das eigene Skript mit dem privaten `_removeUserScript:` (vorhanden unter tvOS 27) und fällt sonst auf dasselbe Muster zurück (`[NSArray arrayWithArray:]`, alle übrigen Skripte neu anhängen). Die Routine des Cookie-Ablehners nimmt das Scriptlet-Skript wie jedes andere mit.
 
 **Woran man merkt, dass es kaputt ist.** Siehe Symptome oben. Hilfreich: Selbsttest `js:` mit `typeof window.__browserTargets` (Zeiger-Skript), `typeof window.__browserVideoHook`, `typeof window.__browserViewportFix`, `typeof window.autoconsentStandalone` (alle `object`/`number`/`boolean`, nicht `undefined`).
 
@@ -263,7 +274,7 @@ Alle Zeilen sind **nicht** auf DEBUG beschränkt:
 Symptom ohne Fehlerzeile: Werbung erscheint trotz `aus Store` → Controller bekommt Listen nicht (Selektoren `removeAllContentRuleLists`/`addContentRuleList:`) oder Seite steht in den Ausnahmen.
 
 ### 6.6 Test
-Log beim Start lesen (`devicectl … --console`), dann Nachrichtenseite mit Werbung öffnen. Nicht umgesetzt sind Scriptlets (`##+js`), `$redirect`, `$removeparam`, prozedurale Kosmetik u. a. (Zahlen in `manifest.json`, Abschnitt `sources`); ein Teil der YouTube-Werbung bleibt deshalb sichtbar (offen laut PLAN.md).
+Log beim Start lesen (`devicectl … --console`), dann Nachrichtenseite mit Werbung öffnen. Im Content-Blocker nicht umgesetzt sind `$redirect`, `$removeparam`, `$replace`, HTML-Filter (`##^`) u. a. (Zahlen in `manifest.json`, Abschnitt `sources`). Scriptlets und prozedurale Kosmetik übernimmt `BrowserScriptletInjector` (6.9).
 
 ### 6.7 Aktualisieren
 ```
@@ -283,6 +294,58 @@ Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `
 - **Log (DEBUG):** `[AdBlockWall] host … erkannt → Ausnahme, neu laden`.
 - **Keine eingebaute Hostliste:** Die Filterliste „Adblock Warning Removal List“ (EasyList, antiadblockfilters) ist gepflegt, besteht aber aus Netzwerk-/Kosmetikregeln, nicht aus einer Liste von Sperr-Seiten. Eine Vorab-Ausnahme würde unnötig Werbung zeigen, daher nur Erkennung.
 - **Test:** `POINTER_SELFTEST="clearall;url:https://www.bild.de;wait;wait;wait;wait;wait;wait;wait;wait"`. Gegenprobe ohne Treffer: spiegel.de, heise.de, `de.wikipedia.org/wiki/Werbeblocker`. Sperrtexte fehlen? `BLOCKER`/`ACTION` in `adblock-wall.js` ergänzen.
+
+### 6.9 Erweiterte Regeln: Scriptlets und prozedurales CSS (`BrowserScriptletInjector`)
+
+**Zweck.** Regeln, die der WebKit-Content-Blocker nicht kann, als JavaScript in die Seite: uBO-Scriptlets (`##+js(...)`), AdGuard-Scriptlets (`#%#//scriptlet(...)`), prozedurale Kosmetik (`:has-text`, `:upward`, `:xpath`, `:remove()`, `:style()`, `:matches-css`, `#?#`, `#$#`-CSS) und Kosmetik mit Platzhalter-Domains (`google.*##…`) bzw. gemischten Domains (`a.com,~b.a.com##…`). Wichtigster Fall: YouTube-Werbung (`set-constant` auf `ytInitialPlayerResponse.adPlacements/playerAds/adSlots`, `json-prune-fetch-response`/`json-prune-xhr-response` auf `/youtubei/v1/player`, `trusted-replace-fetch-response` „adSlots“ → „no_ads“ auf `get_watch`, uBOs `serverContract`-Skript per `trusted-replace-node-text`).
+
+**Dateien.**
+- `_Project/Browser/BrowserScriptletInjector.m/.h`: Singleton `sharedInjector`, lädt die Daten, baut je Seite das Skript, tauscht es aus.
+- `_Project/Browser/Scriptlets/` (Ordnerreferenz): `scriptlets.json.z` (raw deflate, erzeugt), `manifest.json` (Zahlen, Gründe für Verworfenes), `extended-css.min.js` (AdGuard ExtendedCss, unverändert), `LICENSE-GPL-3.0.txt`, `runtime.js` (**handgeschrieben**, nicht vom Build-Skript erzeugt).
+- `tools/build_scriptlets.py`: liest dieselben Listen wie `build_adblock_rules.py` (gleicher Cache `tools/.adblock-cache`, `LISTS` von dort), wertet die uBO-Vorverarbeitung `!#if …` aus (`ENV`: Safari, kein HTML-Filter, `ext_ubol` aus), sammelt alle Regeln, die der Content-Blocker verwirft, und schreibt die Domain→Regeln-Zuordnung.
+- `tools/scriptlets_convert.mjs`: Node-Hilfsskript, wandelt mit dem Konverter aus `@adguard/scriptlets` uBO-Syntax ins AdGuard-Format und prüft die Namen.
+- `tools/scriptlets-extra/`: `eigene-regeln.txt` (eigene Ergänzungen in uBO-Syntax, derzeit: `get_watch` auf YouTube von `adPlacements`/`playerAds` befreien) und eigene Scriptlets für uBO-Namen, die AdGuard nicht hat (derzeit `trusted-prevent-dom-bypass.js`: YouTube holt sich sonst aus einem leeren iframe ein unverändertes `fetch`).
+- Bibliotheken (GPL-3.0, siehe `THIRD_PARTY_NOTICES.md`): `@adguard/scriptlets` (nur `dist/scriptlets.corelibs.json`, jedes Scriptlet als eigenständige Funktion `function(source, args)`), `@adguard/extended-css`. Das Build-Skript installiert beide per `npm install --ignore-scripts` nach `tools/vendor-download/scriptlets-npm` (nicht im Repo).
+
+**Datenformat** (`scriptlets.json.z`): `names`/`fn` (Scriptlet-Name und Funktionsquelltext), `rules` (`[Funktionsindex, Argumente]`), `css` (`[Text, prozedural 0/1, Pfadbedingung?]`), `hosts` (`host` oder `name.*` → `{s: [Regelindizes], c: [CSS-Indizes]}`), `generic` (Scriptlets ohne Domain, derzeit keine), `except` (Host → abgeschaltete Indizes, `-1` = alle Scriptlets; aus `#@#+js(...)` und `~domain`).
+
+**Datenfluss.**
+1. `BrowserWebView commonInit` → `prepare`: entpackt die Daten auf einer eigenen Queue (Simulator ~25 ms; gehalten werden ~26.000 Host-Schlüssel). Kommt eine Navigation vorher, wartet sie per `dispatch_sync`.
+2. `decidePolicyForNavigationAction` ruft für **jede** erlaubte Navigation (Haupt- und Unterframes) `updateUserContentController:forNavigationToURL:mainFrame:`. Einhängepunkt in `BrowserWebView.m` direkt hinter den Aufrufen von Werbeblocker und Cookie-Ablehner.
+3. Hauptframe: aktiv nur, wenn `BrowserContentBlocker.isEnabled` und keine Ausnahme für die Seite (`isExceptionForURL:`). Damit gelten dieselben Einstellungen wie beim Werbeblocker (`AdBlockEnabled`, `AdBlockExceptionHosts`); das Menü lädt nach dem Umschalten neu, dadurch greift es beim nächsten `decidePolicy…`. Regeln für den Host: alle Oberdomains und `name.*`-Varianten nachschlagen, generische dazu, Ausnahmen ab.
+4. Unterframe: Sein Host wird ergänzt, wenn für ihn Regeln existieren (z. B. `accounts.google.com` auf YouTube, `sp-spiegel-de.spiegel.de`). Ohne Regeln bleibt das Skript stehen.
+5. Das Skript enthält nur die Funktionen und Regeln der Hosts dieser Seite (YouTube ~185 KB mit ExtendedCss, Spiegel ~13 KB). Ändert sich die Regelmenge nicht (Signatur), wird nichts getauscht. `runtime.js` läuft in jedem Frame, nimmt den Eintrag für `location.hostname` (bei `about:blank` den des Elternframes) und ruft jede Funktion mit `{name, args, engine:'corelibs', verbose:false}` auf. CSS ohne Prozedur kommt als `<style>`, prozedurales über ExtendedCss (`new ExtendedCss({cssRules}).apply()`, jede Regel vorher mit `ExtendedCss.validate` geprüft).
+
+**Private/fragile Punkte.** `_removeUserScript:` (privat; sonst Rückfall auf `removeAllUserScripts` mit echter Kopie, Abschnitt 4). Die Aufrufkonvention der AdGuard-corelibs (`source`, `args`) und die ExtendedCss-Schnittstelle (`validate`, Konfiguration `cssRules`/`styleSheet`; `cssText` gibt es in 2.x nicht mehr). Vor allem aber die YouTube-Regeln: uBO ändert sie oft, die Liste muss regelmäßig neu gebaut werden. uBO-Scriptlets ohne AdGuard-Gegenstück fallen weg (Zahlen unter `skipped` in `Scriptlets/manifest.json`, u. a. `trusted-edit-inbound-object` für YouTube-Anfragen, `trusted-json-edit*`, `trusted-create-html`, `nobab`; HTML-Filter `##^` gehen grundsätzlich nicht). Einige uBO-Namen ordnet das Build-Skript selbst zu (`UBO_FALLBACK`, `rpnt` → `trusted-replace-node-text`, `trusted-replace-argument` mit `condition`).
+
+**Woran man merkt, dass es kaputt ist.**
+
+| Logzeile | Bedeutung |
+|:--|:--|
+| `[Scriptlets] geladen: N Scriptlets, M CSS-Regeln, H Hosts, Stand <hash> (x ms)` | Start in Ordnung (auch Release) |
+| `[Scriptlets] nicht verfügbar (Daten …, Laufzeit …)` | Datei fehlt im Paket, Entpacken scheitert oder der Platzhalter `/*BROWSER_SCRIPTLET_DATA*/` fehlt in `runtime.js` |
+| `[Scriptlets] <hosts> N Regeln (x KB)` | (DEBUG) Skript für die Seite eingespielt |
+| `[Scriptlets] keine Regeln für diese Seite` / `aus (Schalter oder Ausnahme)` | (DEBUG) kein Skript |
+
+Im DEBUG-Build setzt `runtime.js` je Frame `window.__browserScriptlets = {host, scriptlets, failed, css, extended, rejected, error}` (`failed`: Scriptlets, die geworfen haben; `rejected`: von ExtendedCss abgelehnte Selektoren; `error`: ExtendedCss-Fehler) und `window.__browserExtendedCss`. Im Release-Build entstehen keine globalen Namen.
+
+**Test** (Simulator oder Gerät, Selbsttest aus Abschnitt 14):
+```
+# Einstiegsseite: Werbedaten im Player-Response müssen fehlen
+POINTER_SELFTEST='url:https://www.youtube.com/watch?v=dQw4w9WgXcQ;wait;wait;wait;wait;js:[JSON.stringify(window.__browserScriptlets), String(ytInitialPlayerResponse.adPlacements), String(document.querySelector("#movie_player").getPlayerResponse().adPlacements), !!document.querySelector(".ad-showing")].join(" ")'
+# erwartet: {"host":"www.youtube.com","scriptlets":23,…} undefined undefined false
+```
+Gegenprobe ohne Scriptlets: Ausnahme setzen (`xcrun simctl spawn <udid> defaults write io.github.tvosbrowser.app AdBlockExceptionHosts -array youtube.com`); dann liefert dieselbe Zeile `[object Object]`, und im Simulator lief ein 15-s-Werbeclip (`.ad-showing`). Navigation innerhalb von YouTube: `js:document.querySelector("ytd-app").dispatchEvent(new CustomEvent("yt-navigate", {bubbles: true, composed: true, detail: {endpoint: {watchEndpoint: {videoId: "kJQP7kiw5Fk"}, commandMetadata: {webCommandMetadata: {url: "/watch?v=kJQP7kiw5Fk", webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832}}}}}))`, danach wie oben `getPlayerResponse()` prüfen (Stand 8. November 2026: ohne Scriptlets zwei `adPlacements`, mit Scriptlets `undefined`). Prozedurales CSS: auf heise.de `<p>=== Anzeige / Sponsorenhinweis ===</p>` an `body` hängen; ExtendedCss blendet ihn und den folgenden Absatz aus.
+
+Im Simulator spielt YouTube das Hauptvideo beim ersten Laden **auch ohne** Scriptlets nicht ab („Dieses Video kann in deinem Browser nicht abgespielt werden“). Ob Werbung wirklich wegfällt und das Video läuft, nur am Gerät beurteilen.
+
+**Aktualisieren.**
+```
+python3 tools/build_adblock_rules.py --refresh   # Listen neu laden (gemeinsamer Cache)
+python3 tools/build_scriptlets.py                # erzeugt Scriptlets/, trägt den Ordner bei Bedarf ins Projekt ein
+python3 tools/build_scriptlets.py --refresh      # alternativ: Listen hier neu laden
+```
+Bibliotheksversionen stehen in `SCRIPTLETS_VERSION`/`EXTCSS_VERSION` am Anfang von `build_scriptlets.py`; nach einer Änderung neu bauen und `THIRD_PARTY_NOTICES.md` anpassen. Neue Dateien im Ordner `Scriptlets/` brauchen keine Projektänderung.
 
 ---
 
@@ -316,21 +379,21 @@ Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `
 **Dateien.** `BrowserRemoteInputController.m/.h` (Logik, Hervorhebung, Linse), `UIApplication+BrowserSelectPressForwarding.m` (globale Tastenweiterleitung), Host-Implementierung in `ViewController.m` (Methoden `browserRemoteInputController…`), `BrowserPageActionCoordinator.m` (Klick), `BrowserDOMInteractionService.m` (DOM-Koordinaten).
 
 ### 8.1 Eingabewege
-- **GameController (bevorzugt):** `GCControllerDidConnectNotification` → `attachToGameController:` setzt `microGamepad.reportsAbsoluteDpadValues = YES`, `allowsRotation = NO` und `dpad.valueChangedHandler`. Rohwerte −1…1 werden mit `kPadPointsPerUnit = 640` in Punkte umgerechnet, dann Beschleunigung (`PointerSpeed` aus `NSUserDefaults`, begrenzt 0,3…3,0). Log: `[Input] Clickpad über GameController: <Name>`.
-- **UIKit-Fallback:** `handleTouchesBegan/Moved/Ended:` mit Indirect-Touches (auch iPhone/iPad-Fernbedienung). Wird ignoriert, solange in den letzten 0,25 s eine GameController-Probe kam (`padLastSampleTime`), damit nicht doppelt bewegt wird. DEBUG-Log: `[Input] Raten: GameController N/s, UIKit-Berührungen N/s`.
+- **GameController (bevorzugt):** `GCControllerDidConnectNotification` → `attachToGameController:` setzt `microGamepad.reportsAbsoluteDpadValues = YES`, `allowsRotation = NO` und `dpad.valueChangedHandler` → `handlePadValue:`. Rohwerte −1…1, `(0,0)` = Finger weg. Bewegung nur aus Differenzen (`kPadPointsPerUnit = 640` Rohpunkte je Einheit), Einzelheiten in 8.8. Log: `[Input] Clickpad über GameController: <Name>`.
+- **UIKit-Fallback:** `handleTouchesBegan/Moved/Ended:` mit Indirect-Touches (iPhone/iPad-Fernbedienung). Bewegt nur, wenn der GameController-Weg die Geste nicht hat (`gameControllerOwnsTouch`: Finger liegt auf dem Clickpad oder letzte Probe < `kTouchFallbackQuietTime` 0,3 s); ist ein GameController verbunden, wartet der Rückfall zu Beginn 50 ms, ob von dort Proben kommen. Beide Wege speisen dieselbe Pipeline (8.8), nie gleichzeitig. Ignorierte UIKit-Proben zählt das Gestenlog (`UIKit ignoriert N`).
 - **Presses** (`handlePressesBegan/Ended`, weitergeleitet aus `ViewController`; `UIApplication browser_sendEvent:` fängt Tasten vorab ab, Abschnitt 12).
 
 ### 8.2 Belegung (im Code)
 | Eingabe | Aktion |
 |:--|:--|
-| Wischen | Zeiger bewegen, rastet ein (`kSnapRadius` 36 pt, löst bei `kReleaseMargin` 28 pt; Ziele größer als 420 × 140 werden nur hervorgehoben); Randscrollen am Bildschirmrand |
+| Wischen | Zeiger bewegen (8.8), rastet ein mit Hysterese (ein bei `kSnapEnterRadius` 24 pt vom Zielrand, aus erst bei `kSnapReleaseRadius` 48 pt; Ziele größer als 420 × 140 werden nur hervorgehoben); Randscrollen am Bildschirmrand (nur der Finger, nicht das Gleiten) |
 | Auswahl (Mitte) | Klick (`performSelectAction` → Host `browserRemoteInputControllerHandlePrimaryAction`); Doppelzustellung wird mit 0,15 s entprellt |
 | Oben/unten | eine Seite scrollen (`kPageScrollFraction` 0,8); **oben zweimal** (< 0,4 s) → `browserRemoteInputControllerOpenAddressBar` (Leiste ausklappen, Bearbeiten-Zustand mit Aufklapp-Bereich, Abschnitt 13; keine Tastatur); **unten zweimal** → `browserRemoteInputControllerCompactTopBar` |
 | Links/rechts | `browserRemoteInputControllerNavigateBack/Forward`: Zeiger auf laufendem Video → ±10 s (`sendVideoCommand:… seek:±10`), sonst `stepTargetBy:∓1` (Element-zu-Element; Reihenfolge nach Zeilen à 24 pt, dann links→rechts; am Ende des Sichtbaren `scrollThenStep:` scrollt weiter und springt zum nächsten Ziel, nach 0,45 s Wartezeit auf die neue Meldung). Ziele: `browserRemoteInputControllerStepTargets` (Zeigerziele plus Videos ohne eigene Bedienelemente, obere Leiste nur am Seitenanfang) |
 | Play/Pause | kurz (nach 0,3 s Doppeltipp-Fenster): Video steuern, sonst Adressdialog; lang (≥ 0,6 s): `…HandlePlayPauseLongPress` (Suche/Diktat); doppelt: `…HandleAdvancedMenuPress` (•••-Menü) |
 | Menü/Zurück | `browserRemoteInputControllerHandleMenuPress`: Seitenvollbild verlassen → Dialog schließen → Seite zurück → sonst `NO` (System geht zum Home-Bildschirm, vorher Sitzung sichern) |
 | Im Aufklapp-Bereich der Adresse | optionale Host-Methode `browserRemoteInputControllerAddressPanelActive`: Pfeile → `stepTargetInDirection:` (räumlicher Sprung: Kandidaten in Blickrichtung, Wertung Abstand + 2 × seitlicher Versatz ab Zielkante), kein Seiten- oder Randscrollen, Zeiger wird nicht ausgeblendet; Select → `browserHandlePrimaryAction` → `handleAddressEditingSelectionAtPoint:`; Play/Pause → Eingabedialog; Menü → schließen. Eckenradius der Hervorhebung per `browserRemoteInputControllerCornerRadiusForTarget:` (Feld: Kapselform, Kacheln: Radius des Icons), keine Linse |
-| Ring (Kreisbewegung) | `trackRotationWithDelta:`: Eintritt bei ≥ 200° akkumulierter Drehung (`kRotationEnterAngle`), danach je 60° (`kRotationStepAngle`) ein Schritt; im Uhrzeigersinn vor, dagegen zurück; Zeiger kehrt zum Gestenstart zurück |
+| Ring (Kreisbewegung) | GameController: `trackRingWithPadPosition:` über die **absolute** Fingerlage: Finger am Rand (Abstand zur Mitte ≥ `kRingMinRadius` 0,8) und ≥ 110° um die Mitte (`kRingEnterAngle`), danach je 60° (`kRingStepAngle`) ein Schritt, Ringmodus bis zum Abheben (oder Finger < 0,55). Gerades Wischen kann das nicht auslösen. UIKit-Rückfall: wie bisher `trackRotationWithDelta:` (Drehung der Wischrichtung, ≥ 200°). Im Uhrzeigersinn vor, dagegen zurück; Zeiger kehrt zum Gestenstart zurück |
 
 ### 8.3 Magnetic Buttons (Hervorhebung)
 Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInputControllerPointerTargets` (Seitenziele aus Abschnitt 7 plus Knöpfe der oberen Leiste per `enumeratePointerTargetsUsingBlock:`; was unter der Leiste liegt, wird verworfen). Darstellung in `BrowserRemoteInputController`:
@@ -338,16 +401,23 @@ Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInpu
 - `BrowserGlowView`: Glow statt Schatten, Farbe vom Host (`browserRemoteInputControllerGlowColorForTarget:`, Fallback Systemblau `0.23/0.57/1.0`)
 - **Linse:** `updateLensForFrame:radius:` nimmt per `resizableSnapshotViewFromRect:afterScreenUpdates:` zwei Schnappschüsse der WebView (`browserRemoteInputControllerLensSourceView`), Mitte 1,04-fach, Randband 1,13-fach, feiner Saum. Nur bei neuer Lage/Größe, nicht pro Frame.
 
+- **Zeigerbilder:** `BrowserCursorRenderer` (eigene Vektorzeichnung per `UIBezierPath`/`UIGraphicsImageRenderer`, 3-fach gerastert, kein Apple-Bildmaterial; die alten PNGs `Cursor`/`Pointer` im Asset-Katalog sind ungenutzt). Arten: Pfeil, Hand (Zeigefinger, nur bei großen Zielen oder in der Tabübersicht sichtbar, sonst ersetzt die Hervorhebung den Zeiger), I-Beam (noch ohne Aufrufer). Stile in `BrowserPreferencesStore.cursorStyle` (Schlüssel `CursorStyle`, additiv, kein Menüeintrag): 0 macOS-Stil (Pfeil schwarz mit weißem Rand, Hand weiß mit schwarzem Rand, Standard), 1 invertiert, 2 SF Symbols (`cursorarrow`, `hand.point.up.left.fill`, Kontur durch 16 versetzte Kopien, Spitze per Pixelsuche). Höhe etwa 44 pt.
+  **Hotspot:** `BrowserCursorImageView` (Unterklasse von `UIImageView`, in `BrowserRemoteInputController` als `cursorView` angelegt) zeichnet das Bild in einer inneren Ansicht, versetzt um `+[BrowserCursorRenderer hotspot]` (30/14 pt Rand für Kontur, Schatten, Daumen). So bleibt `cursorView.frame.origin` die Klickspitze, und alle Hosts (`DOMPointForCursorOrigin:` usw.) bleiben unverändert. Wichtig: `image` der Oberklasse bleibt leer (Setter überschrieben, Getter nicht), sonst zeichnet UIImageView zusätzlich ein zweites, verkleinertes Bild.
+  **Test:** `POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;wait;672,910;wait"` plus Stil per `xcrun simctl spawn <udid> defaults write io.github.tvosbrowser.app CursorStyle -int N`; `770,566;click` trifft den Link „Bildschirm“ (Seite lädt neu). Screenshots in `docs/cursor-screens/` (`zeiger-varianten.png` Kontaktbogen; Zeiger verschwindet nach kurzer Ruhe, Screenshot direkt nach dem `move`-Log aufnehmen).
+
 ### 8.4 Private/fragile Punkte
 - GameController: Verhalten von `GCMicroGamepad` mit absoluten Werten (Wertebereich, Nullwert beim Loslassen als „nicht berührt“: `handlePadValue:` wertet `(0,0)` als Loslassen). Ohne `respondsToSelector`-Fallback, aber der UIKit-Fallback übernimmt, wenn keine Proben kommen.
 - Hängt von `UIPress`-Typen und davon ab, dass die Taste sowohl über `pressesEnded` als auch global ankommt (Doppelzustellung, Entprellung 0,15 s).
 - Linse nutzt öffentliche UIKit-API, ist aber layoutabhängig (`source.window`, Rechteck innerhalb der Quelle).
-- Abstimmungswerte (`kSnapRadius`, `kPadPointsPerUnit`, Beschleunigung) sind laut PLAN.md noch nicht endgültig mit echter Fernbedienung abgestimmt.
+- Abstimmungswerte (`kSnapEnterRadius`/`kSnapReleaseRadius`, `kPadPointsPerUnit`, Beschleunigung, `kRingMinRadius`, Gleiten) sind nur synthetisch geprüft, noch nicht mit echter Fernbedienung abgestimmt.
+- Annahmen über die Hardware, die das Gestenlog am Gerät bestätigen oder widerlegen soll: Achsen kommen beim Aufsetzen/Abheben einzeln (`Achsen einzeln N`), Ausreißer beim Abheben (`Ausreißer verworfen N`), Wertebereich am Ring (`Radius max`).
 
 ### 8.5 Woran man merkt, dass es kaputt ist
 | Symptom | Ursache |
 |:--|:--|
-| Zeiger ruckelt/träge | kein `[Input] Clickpad über GameController`-Log → UIKit-Fallback; DEBUG-Rate-Log vergleichen |
+| Zeiger ruckelt/träge | kein `[Input] Clickpad über GameController`-Log → UIKit-Fallback; Gestenlog `[Pointer] Geste …`: Proben/s, `Δt` max (Hauptschleife blockiert), `Alter Fingerlage` |
+| Zeiger hüpft zurück | Gestenlog `Rückschritte` > 0; `Ausreißer verworfen`/`Achsen einzeln` prüfen; Selbsttest `swipe:` (`zurück nach Loslassen` muss 0 sein) |
+| Ring löst nie aus | `Radius max` im Gestenlog < 0,8 → `kRingMinRadius` senken |
 | Zeiger springt beim Drücken | `pressInProgress`-Unterdrückung greift nicht (Presses kommen nicht an) |
 | Doppelte Klicks | Entprellung/`lastDirectSelectPressTimestamp` |
 | Kein Einrasten | `move`-Selbsttest meldet `targets=0` (Abschnitt 7) |
@@ -356,11 +426,50 @@ Ziele (Rechtecke in `rootView`-Koordinaten) liefert der Host: `browserRemoteInpu
 | Tasten kommen im nativen Player doppelt an | `[InputTrace][App] …`-Zeilen, Abschnitt 12 |
 
 ### 8.6 Test
-- Selbsttest (ohne Fernbedienung, DEBUG): `x,y` (Zeiger setzen, loggt `move … targets=N`), `click`, `left`/`right` (loggt `overVideo`, danach `Zeiger … scroll=…`), `next`/`prev` (Sprung), `gestures` (loggt `cw1.5`, `ccw1`, `line`, `quarter`; erwartet: Kreise > 0, Gerade und Viertelkreis = 0), `playpause`, `menu`.
+- Selbsttest (ohne Fernbedienung, DEBUG): `x,y` (Zeiger setzen, loggt `move … targets=N`), `click`, `left`/`right` (loggt `overVideo`, danach `Zeiger … scroll=…`), `next`/`prev` (Sprung), `gestures` (loggt `cw1.5`, `ccw1`, `line`, `quarter`; erwartet: Kreise > 0, Gerade und Viertelkreis = 0), `swipe:dx,dy,ms[,flick|clean|flickclean]` und `ring:radius,grad,ms` (8.8), `playpause`, `menu`.
 - Echte Fernbedienung: Zeigerbewegung, oben/unten, links/rechts über Video, Ring, Play/Pause kurz/doppelt/lang, Menü.
 
 ### 8.7 Aktualisieren
-Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten der Abschnitte „Clickpad über GameController“ und „Kreisgeste“ anpassen.
+Kein externer Teil. Werte in `#pragma mark - Abstimmung` und `#pragma mark - Abstimmung Zeigerpipeline` (oben in der Datei) sowie in den Konstanten der Abschnitte „Ring über die absolute Fingerlage“ und „Kreisgeste“ anpassen.
+
+### 8.8 Zeiger-Pipeline
+
+**Warum.** Rückmeldung vom Gerät (8. November 2026): Zeiger „nicht flüssig, verzögert, springt, hüpft zurück“. Gefundene Ursachen in der alten Fassung (jede Probe bewegte sofort, Beschleunigung pro Probe):
+1. Beschleunigung aus dem Abstand zweier Proben (`dx/dt` mit der Uhrzeit beim Eintreffen): gebündelt eintreffende Proben ergeben winzige `dt`, die Verstärkung springt von Probe zu Probe zwischen etwa 0,9 und 2,6.
+2. Ausreißer beim Abheben (Fingerkuppe rollt ab) wurde voll angewandt und durch (1) noch verstärkt: synthetisch 75–83 pt Rücksprung.
+3. Achsen, die beim Abheben einzeln auf 0 fallen (`(0, y)` vor `(0, 0)`), galten als Bewegung zur Mitte: synthetisch bis 357 pt Rücksprung. Ebenso beim Aufsetzen (`(x, 0)` vor `(x, y)`): Sprung.
+4. Kreiserkennung über die Drehung der Wischrichtung: lange, leicht krumme Bewegungen summieren Rauschen auf; bei 200° setzte sie den Zeiger an den Gestenstart zurück.
+5. Einrasten: Sprung zur Zielmitte (animiert 0,09 s) und beim Lösen Sprung zur Fingerposition; Lösen (28 pt) enger als Einrasten (36 pt), also keine Hysterese.
+6. Nach 4 s Ruhe schluckte die ganze erste Wischbewegung (nur Einblenden); das fühlte sich wie Verzögerung an (`kRevealConsumesFirstSwipe`, jetzt NO; der erste Klick nach Ruhe zeigt weiterhin nur den Zeiger).
+7. Ungleichmäßig: pro Bild mal keine, mal zwei Proben (synthetisch Schwankung der Schrittweite 60–86 %, 2–3 von 8 Bildern ohne Bewegung).
+
+Nicht die Ursache: Hit-Tests per JavaScript während der Bewegung (Ziele kommen aus dem Zwischenspeicher von `BrowserClickTargetTracker`; synchrones JS nur beim Klick). Rechenzeit pro Bild gemessen 0,1–0,3 ms.
+
+**Ablauf.**
+1. *Eingabe:* GameController-Probe → `handlePadValue:`. Aufsetzen setzt nur den Bezugspunkt. Proben mit genau einer Achse 0 bewegen nichts (Übergang), der Bezugspunkt bleibt. Sprünge > `kPadMaxSampleJump` (0,35) werden verworfen. Verdächtige Proben (entgegen der Bewegung oder > 3 × übliche Schrittweite) hält `padHeldDelta` zurück, bis die nächste sie bestätigt (höchstens `kPadHoldMaxAge` 25 ms); kommt das Abheben, werden sie verworfen. UIKit-Rückfall: `enqueueRawPointerDelta:…`.
+2. *Proben:* `acceptRawDelta:atTime:` speichert Ankunftszeit und aufsummierte Rohbewegung (Ring mit 32 Einträgen).
+3. *Bildtakt:* `CADisplayLink` (`pointerFrame:`, 60–120 Hz, läuft nur bei Bedarf). Nachabtastung: Fingerlage zum Zeitpunkt „jetzt − `kResampleFactor` × mittlerer Probenabstand“ (4–12 ms), linear zwischen den umgebenden Proben, **nie extrapoliert** (kein Vorauslaufen, kein Zurückfedern).
+4. *Beschleunigung:* Verstärkung aus der Fingergeschwindigkeit über `kSpeedWindow` (35 ms), S-Kurve `kGainMin` 0,8 … `kGainMax` 2,6 zwischen 150 und 1700 Rohpunkten/s, mal Zeigertempo (`BrowserPreferencesStore.pointerSpeed`, Schlüssel `PointerSpeed`, 0,3–3, Standard 1; kein Menüeintrag).
+5. *Glättung:* 1-€-Filter (`kFilterMinCutoff` 20 Hz + `kFilterBeta` × Geschwindigkeit) von `rawPoint` nach `freePoint`; Tiefpass erster Ordnung, schießt nie über.
+6. *Einrasten:* `targetWithHysteresisFor:`. Kleine Ziele ziehen den sichtbaren Punkt Richtung Mitte (`kSnapPull` 0,85, im Ziel geklemmt); die Anziehung nimmt mit dem Abstand der Fingerposition vom Zielrand stufenlos ab und ist an der Lösegrenze null (`visiblePointForTarget:emergence:`). Lösen also ohne Sprung, der Pfeil taucht ab halbem Weg wieder auf. Zielwechsel und Sprünge (links/rechts, Ring) gleiten mit `kSnapEaseTimeConstant` 45 ms. Liegt der Finger in einem anderen Ziel, wechselt es sofort (dicht stehende Links).
+7. *Zeigerebene:* `placeCursorAtPoint:` setzt `cursorView.frame` in `CATransaction setDisableActions:YES`, keine UIView-Animation. Die Hervorhebung wird nur bei neuem Ziel neu aufgebaut (`highlightShownTarget`), Ziele einmal pro Bild geholt (`frameTargets`).
+8. *Gleiten:* Hebt der Finger in Fahrt ab (letzte Bewegung ≤ 40 ms vorher, ≥ `kGlideMinSpeed` 600 pt/s), läuft der Zeiger exponentiell aus (`kGlideTimeConstant` 90 ms, höchstens `kGlideMaxDistance` 140 pt). Endet am Bildschirmrand (scrollt nie) und wenn ein kleines Ziel ihn fängt. Abschaltbar: `BrowserPreferencesStore.pointerGlideEnabled` (Schlüssel `PointerGlideEnabled`, Standard an; kein Menüeintrag). Neue Berührung oder Klick hält sofort an der sichtbaren Stelle an (`discardPendingMotion`).
+9. *Klick:* `commitPointerForClick` beendet Gleiten und Übergang und setzt die Zeigerebene in einem eingerasteten Ziel auf den angezogenen Punkt im Ziel, damit `cursorView.frame.origin` es sicher trifft.
+
+**Messung (DEBUG).** Nach jeder Geste: `[Pointer] Geste GameController|UIKit: Dauer, Proben (N/s, Abstand ms, UIKit ignoriert N), Bilder (Δt mittel/max), Alter Fingerlage beim Anzeigen mittel/max ms, Rechenzeit, größter Schritt, Sprünge (Schritt > 20 pt und > 2,5 × vorheriger), Rückschritte (Schritt > 1 pt gegen die Bewegungsrichtung), Achsen einzeln, Sprünge verworfen, Ausreißer verworfen, Auslauf pt, Radius max`.
+
+**Selbsttest.** `swipe:dx,dy,ms[,flick|clean|flickclean]` speist künstliche Clickpad-Werte (Einheiten, ganze Breite = 2) über `handlePadValue:` ein, Proben im Wechsel 7/15 ms. Ohne `clean` mit nachgebildeten Hardware-Eigenheiten (Achsen einzeln beim Aufsetzen und Abheben, Ausreißer 0,05 entgegen der Richtung vor dem Abheben); `flick` hebt in voller Fahrt ab. Gemessen wird die sichtbare Zeigerebene (`presentationLayer`) pro Bild: `[PointerTest] … Schritt (CV = Schwankung der Schrittweite im mittleren Abschnitt), Rücksprünge, Weg bis Loslassen, Auslauf, zurück nach Loslassen, Ende`. `ring:radius,grad,ms` kreist im Uhrzeigersinn: `ring:0.9,300,700` → 4 Schritte, `ring:0.5,300,700` → 0. Beispiel:
+`POINTER_SELFTEST="url:about:blank;500,600;swipe:0.6,0,300;500,600;swipe:0.6,0,300,flick;960,700;ring:0.9,300,700"`
+
+| Messung (Simulator, synthetisch) | alt | neu |
+|:--|:--|:--|
+| Rücksprung nach Loslassen, mit Hardware-Eigenheiten | 75–357 pt | 0 pt |
+| Rücksprung ohne Eigenheiten | 0 pt | 0 pt |
+| Schwankung der Schrittweite (CV), gleichmäßiges Wischen | 60–86 % | 35–45 % |
+| Bilder ohne Bewegung, während der Finger wischt | 2–3 von 8 | 0 |
+| Alter der gezeigten Fingerlage beim Anzeigen | sofort beim Eintreffen, dann bis zum nächsten Bild (ungleichmäßig) | ~26 ms, davon 16,7 ms Bildaufbau |
+| Ring bei Kreis im inneren Bereich (r 0,5) | (Richtungs-Erkennung, rauschanfällig) | 0 Schritte |
+| Rechenzeit pro Bild | – | 0,1–0,3 ms |
 
 ---
 
@@ -415,7 +524,8 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 
 ## 10. Video
 
-Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Bild-in-Bild, 10.7 Untertitel, 10.8 Einhängepunkt für Erweiterungen (automatische Untertitel).
+Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Bild-in-Bild, 10.7 Untertitel, 10.8 Einhängepunkt für Erweiterungen, 10.9 Automatische Untertitel (whisper.cpp).
+Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Untertitel in der Webseite (Weg B).
 
 ### 10.1 Video-Hooks und Medienmeldungen
 **Zweck.** Vollbild-Wünsche und Videostarts der Seite abfangen, HLS/DASH-Manifeste für MSE-Videos (`blob:`) finden und melden, Media-Session-Handler der Seite sichern.
@@ -526,6 +636,146 @@ url:https://www.w3schools.com/html/html5_video.asp;wait;js:(window.vv=document.q
 url:https://example.org/;wait;js:(window.f=document.createElement('iframe'),f.srcdoc='<video src=https://www.w3schools.com/html/mov_bbb.mp4 width=400 height=300></video>',document.body.prepend(f),'ok');wait;js:(f.contentDocument.querySelector('video').play(),'p');wait;native;wait;nplayer
 ```
 
+### 10.9 Automatische Untertitel (whisper.cpp)
+**Zweck.** Untertitel für Videos ohne eigene Untertitelspur, lokal auf dem Apple TV erzeugt (Apples Spracherkennung gibt es unter tvOS nicht). Weg A: nur im nativen Player.
+
+**Dateien.**
+| Datei | Aufgabe |
+|:--|:--|
+| `BrowserSubtitleController.m/.h` | Einhängen in den Player, Schalter in der Transportleiste, Abschnitte mit Überlappung, Abdeckung, Anzeige-Takt |
+| `BrowserSubtitleEngine.m/.h` | whisper.cpp-Hülle (Modell laden, `whisper_full`, Stille- und Rauschfilter, Echtzeitfaktor, Speicher), `BrowserSubtitleCue` |
+| `BrowserSubtitleAudioSource.h` | Protokoll der Tonquellen (16 kHz mono float, Videozeit des ersten Samples) |
+| `BrowserSubtitleAudioTapSource.m/.h` | Dateien (MP4/MOV/M4A): `MTAudioProcessingTap` über `AVAudioMix`, Abwärtsmischung im Audio-Thread, Umrechnung auf 16 kHz mit `AVAudioConverter` |
+| `BrowserSubtitleHLSAudioSource.m/.h` | HLS: Playlist selbst lesen, Audio-Segmente vor der Abspielposition laden und dekodieren |
+| `BrowserSubtitleOverlayView.m/.h` | Ebene in `contentOverlayView`, Stil nach `MACaptionAppearance` |
+| `vendor/whisper.xcframework` | whisper.cpp v1.9.5, statisch, tvOS arm64 + Simulator arm64, Metal + Accelerate (committet, ≈17 MB) |
+| `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | Framework bauen, Modell laden |
+| `_Project/Browser/WhisperModels/` | Ordnerreferenz im App-Paket; Modelle `ggml-*.bin` sind nicht im Repo |
+
+**Bauen.**
+```bash
+tools/build_whisper.sh            # nur nötig für eine neue whisper.cpp-Version (Ergebnis ist committet)
+tools/fetch_whisper_model.sh      # Pflicht: lädt ggml-base.en-q5_1.bin (57 MB) nach _Project/Browser/WhisperModels/
+```
+- `build_whisper.sh` holt die Quelle nach `vendor/whisper.cpp` (nicht im Repo), lädt bei Bedarf CMake per pip nach `vendor/tools-venv`, baut beide Slices mit dem Xcode-Generator, fasst `libwhisper`, `libggml*` (base, cpu, blas, metal) und `libparakeet` per `libtool` zu einem statischen `whisper.framework` zusammen und erzeugt `vendor/whisper.xcframework`. Version: `WHISPER_TAG=v1.9.5`, Mindest-tvOS: `TVOS_MIN=17.0`.
+- Einbindung ins Projekt ohne Framework-Eintrag: `FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]` bzw. `[sdk=appletvsimulator*]` zeigen auf die Slices, gelinkt wird per Modul-Autolink (`#import <whisper/whisper.h>`, Modulkarte mit `link framework "whisper"`, `c++`, Accelerate, Metal, MetalKit). Fehlt das Framework, kompiliert `BrowserSubtitleEngine.m` ohne whisper (`__has_include`), die App baut, der Player meldet „nicht verfügbar“.
+- Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. Ohne installierte Metal-Toolchain (`xcodebuild -downloadComponent MetalToolchain`) wird der Kernel-Quelltext eingebettet (`GGML_METAL_EMBED_LIBRARY=ON`) und **beim ersten Laden zur Laufzeit übersetzt** (im Simulator ≈14 s, auf dem Gerät unbekannt, danach greift der Metal-Cache des Systems). Mit Toolchain baut das Skript `vendor/whisper-metal/<sdk>/default.metallib`; die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Ist sie nicht da, meldet die Phase nur einen Hinweis.
+- Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write io.github.tvosbrowser.app AutoSubtitlesCPUOnly -bool YES`.
+
+**Modell.** Reihenfolge in `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`: für „en“ `base.en-q5_1`, `base.en-q8_0`, `base.en`, `tiny.en-q5_1` …, danach mehrsprachige; für „auto“ zuerst mehrsprachige (`base-q5_1`, …). Bei Leistungsproblemen `tools/fetch_whisper_model.sh tiny.en-q5_1` und das base-Modell aus dem Ordner löschen. Mehrsprachig (Deutsch): `tools/fetch_whisper_model.sh base-q5_1`; dann erscheint im Player-Menü „Sprache automatisch“ (`autoSubtitlesLanguage = auto`, whisper erkennt die Sprache je Abschnitt).
+
+**Einhängepunkt.** Keine Änderung am Player nötig: `+[BrowserSubtitleController load]` meldet sich für `BrowserNativePlayerDidCreatePlayerItemNotification` an (Abschnitt 10.8), legt je Player einen Controller an (assoziiertes Objekt am Player, `attachToPlayerViewController:playbackURL:requestHeaders:cookies:` mit `videoURL`, `requestHeaders`, `requestCookies`) und hängt die Anzeige in `subtitleOverlayView`. `BrowserNativePlayerWillEndSessionNotification` ruft `detach` (Erkennung stoppen, Zeitbeobachter, Ebene und Menüeintrag entfernen, Modell freigeben); Bild-in-Bild mit Rückkehr in denselben Player läuft also weiter. HLS-Erkennung über `isStreamingPlaylist`. Zeigt der Player schon Untertitel (`isShowingExistingSubtitles`: Stream-Spur oder WebVTT der Seite), startet die Erkennung nicht bzw. pausiert (Prüfung alle 2 s), außer sie wurde im Player-Menü ausdrücklich eingeschaltet.
+
+**Ablauf.**
+1. `attach`: Ebene in `subtitleOverlayView` (sonst `contentOverlayView`), Menü „Automatische Untertitel“ (An/Aus, bei mehrsprachigem Modell zusätzlich Englisch/Sprache automatisch) in `transportBarCustomMenuItems` (vorhandene Einträge wie „Untertitel der Seite“ bleiben; der Player setzt sein Menü teils neu, deshalb prüft der Controller alle 2 s und hängt sich wieder an), `addPeriodicTimeObserverForInterval` 0,1 s. Ist `autoSubtitlesEnabled` an: Modell auf der whisper-Queue laden, dann Tonquelle starten.
+2. Tonquelle: Adresse mit `.m3u8` → HLS-Quelle, sonst Audio-Tap. Findet der Tap keine Audiospur (HLS ohne `.m3u8` in der Adresse), wird einmal die HLS-Quelle versucht.
+3. Abschnitte (`processingQueue`): Tap 5 s mit 1 s Überlappung (wenig Verzug), HLS 12 s mit 1,5 s Überlappung. Jeder Abschnitt nimmt nur Segmente, deren Mitte in `[Anfang, Ende − Überlappung/2)` liegt; eine Abdeckung im 0,1-s-Raster (`NSMutableIndexSet`) verhindert Doppelungen und überspringt nach dem Zurückspulen schon erkannte Stellen (HLS lädt solche Segmente gar nicht erst). Echtzeitquelle und whisper zu langsam: alte Abschnitte werden verworfen. Pause: angefangener Abschnitt wird sofort ausgewertet.
+4. whisper (`engineQueue`): greedy, `no_context`, `temperature_inc = 0`, `audio_ctx` passend zur Abschnittslänge (5 s → 384, 12 s → 704), Stille (RMS < 0,004) wird übersprungen, Texte in Klammern/ohne Buchstaben und `no_speech_prob > 0,8` verworfen, gleicher Text innerhalb 15 s ebenfalls.
+5. Anzeige: Untertitel mit Start ≤ t und `visibleUntil` > t, höchstens zwei Zeilen. Kommt ein Untertitel zu spät (Tap), bleibt er ab Ankunft noch 1,5–4 s stehen. Pause und Spulen ergeben sich aus dem Zeitbeobachter, Untertitel bleiben gespeichert.
+
+**HLS-Quelle.** Master: AAC-Varianten bevorzugt, kleinste Bandbreite; hat sie eine `AUDIO`-Gruppe mit `URI`, wird die Rendition genommen (Sprache der Einstellung, sonst `DEFAULT=YES`), sonst der gemuxte Ton der Variante (auch reine Audio-Varianten). Segmente: MPEG-TS (eigener Demuxer PAT → PMT → PES, Stream-Typ 0x0F AAC/ADTS, 0x03/0x04 MP3, 0x81 AC-3) → `ExtAudioFile`; gepacktes Audio (`.aac` mit ID3) → `ExtAudioFile`; fMP4 (`#EXT-X-MAP`, Init + Segment als Datei) → `AVAssetReader` mit 16 kHz mono. `#EXT-X-BYTERANGE` und AES-128 (CommonCrypto, IV aus Playlist oder Sequenznummer) gehen. Zeiten = Summe der `#EXTINF` (passt zur `currentTime` von AVPlayer bei VOD). Lädt bis 60 s voraus, höchstens 25 s unausgewerteter Ton im Stau. Header und Cookies der Seite werden mitgeschickt.
+
+**Grenzen.**
+- Bild-in-Bild: `contentOverlayView` ist im PiP-Fenster nicht sichtbar; die Erkennung läuft weiter, nach der Rückkehr stimmen die Untertitel sofort.
+- Live-HLS (ohne `#EXT-X-ENDLIST`), SAMPLE-AES/FairPlay, LATM-AAC: nicht unterstützt (Hinweis im Player). DASH geht im nativen Player ohnehin nicht.
+- Tap: Untertitel kommen um Abschnittslänge + Rechenzeit zu spät (≈5–6 s), weil der Tap nur liefert, was gerade läuft.
+- Mehrere Audiospuren in einer Datei: nur die erste.
+- Beobachtung außerhalb dieser Teile (Stand 2026-11-08, nach Merge mit main): Die Hauptplaylist `…/tears-of-steel.ism/.m3u8` (Dateiname nur „.m3u8“) öffnet der Player nicht (`AVFoundationErrorDomain -11828`), die Untertitel-Quelle liest sie aber; die Varianten-Playlist desselben Streams läuft samt Untertiteln (über den Asset-Loader).
+
+**Schalter im Seitenmenü** (vorbereitet, nicht eingebaut, weil `BrowserMenuCoordinator.m` gerade anderweitig bearbeitet wird). In `BrowserMenuCoordinator.m` neben `autoOpenNativePlayerMenuItem` einfügen und in die Liste „Ansicht & Wiedergabe“ (bzw. `extensionMenuItems`) aufnehmen:
+```objc
+- (BrowserAdvancedMenuItem *)autoSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.autoSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Automatische Untertitel"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesEnabled = !enabled;
+    }];
+}
+```
+Der Player liest die Einstellung beim Öffnen; im Player selbst schaltet das Menü der Transportleiste sofort.
+
+**Logs** (`[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` = Warnungen/Fehler von whisper/ggml, beim Laden alles):
+- `eingehängt, an=…, Sprache …, whisper=1, Modell …` – Einstellung und gefundenes Modell.
+- `Modell base.en-q5_1 geladen in 0.20 s, … Speicher 38 → 164 MB, System: …` – Ladezeit, Speicherzuwachs, ggml-Fähigkeiten.
+- `Abschnitt 5.0 s @ 23.9 s: 1 Segmente in 0.31 s (RTF 0.06, Schnitt 0.06), ctx 384, …, Speicher 233 MB – <Text>` – je Abschnitt Echtzeitfaktor (Rechenzeit/Audiodauer) und Speicher.
+- `Stand t=…: N Untertitel, N Abschnitte, N verworfen, N wartend, RTF Schnitt …, Speicher … MB` – alle 30 s.
+- `[Subtitles][Tap] prepare rate=44100 ch=2 …`, `[Subtitles][HLS] Audio-Rendition …`, `Audio-Playlist …: N Segmente, … fMP4=…, AES=…`, `Segment @ … s: … KB → … s Ton in … s`.
+- `Modell freigegeben, Speicher … MB` beim Schließen.
+
+**Messwerte Simulator** (Mac mit Apple Silicon, CPU, 4 Threads, base.en-q5_1): Tap 5-s-Abschnitte 0,30–0,41 s (RTF ≈ 0,06), HLS 12-s-Abschnitte 0,55–1,5 s (RTF 0,05–0,13). Modell laden 0,1–0,2 s (+≈14 s Metal-Übersetzung beim allerersten Laden, wenn Metal genutzt wird). Speicher der App 38 MB → 164 MB nach dem Laden, 230–265 MB während der Erkennung, nach dem Schließen ≈ 73 MB. Gerät: noch nicht gemessen.
+
+**Test.**
+```bash
+xcrun simctl spawn <SIM> defaults write io.github.tvosbrowser.app AutoSubtitlesEnabled -bool YES
+SIMCTL_CHILD_POINTER_SELFTEST='url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;state' \
+  xcrun simctl launch --console --terminate-running-process <SIM> io.github.tvosbrowser.app | grep Subtitles
+```
+Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8` (TS, Ton gemuxt; Selbsttest mit `;wait;…;nplayer`), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü oder Seitenmenü.
+
+**Kaputt?** Keine `[Subtitles]`-Zeilen: Einhängepunkt fehlt. `whisper=0`: Framework nicht gefunden (Suchpfad). `Modell –`: `tools/fetch_whisper_model.sh` nicht ausgeführt bzw. Ordner nicht im Paket. Tap ohne `prepare`: Audio-Mix nicht angenommen (z. B. HLS, dann sollte die HLS-Quelle übernehmen). RTF > 0,8 auf dem Gerät: `tiny.en-q5_1` nehmen oder Metal prüfen (`[Subtitles][whisper]`-Zeilen beim Laden).
+
+### 10.6 Untertitel für Videos in der Webseite (Weg B: Tonabgriff per Web Audio)
+**Zweck.** Für Videos, die in der Seite bleiben müssen (DASH/MSE, wenn der native Player nicht geht), den Ton per Web Audio abgreifen, in der App erkennen lassen und die Untertitel als native Ebene über die WebView legen. Weg A (nativer Player, whisper-Engine) ist davon getrennt (`BrowserSubtitle*`).
+
+**Dateien.**
+
+| Datei | Aufgabe |
+|:--|:--|
+| `WebSubtitles/web_audio_tap.js` (Ordnerreferenz, Ressource) | Seiten-Skript: Web Audio ans Video, 16 kHz mono, Blöcke, Zeit/Rechteck, Zustände |
+| `BrowserWebAudioCapture.m/.h` | Rückkanal `browserWebAudio`, Base64 → Float32, Ringpuffer 30 s, Rechteck-Umrechnung, Status |
+| `BrowserSpeechRecognizing.h/.m` | Protokoll `BrowserSpeechRecognizing`, Cue-Typ `BrowserWebSubtitleCue` (start, end, text) |
+| `BrowserSpeechRecognizerStub.m/.h` | Platzhalter-Erkennung: „[Ton erkannt: 1,0 s · −18 dB]“ |
+| `BrowserWebSubtitleController.m/.h` | Verbindung: Abschnitte mit Überlappung an die Erkennung, Cues ins Overlay, Hinweise, Kennzahlen |
+| `BrowserWebSubtitleOverlay.m/.h` | native Untertitel-Ebene (Unteransicht der `BrowserWebView`), Stil nach `MACaptionAppearance` |
+| `BrowserPreferencesStore` | `webSubtitlesEnabled` (Schlüssel `WebSubtitlesEnabled`, Standard aus) |
+| `BrowserWebView` | `userContentController` (neu, öffentlich); in `commonInit` Skript und Rückkanal früh installieren, wenn `webSubtitlesEnabled` |
+| `ViewController.m` | `browserSetWebSubtitlesEnabled:` (für den Menüschalter), `startWebSubtitlesIfEnabled` (App-Start in `viewDidAppear:`, Tabwechsel in `activeWebViewChangedFrom:`), Selbsttest `websubs` |
+
+**Datenfluss.**
+1. `startForWebView:` registriert (einmal je `WKUserContentController`, per assoziiertem Objekt) den Rückkanal `browserWebAudio` mit schwachem Vermittler (`class_addProtocol` wie in Abschnitt 4), fügt das Nutzerskript hinzu (document-start, **alle Frames**) und spielt Skript plus Startbefehl sofort in die aktuelle Seite (`evaluateJavaScriptAsync:`). iframes der aktuellen Seite bekommen das Skript erst nach dem nächsten Laden; ist `webSubtitlesEnabled` beim Anlegen der WebView schon an, sofort. Nach jeder Navigation meldet das Skript `ready`, die App schickt den Startbefehl erneut.
+2. Skript (`window.__browserWebAudio.start({block,silence,mode,force})`): wählt jede Sekunde das Video (spielend vor hörbar vor größter sichtbarer Fläche; springt nicht hin und her). Ohne Video im Hauptframe gibt es den Befehl per `postMessage` an alle iframes weiter.
+3. Vorabprüfung, **bevor** das Video angefasst wird (sonst wäre es stumm): DRM (`mediaKeys`/`webkitKeys`) → `blocked drm`; natives HLS (`.m3u8` direkt als `src`, kein MSE) → `blocked hls`; fremde Herkunft ohne `crossorigin` → `blocked cors`. `blob:`-Quellen (MSE) laufen durch.
+4. `AudioContext` anlegen und `resume()`; `createMediaElementSource()` erst, wenn der Kontext `running` ist. Gesperrt → Zustand `suspended gesture`, Fortsetzen beim nächsten `pointerdown`/`click`/`keydown`/`play`. Im Simulator (tvOS 27.2) lief der Kontext ohne Geste nach wenigen Millisekunden, vermutlich weil die WebView `mediaTypesRequiringUserActionForPlayback = 0` setzt.
+5. Kette: `source → destination` (Ton zu den Lautsprechern, bleibt für immer) und `source → Abgriff → Gain 0 → destination`. Abgriff = `AudioWorkletNode` (Modul als `blob:`-URL), sonst `ScriptProcessorNode(4096)` (wenn Worklet fehlt oder CSP `blob:` verbietet). Im Abgriff: Downmix auf mono (Kanalzahl 2, `speakers`, Mitte geht mit ein), Butterworth-Tiefpass 7 kHz, Mittelung auf 16 kHz.
+6. Je Block (Standard 0,5 s = 8000 Werte): RMS/Spitze, `t` = Medienzeit des ersten Werts (aus `video.currentTime` minus Verzug im Graphen), Base64 der Float32-Bytes (reine Nullen ohne Daten, `zero:1`). Bei Pause, Spulen, Puffern keine Blöcke. Alle 250 ms und bei `play/pause/seeking/seeked/ratechange` eine `time`-Meldung mit `currentTime`, Rate, Pause, Rechteck (CSS-Pixel), `innerWidth`, fixiert, Vollbild. iframes melden das Rechteck an den Elternframe, der es um die Lage des iframes verschiebt.
+7. App: Blöcke auf der seriellen `sampleQueue` dekodieren → Ringpuffer (30 s) mit zusammenhängenden Abschnitten (neuer Abschnitt bei mehr als 0,3 s Abweichung, `segmentGeneration`) → `sampleHandler`. Rechteck wie die übrigen Video-Rechtecke umrechnen: `× viewWidth / innerWidth`, `+ topObscuredInset`, plus seit der Meldung gescrollte Strecke (KVO auf `contentOffset`, nicht bei fixierten Videos).
+8. `BrowserWebSubtitleController`: Sind `windowDuration − overlapDuration` neue Sekunden da, geht der letzte Abschnitt (`windowDuration`) an die Erkennung (eigene serielle Queue). Nie zwei gleichzeitig; ist die Erkennung beschäftigt, wird übersprungen (Zähler `übersprungen`), nicht gestaut. Bei Pause wird der angefangene Abschnitt sofort ausgewertet. Nach Spulen oder Seitenwechsel verfallen laufende Ergebnisse (`generation`), die Erkennung bekommt `reset`. Neue Cues ersetzen im Overlay alle Cues ab Abschnittsbeginn.
+9. Overlay: Zeit = letzte gemeldete `currentTime` + vergangene Zeit × Rate (höchstens 1,5 s ohne Meldung weiterzählen), `CADisplayLink` mit 10–15 Hz. Gezeigt wird der neueste Cue mit `start ≤ t`, bis `holdDuration` (Abschnitt + 1,5 s) nach seinem Ende, weil die Erkennung erst nach dem Abschnittsende liefert (sonst wäre der Text abgelaufen, bevor er ankommt). Bei Pause bleibt der Text stehen. Position: unten im sichtbaren Teil des Video-Rechtecks (6 % Abstand), zentriert, höchstens 90 % Breite, 3 Zeilen. Größe: 6,2 % der Videohöhe, 34–72 pt, mal `MACaptionAppearanceGetRelativeCharacterSize`. Farben, Schrift, Kantenstil aus `MACaptionAppearance` (Domäne Nutzer), Hintergrund halbtransparent (0,6), außer in den Einstellungen ist ausdrücklich eine Deckkraft gewählt. Bei Element-Vollbild legt sich das Overlay über das oberste Fenster der Szene (nicht getestet).
+10. Hinweise im Untertitel-Stil (6 s): CORS, DRM, HLS, Stille, stumm, Klick nötig, Fehler; „Kein Video“ nur direkt nach dem Einschalten (`startForWebView:userInitiated:YES`).
+
+**Zustände** (`BrowserWebAudioCaptureStatus`, Detail in Klammern): `Starting`, `WaitingForInteraction` (gesture), `Running`, `Silent` (cors, muted, hls, silence; nach 4 s reiner Nullen bei laufendem Video), `NoVideo` (iframes:N), `Blocked` (cors, hls, drm), `Unsupported`, `Error` (source:InvalidStateError = Seite hängt das Video selbst an Web Audio; script), `Stopped`.
+
+**Ausschalten.** `stop` trennt nur den Abgriff (`source.disconnect(tap)`, sonst alles trennen und wieder an `destination`). Die Quelle bleibt an den Lautsprechern, der `AudioContext` wird nie angehalten: `createMediaElementSource` geht pro Element nur einmal, danach hört man das Video nur noch über Web Audio.
+
+**Erkennung anschließen (whisper).** Eine Klasse mit `BrowserSpeechRecognizing` bauen (16 kHz mono Float32, Werte während des Aufrufs kopieren, `completion` genau einmal, Cue-Zeiten = `startTime` + Versatz), optional `preferredWindowDuration`/`preferredOverlapDuration` (z. B. 3,0/0,5), `reset`, `recognizerName`. Dann in `ViewController` (`browserSetWebSubtitlesEnabled:`, `startWebSubtitlesIfEnabled`, Selbsttest) `[[BrowserWebSubtitleController alloc] initWithRecognizer:…]` statt `new`.
+
+**Fragil/Grenzen.**
+- Fremde Herkunft ohne CORS, DRM und natives HLS liefern nur Nullen (im Simulator für CORS und HLS nachgewiesen). Vorab abgefangen; greift die Prüfung nicht (z. B. Umleitung auf einen anderen Server), ist das Video stumm, bis die Seite neu geladen wird (Hinweis erscheint).
+- Seiten, die ihr Video selbst an Web Audio hängen: `createMediaElementSource` wirft, Zustand `Error source:…`.
+- Lippensynchronität: Der Ton läuft durch den Web-Audio-Graphen (Simulator: `baseLatency` 2,7 ms); auf dem Gerät nicht gemessen.
+- Ist „Native Player automatisch“ an, übernimmt bei MP4/HLS der native Player (Weg A); Weg B betrifft dann nur Videos, die in der Seite bleiben.
+- Im tvOS-Simulator (27.2) gibt es weder `MediaSource` noch `ManagedMediaSource` (die dash.js-Beispielseite lädt nicht). MSE-Seiten (Mediatheken, DASH) sind also nur auf dem Gerät testbar. `blob:`-Quellen werden wie gleiche Herkunft behandelt.
+- Zeitzuordnung: In der ersten Sekunde nach dem Anhängen weichen Blockzeiten um bis zu 0,3 s ab (gepufferter Ton), danach stabil (Abstand 0,50 s).
+- Nur der aktive Tab.
+
+**Kaputt?** Logzeilen `[WebAudio] Zustand …`, `[WebAudio] Block #N 0.50 s t=… rms=… (… dB) peak=… Weg=… ms` (DEBUG, jeder Block), `[WebSubs] Abschnitt … erkannt in N ms`, `[WebSubs] Anzeige „…“ … Verzug … s`. Im Skript: `js:window.__browserWebAudio.status()` (JSON mit Zustand, Modus, `ctx`, Abtastrate, Latenzen, Blöcke, Video). `[WebAudio] Startbefehl ohne Erfolg: missing` = Skript fehlt im Paket (Ordnerreferenz `WebSubtitles`).
+
+**Test.** Selbsttest-Schritt `websubs` (Abschnitt 14.2). Für Tests „Native Player automatisch“ ausschalten. Beispiele (kein `;` in `js:`, Komma-Ausdrücke nutzen):
+```
+# gleiche Herkunft: Block-Log, Overlay (Screenshot nach ~20 s)
+POINTER_SELFTEST='url:<Seite mit MP4 gleicher Herkunft>;js:document.querySelector("video").play()&&1;websubs;wait;wait;websubs:status'
+# Fallback ScriptProcessor, Pause, Spulen, Ausschalten (Video läuft weiter)
+… websubs:sp;wait;js:document.querySelector("video").pause()||1;wait;js:(document.querySelector("video").currentTime=20)&&document.querySelector("video").play()&&1;websubs:status;websubs:off;video
+# CORS: erst blocked cors, mit force die Stille-Erkennung (silent cors nach 4 s)
+… websubs;wait;websubs:force;wait;wait;websubs:status
+# whisper-ähnlicher Takt (3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit)
+… websubs:slow;wait;wait;wait;websubs:status
+```
+Messwerte im Simulator (Mac, tvOS 27.2, Stub): Weg Skript → App 0,7–1,6 ms je Block, Base64 im Skript 0,05–0,09 ms, Dekodieren in der App 0,2 ms, Verzug im Graphen 0–9 ms. Anzeige-Verzug = Abschnittslänge + Rechenzeit (Stub 1 s: Ø 0,9–1,1 s; 3 s + 1,2 s Rechenzeit: rund 4,3 s nach Abschnittsbeginn). CPU (ps): App etwa +0,7, WebContent etwa +1,1 Prozentpunkte gegenüber Wiedergabe ohne Abgriff.
+
+**Menüeintrag** (noch nicht eingebaut, gehört in `BrowserMenuCoordinator.m`, `extensionMenuItems`): Host-Protokoll um `- (void)browserSetWebSubtitlesEnabled:(BOOL)enabled;` erweitern (in `ViewController` vorhanden) und einen Eintrag `webSubtitlesMenuItem` nach dem Muster von `autoOpenNativePlayerMenuItem` anlegen.
+
 ---
 
 ## 11. DNS-Proxy (`BrowserDNSProxy`)
@@ -574,9 +824,10 @@ url:https://example.org/;wait;js:(window.f=document.createElement('iframe'),f.sr
 
 Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 
-- **Adresse bearbeiten mit Aufklapp-Bereich** (`BrowserAddressPanelView.m`, ersetzt die Vollbild-Startansicht): Auslöser zweimal oben, Klick auf Adresse oder Kapsel (`beginAddressEditing` in `ViewController.m`). Die Leiste klappt aus und wird zum Diktierfeld (Abschnitt 9); darunter wächst eine Glas-Karte (`UIGlassEffect` klar, Abdunkelung 0,38) in Leistenbreite 14 pt unterhalb aus der Leiste heraus (Federanimation 0,42 s: Höhe, Effekt nil → Glas, Inhalt blendet verzögert ein); die Seite bleibt mit 50 % Schwarz gedimmt sichtbar. Drei Spalten „Favoriten“ (Stern, Icons 136 pt, ohne Namen), „Oft besucht“ und „Zuletzt“ (Icons 96 pt mit Namen darunter), je 2 × 2 Kacheln; leere Plätze als dezente Flächen. „Zuletzt“ meidet Seiten, die schon unter „Oft besucht“ stehen, füllt bei wenig Verlauf aber auf. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet; die Hervorhebung ist die normale Magnetic-Button-Hervorhebung (Glas, Glow Standardblau). Die Karte ist rein optisch (`userInteractionEnabled = NO`); Ziele liefert `pointerTargetRectsInView:`, Klick `handleSelectionAtPoint:inView:`. Klick auf das Feld bzw. Play/Pause öffnet den Eingabedialog `showAddressDictationInput` (wie `showInputURLorSearchGoogle`, aber Standardtastatur statt Websuche, damit tvOS das Diktat über die Siri-Taste anbietet); Eingabe lädt wie bisher und schließt den Zustand. Menü oder Klick neben die Karte schließt. Logpräfix `[Address]`.
+- **Adresse bearbeiten mit Aufklapp-Bereich** (`BrowserAddressPanelView.m`, ersetzt die Vollbild-Startansicht): Auslöser zweimal oben, Klick auf Adresse oder Kapsel (`beginAddressEditing` in `ViewController.m`). Die Leiste klappt aus und wird zum Diktierfeld (Abschnitt 9); darunter wächst eine Glas-Karte (`UIGlassEffect` klar, Abdunkelung 0,38) in Leistenbreite 14 pt unterhalb aus der Leiste heraus (über `BrowserMotion`, Abschnitt 17: mit Liquid Glass als Kapsel aus der unteren Hälfte der Leiste, Glas materialisiert, Feder mit leichtem Bounce; schlicht Alpha und Höhe; Inhalt blendet verzögert ein); die Seite bleibt mit 50 % Schwarz gedimmt sichtbar. Drei Spalten „Favoriten“ (Stern, Icons 136 pt, ohne Namen), „Oft besucht“ und „Zuletzt“ (Icons 96 pt mit Namen darunter), je 2 × 2 Kacheln; leere Plätze als dezente Flächen. „Zuletzt“ meidet Seiten, die schon unter „Oft besucht“ stehen, füllt bei wenig Verlauf aber auf. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet; die Hervorhebung ist die normale Magnetic-Button-Hervorhebung (Glas, Glow Standardblau). Die Karte ist rein optisch (`userInteractionEnabled = NO`); Ziele liefert `pointerTargetRectsInView:`, Klick `handleSelectionAtPoint:inView:`. Klick auf das Feld bzw. Play/Pause öffnet den Eingabedialog `showAddressDictationInput` (wie `showInputURLorSearchGoogle`, aber Standardtastatur statt Websuche, damit tvOS das Diktat über die Siri-Taste anbietet); Eingabe lädt wie bisher und schließt den Zustand. Menü oder Klick neben die Karte schließt. Logpräfix `[Address]`.
 - **Favicons** (`BrowserFaviconCache.m`): Reihenfolge `https://<host>/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/favicon.ico`, dann `https://www.google.com/s2/favicons?domain=<host>&sz=128`. Erstes Bild ab 48 px gewinnt, kleinere werden nur genommen, wenn nichts Besseres kommt. Speicher (`NSCache`) und Platte (`Library/Caches/Favicons/<host>.img`, Fehlschlag als `.none`, nach 24 h neuer Versuch). Ab 96 px füllt das Icon die Kachel, kleinere sitzen auf hellem Grund; ohne Icon Anfangsbuchstabe auf farbiger Kachel (Farbe aus dem Host). Logpräfix `[Favicon]` (DEBUG).
 - **Alte Start-/Verlaufsansicht** (`BrowserStartViewController.m`, nicht mehr eingebunden, `showStartView` bleibt als Rückfall): Suchfeld, „Zuletzt besucht“, „Meistbesucht“, Favoriten; öffnet über `openURLHandler`. Daten aus `BrowserHistoryStore` (`recordVisitWithURL:title:`, `recentEntries:`, `topEntries:`, `favorites`, `addFavoriteWithURL:…`, `isFavoriteURL:`; je Host zusammengefasst, in `NSUserDefaults`; Benachrichtigung `BrowserHistoryStoreDidChangeNotification`). Früher Aufruf über Klick auf die Adresse.
+- **Sprachbefehle** (`BrowserCommand.m`, `BrowserCommandParser.m`, `BrowserCommandRouter.m`; Konzept `docs/SIRI_STEUERUNG.md`): Text aus dem Adressfeld (Diktat oder Tastatur) geht in `handleEnteredAddressText:` (`ViewController.m`) zuerst an `BrowserCommandParser parseText:`. Treffer → `BrowserCommandRouter performCommandNamed:argument:source:`, sonst wie bisher `openAddressOrSearch:`. Die Tabelle `BrowserCommand allCommands` enthält Name, Titel, Symbol, Argumentart (keins, an/aus/umschalten, Text, Sekunden) und Phrasen als Muster mit Alternativen (`"(starte|start) (den |)reader"`). Der Parser normalisiert (klein, Satzzeichen weg, Bindestrich = Leerzeichen, Füllwörter wie „bitte“ weg) und akzeptiert **nur ganze Phrasen**; danach „30 Sekunden zurück“ und die Präfixe „suche [nach] X“/„google X“ (Suche) und „öffne X“/„gehe zu X“ (nur, wenn X wie eine Adresse klingt, „heise punkt de“ wird `heise.de`). Der Router ruft das Host-Protokoll `BrowserCommandHost` (im `ViewController`, Abschnitt „BrowserCommandHost“) und blendet eine Glas-Kapsel unten mittig ein (`BrowserCommandToastView`, im Fenster, 1,8 s; keine Einblendung bei `address`, `tabs`, `menu`, `help`, die selbst etwas öffnen). Siri (`handleSiriCommandNotification:`) nutzt denselben Router. Neue Funktion anbinden: Eintrag in `allCommands`, Zweig in `performCommandNamed:`, Methode im Host. Debug-Build meldet doppelte Phrasen (`[Command] Phrase doppelt`). Screenshots in `docs/command-screens/`.
 - **Bedienungsdialog** (`BrowserGuideViewController.m`): Glas-Karte mit kurzer Bedienungshilfe, Schalter für den Start-Hinweis (`dontShowHintsOnLaunch`, `toggleHandler`). Aufruf `showHintsAlert` in `ViewController` (beim Start einmal, per Selbsttest `guide`). Der Text sollte mit Abschnitt 8.2 übereinstimmen; bei geänderter Belegung hier und in `README.mdown` nachziehen.
   Stand 8. November 2026: sechs Zeilen (Zeigen/Klicken, Scrollen und Adresse, Knopf zu Knopf, Play/Pause, Zurück, Reader und mehr) plus Fußzeile (Kreisbewegung, iPhone/iPad); Abstände so gewählt, dass eine siebte Zeile (z. B. „Sprachbefehle“) noch auf den Bildschirm passt (Test mit Platzhalterzeile: `docs/guide-screens/guide-7-zeilen-test.png`, aktueller Stand `guide.png`). Der Dialog erscheint beim Start, bis „Nicht mehr anzeigen“ gewählt wird (Standard: anzeigen, also beim ersten Start automatisch); im ••• Menü unter „Hilfe → Bedienung“ jederzeit abrufbar. Startseite bleibt die einstellbare Webseite (`homePageURLString`, Vorgabe google.com); eine eigene HTML-Startseite gibt es nicht. Alle Dialogtexte sind deutsch (alte Sitzungen mit dem Tabtitel „New Tab“ werden beim Laden umbenannt).
 - **Tab-Übersicht** (`BrowserTabOverviewController.m`): Kartenansicht der Tabs; Host-Protokoll `BrowserTabOverviewControllerHost`; Tastenlogik in `BrowserRemoteInputController` (`TabOverviewVisible`, `…DismissTabOverview`, `…HandleTabOverviewAlternateAction`). Offen laut PLAN.md: Konflikte mit Play/Pause und Dialogen prüfen.
@@ -624,9 +875,14 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `left` / `right` | Clickpad links/rechts (Video ±10 s oder Elementsprung) | `left overVideo=…`, danach nach 1,2 s `Zeiger (x, y) scroll=…` |
 | `next` / `prev` | Elementsprung direkt (`stepTargetBy:`) | `next cursor=(x, y)` |
 | `gestures` | Ring-Erkennung mit künstlichen Bewegungen (`debugRunGestureWithDeltas:`) | `gestures cw1.5=… ccw1=… line=… quarter=…` (Kreise > 0, `line` und `quarter` = 0) |
+| `swipe:dx,dy,ms[,flick/clean/flickclean]` | Synthetisches Wischen auf dem Clickpad durch die echte Pipeline (Abschnitt 8.8) | `[PointerTest] wisch …` bzw. `flick …`, dazu `[Pointer] Geste …` |
+| `ring:radius,grad,ms` | Kreis im Uhrzeigersinn auf dem Clickpad (Ring über absolute Lage) | `[PointerTest] ring r=… …°: Schritte N` |
 | `fill:v1\|v2\|…\|i` | aktuellen Eingabedialog (UIAlertController) ausfüllen; letzter Wert *i* ist der Index der zu drückenden Aktion | `fill alert=<Titel> fields=N types=[textContentType…]`, `tap <Aktion>` |
 | `dictate:<Text>` | Play/Pause lang (Suchdialog), Text einsetzen (simuliert Diktat) | `dictate field=ok text=…` |
-| `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Spike, siehe `docs/SIRI_STEUERUNG.md`): back, forward, reload, home, tabs, favorite, newtab, address, reader | `siri <befehl>`, `[Siri] Befehl …` |
+| `siri:<befehl>[\|<arg>]` | Befehl wie aus einem App Intent (Notification, dann Router), siehe `docs/SIRI_STEUERUNG.md` | `siri <befehl>`, `[Siri] Befehl …`, `[Command] …` |
+| `cmd:<name>[\|<arg>]` | Befehl direkt über den Router (alle Namen aus `BrowserCommand`, z. B. `cmd:reader\|on`, `cmd:seek\|-10`, `cmd:open\|heise.de`) | `cmd …`, `[Command] <name> arg=… quelle=selbsttest ok\|nicht möglich\|unbekannt („Rückmeldung“)` |
+| `parse:<text>[\|<text>…]` | Parser prüfen, ohne auszuführen (mehrere Texte mit `\|`) | `parse "<text>" -> reader\|on ("starte den reader")` bzw. `keine -> Suche`/`keine -> Adresse` |
+| `enter:<text>` | Text wie aus dem Adressfeld bestätigt (Parser, dann Befehl oder Suche) | `enter …`, `[Command] Diktat "…" -> …` |
 | `probe` | JS-Messung: Element `#red`, `scrollY`, `innerHeight/Width`, Treffer bei (20,20), `visualViewport.offsetTop` plus `webFrame`, `contentOffset`, `contentInset` (für Einschub/Versatz; setzt Testseite mit `#red` voraus) | `probe … webFrame=… offset=… inset=…` |
 | `label` | Text der Adress-Beschriftung der Leiste | `label <Text>` |
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |
@@ -642,6 +898,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `zoom` | Zoom-Zustand (`zoomScale`, `min/max`, `_viewScale`, `contentSize`, `bounds`, `pageZoom`) | `zoom zoomScale=… viewScale=…` |
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
 | `js:<Code>` | JavaScript ausführen, Ergebnis loggen | `js <Ergebnis>` |
+| `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (Stub-Erkennung). Optionen: `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
+| `wait` (jeder unbekannte Schritt) | nichts tun, 3 s warten | – |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
 | `native` | Video der Seite im nativen Player öffnen (wie Menü „Im Player öffnen“, Zeigerposition zählt) | `native hasVideo=…`, danach `[NativeVideoPlayer]`-Zeilen |
 | `nplayer` | Zustand des nativen Players (`debugStateLine`) | `nplayer t=… dur=… rate=… status=… live=… hls=… loader=… pipAllowed=… pipSupported=… pip=… legible=N/<Spur> sidecar=… cues=… meta=… art=…` oder `kein Player` |
@@ -660,6 +918,8 @@ POINTER_SELFTEST="url:https://de.wikipedia.org;300,400;next;next;click"
 POINTER_SELFTEST="url:https://de.wikipedia.org;zoom;probe;views"
 # Ring-Erkennung
 POINTER_SELFTEST="gestures"
+# Sprachbefehle: Parser und Aktionen
+POINTER_SELFTEST="parse:Reader|Starte den Reader|zurück|suche Wetter|Reader Test Vergleich;url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;cmd:reader;enter:Reader aus"
 # Aufklapp-Bereich der Adresse mit Daten füllen und öffnen
 POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wikipedia.org/;wait;favorite;url:https://www.heise.de/;wait;address;dir:down;dir:right"
 ```
@@ -673,15 +933,21 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 | `[Load] commit/layout/paint/finish +N ms host` | `BrowserWebView logLoadPhase:` | ja |
 | `[DataStore] …` | `BrowserCreatePersistentWebsiteDataStore` | nein |
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
+| `[Scriptlets] geladen/nicht verfügbar` bzw. `[Scriptlets] <host> N Regeln` | `BrowserScriptletInjector` | erste nein, zweite ja |
 | `[CookieBlock] …` | `BrowserCookieConsentBlocker handleMessageBody:` und Fehlzeile für das Bundle | ja |
-| `[Input] Clickpad über GameController`, `[Input] Raten` | `BrowserRemoteInputController` | erste: nein, zweite: ja |
+| `[Input] Clickpad über GameController`, `[Pointer] Geste …`, `[PointerTest] …` | `BrowserRemoteInputController` | erste: nein, die anderen: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |
 | `[NativeVideoPlayer]`, `[NativeVideoAssetLoader]`, `[YouTubeExtractor]` | Videoteile | im Code nicht geprüft |
+| `[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` | `BrowserSubtitle*` (Abschnitt 10.9) | nein |
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
 | `[Reader] check/toggle/exit -> a|y|n|e:…` | `BrowserReaderMode` | ja |
+| `[WebAudio] Zustand …`, `[WebAudio] Block #N …` | `BrowserWebAudioCapture` | Zustand: nein, Blöcke: ja (`logsBlocks`) |
+| `[WebSubs] Start/Stopp/Abschnitt/Anzeige …` | `BrowserWebSubtitleController` | Start/Stopp: nein, Abschnitt/Anzeige: ja |
 | `[SelfTest]` | `ViewController` | ja |
+| `[Command] <name> arg=… quelle=diktat\|siri\|selbsttest ok\|nicht möglich\|unbekannt`, `[Command] Diktat "…" -> …` | `BrowserCommandRouter`, `ViewController handleEnteredAddressText:` | nein |
+| `[Siri] Befehl …`, `[Siri] Intent -> Befehl …` | `ViewController`, `BrowserAppIntents.swift` | nein |
 | `[Probe]` | `BrowserFeasibilityProbe` | nein (nur bei gesetzter Umgebungsvariable) |
 | `[FullscreenHack]` | `WebAVPlayerViewController+FullscreenSubviewHack.m` | Hack aus |
 
@@ -692,8 +958,56 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 - Zweck des `_privacyStance`-Shims ist im Code nicht kommentiert; Commit-Historie nennt nur „WIP adding hack for supporting full screen video“. Vor Entfernen mit Konsole testen.
 - `BrowserWKWebViewProofOfConceptViewController` scheint ungenutzt (nur Suche nach Verweisen im Code, kein Laufzeitnachweis).
 - Für das autoconsent-Bundle gibt es kein Update-Skript; der Ablauf in 5.8 ist aus `THIRD_PARTY_NOTICES.md` abgeleitet. Eine feste Liste von Testseiten für Cookie-Banner existiert nicht im Repo (PLAN.md nennt das Durchtesten als offen).
-- Scriptlets/erweiterte Regeln des Werbeblockers sind nicht umgesetzt (PLAN.md, Phase 2, offen).
+- Scriptlets/erweiterte Regeln: am Gerät noch nicht geprüft, ob YouTube-Werbung wirklich wegfällt und das Video danach normal läuft (im Simulator spielt YouTube grundsätzlich nicht ab). uBOs `trusted-edit-inbound-object`-Regeln für YouTube fehlen (kein AdGuard-Gegenstück).
 - Abstimmung von Zeigerempfindlichkeit, Randscrollen, Ring und Play/Pause-Zeiten mit echter Fernbedienung ist laut PLAN.md nicht abgeschlossen.
 - Test `https://1.1.1.1/help` und Langzeittests des DNS-Proxys nach Hintergrund sind laut PLAN.md offen.
 - Ob `[InputTrace]`, `[NowPlaying]`, `[TopBar]` und die Video-Logzeilen nur in DEBUG erscheinen, wurde nicht für jede Zeile geprüft.
 - Genaue Pfade des gebauten `.app` (DerivedData) hängen vom gewählten `-derivedDataPath` ab.
+
+---
+
+## 17. App-Icon und Top Shelf
+
+Das Icon (Liquid-Glass-Stil: Glasscheibe mit Kompassnadel und Umlaufbahn vor einem Verlauf in den Glow-Farben der App) wird vollständig von `tools/make_app_icon.swift` gezeichnet (Core Graphics, Core Image für Weichzeichnen und Linsenbrechung). Die PNGs im Katalog nie von Hand bearbeiten, sondern das Skript ändern und neu laufen lassen.
+
+```sh
+swift tools/make_app_icon.swift                    # Standardvariante „nadel“ in den Katalog, Vorschauen nach docs/icon/
+swift tools/make_app_icon.swift --variant globus   # Alternative „globus“ in den Katalog schreiben
+swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
+```
+
+- Ziel: `_Project/Browser/Assets.xcassets/App Icon & Top Shelf Image.brandassets/`. Das Skript schreibt die Bildstapel `App Icon - Small` (400×240 und 800×480 @2x) und `App Icon - Large` (1280×768, App Store) mit je drei Ebenen (`Back` Verlauf, `Middle` Glasscheibe, `Front` Symbol) sowie `Top Shelf Image` (1920×720/3840×1440) und `Top Shelf Image Wide` (2320×720/4640×1440) samt `Contents.json` neu.
+- Vorschau: `docs/icon/preview.png` (Variante im Katalog: Icon groß, Fokus-Simulation, Ebenen einzeln, Top Shelf), `docs/icon/variante-<name>.png` für die jeweils andere Variante, `docs/icon/simulator-home.png` Home-Bildschirm im Simulator.
+- Die Ausgabe ist reproduzierbar (Software-Renderer von Core Image, keine Zufallswerte): zweimal laufen lassen ergibt dieselben Bytes.
+- Icon Composer (`.icon`) unterstützt laut Apple nur iOS, iPadOS, macOS und watchOS; tvOS braucht weiter den Bildstapel im Asset-Katalog. Den Glas-Effekt backt das Skript deshalb selbst in die Ebenen; Parallax und Glanz beim Fokussieren macht tvOS.
+- Prüfen: `xcodebuild … build` darf beim Schritt `CompileAssetCatalog` keine Warnungen zeigen; streng geht es mit `xcrun actool --compile <tmp> --platform appletvos --target-device tv --minimum-deployment-target 17.0 --app-icon "App Icon & Top Shelf Image" --output-partial-info-plist <tmp>/info.plist --warnings --notices _Project/Browser/Assets.xcassets`.
+## 18. Animationen (`BrowserMotion`)
+
+**Zweck.** Eine Stelle für alle Oberflächen-Animationen. Zwei Stile, umschaltbar unter •••, „Ansicht & Wiedergabe“, „Liquid-Glass-Animationen“ (`liquidGlassAnimationsMenuItem`, Einstellung `BrowserPreferencesStore.liquidGlassAnimationsEnabled`, Schlüssel `LiquidGlassAnimationsEnabled`, Standard an). Bei der Systemeinstellung „Bewegung reduzieren“ (`UIAccessibilityIsReduceMotionEnabled`) gilt immer der schlichte Stil.
+
+**Dateien.** `_Project/Browser/BrowserMotion.h/.m`.
+
+**Arten und Werte** (`BrowserMotionKind`, abstimmbar in `BrowserMotionLiquidParameters`/`BrowserMotionPlainParameters`):
+
+| Art | Liquid Glass (Feder: Dauer/Bounce, Einschwingzeit) | Schlicht |
+|:--|:--|:--|
+| `Standard` (Leiste kompakt ↔ voll, Bearbeiten) | 0,42 s / 0,14 (0,61 s) | 0,25 s easeInOut |
+| `Appear` (Karte, Seitenleiste, Dialog) | 0,48 s / 0,18 (0,73 s) | 0,22 s easeOut |
+| `Disappear` | 0,32 s / 0 (0,50 s) | 0,20 s easeIn |
+| `Snap` (Einrast-Hervorhebung, Reader-Hervorhebung) | 0,20 s / 0,10 (0,28 s) | 0,12 s easeOut |
+| `Fade` (Ladelinie, Inhalte) | 0,30 s / 0 (0,50 s) | 0,20 s easeInOut |
+
+**Bausteine.**
+- `animateKind:delay:options:animations:completion:` – Liquid Glass über `+[UIView animateWithSpringDuration:bounce:initialSpringVelocity:…]` (tvOS 17+), schlicht über `animateWithDuration:` mit Kurve. Kurvenbits des Aufrufers werden verworfen.
+- `animateShadowPathOfLayer:fromPath:kind:` – Schattenumriss mit derselben Feder (`CASpringAnimation initWithPerceptualDuration:bounce:`, `duration = settlingDuration`) bzw. Kurve. Startet bei laufender Animation vom sichtbaren Umriss (Präsentationsebene). Mit `MOTION_LOG` geprüft: Position, Größe, Eckenradius und Schattenumriss laufen mit identischer Feder (Masse 1, Steife 223,8, Dämpfung 25,7, 0,614 s).
+- `glassAppear:` / `glassDisappear:` – Liquid Glass: `effect` nil → Glas bzw. Glas → nil im Animationsblock (Materialisieren/Dematerialisieren, Apple: „effect statt alpha“); schlicht: Alpha.
+- `presentCard:glassEffect:` / `dismissCard:` – Dialogkarten (in `viewWillAppear:`/`viewWillDisappear:`, parallel zur Überblendung): Liquid Glass materialisiert und federt aus 0,94; schlicht nichts zusätzlich. Der Effekt wird beim Ausblenden gemerkt (assoziiertes Objekt) und beim erneuten Erscheinen wieder gesetzt.
+
+**Aufrufer.** Leiste (`BrowserTopBarView`: `animateChromeLayoutAlongside:` für `setCompact:animated:` und `setAddressEditing:animated:` inklusive Schattenumriss; Ladelinie; Reader-Knopf und blaue Hervorhebung, die mit Liquid Glass aus 0,82 auffedert; `URLLabel.contentMode = Center`, damit der Seitenname beim Breitenwechsel nicht abgeschnitten oder gestreckt wird), Aufklapp-Karte (`BrowserAddressPanelView present…/dismiss…`), Seitenleiste (`BrowserAdvancedMenuViewController viewDidAppear:`/`dismissMenuWithCompletion:`), Bedienungsdialog (`BrowserGuideViewController`), Tab-Übersicht (`BrowserTabOverviewViewController`), Einrast-Hervorhebung (`BrowserRemoteInputController showHighlightForTarget:animated:`, nur die Bewegung). Bewusst nicht umgestellt: Seitenscrollen (`scrollPageReturningDeltaByFraction:`, Bounce wäre beim Lesen störend), Zeigerbewegung und -alpha, Überblendung alte/neue Seite (`BrowserWebView endPageTransitionAnimated:`), Seitenfarbe, Favicon-Überblendung, Fokus-Animationen (laufen über den `UIFocusAnimationCoordinator` des Systems), `BrowserGlowView`.
+
+**Was tvOS 26/27 bietet (SDK 27.2 geprüft).** `UIGlassEffect` (`interactive`, `tintColor`, Stil regular/clear) und `UIGlassContainerEffect` (`spacing`) sind `API_AVAILABLE(ios(26.0))` ohne tvOS-Ausschluss, also ab tvOS 26 vorhanden. Ebenfalls ab tvOS 26: `UIScrollEdgeEffect`/`topEdgeEffect`, `UIScrollEdgeElementContainerInteraction` (nutzt die Leiste schon), `UIBackgroundExtensionView`, `UICornerConfiguration`, `UIViewAnimationOptionFlushUpdates`, Glas-Knopfkonfigurationen (`glassButtonConfiguration` u. a.). Federn mit Dauer/Bounce (`animateWithSpringDuration:bounce:…`, `UISpringTimingParameters initWithDuration:bounce:`, `CASpringAnimation initWithPerceptualDuration:bounce:`) ab tvOS 17. `UIFocusEffect`/`UIFocusHaloEffect` sind auf tvOS **nicht** verfügbar. Quellen: WWDC25 „Meet Liquid Glass“ (219), „Build a UIKit app with the new design“ (284), WWDC23 „Animate with springs“ (10158), HIG Materials und Motion.
+
+**Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Der Regenbogen-Glow (`BrowserGlowView`) ändert seine Form beim Einrasten sofort, die Fläche federt; bei sehr unterschiedlichen Zielgrößen sieht man das kurz.
+
+**Test.** Simulator, eigenes Gerät: `defaults write io.github.tvosbrowser.app LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
+

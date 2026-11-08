@@ -1,4 +1,5 @@
 #import "BrowserGuideViewController.h"
+#import "BrowserMotion.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -6,6 +7,7 @@
 
 @interface BrowserGuideViewController ()
 @property (nonatomic, strong) UIButton *primaryButton;
+@property (nonatomic, strong) UIVisualEffectView *motionCardView;
 @end
 
 @implementation BrowserGuideViewController
@@ -40,6 +42,7 @@
     card.layer.cornerRadius = 56.0;
     card.layer.cornerCurve = kCACornerCurveContinuous;
     [self.view addSubview:card];
+    self.motionCardView = card;
 
     UILabel *title = [[UILabel alloc] init];
     title.text = @"So bedienst du den Browser";
@@ -59,6 +62,7 @@
         @[@"playpause", @"Play/Pause", @"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü."],
         @[@"chevron.backward", @"Zurück", @"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück."],
         @[@"text.page", @"Reader und mehr", @"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••."],
+        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“ oder „suche Wetter“ sagen."],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self rowWithSymbol:item[0] title:item[1] text:item[2]]];
@@ -155,6 +159,21 @@
     UIButton *button = [UIButton buttonWithConfiguration:config primaryAction:nil];
     [button addTarget:self action:action forControlEvents:UIControlEventPrimaryActionTriggered];
     return button;
+}
+
+// Glas-Karte: Liquid Glass materialisiert und federt beim Erscheinen, schlicht bleibt es bei der Überblendung.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (animated) {
+        [BrowserMotion presentCard:self.motionCardView glassEffect:self.motionCardView.effect];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    if (animated) {
+        [BrowserMotion dismissCard:self.motionCardView];
+    }
 }
 
 - (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {

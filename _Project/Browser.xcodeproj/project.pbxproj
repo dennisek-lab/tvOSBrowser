@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B49AC12D710000001D58A1 /* BrowserCursorRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */; };
 		3A2A7C1621E7805D0083CB13 /* go-back-left-arrow.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1121E7805D0083CB13 /* go-back-left-arrow.png */; };
 		3A2A7C1721E7805D0083CB13 /* house-outline.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1221E7805D0083CB13 /* house-outline.png */; };
 		3A2A7C1821E7805D0083CB13 /* right-arrow-forward.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A7C1321E7805D0083CB13 /* right-arrow-forward.png */; };
@@ -58,15 +59,35 @@
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
 		56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */; };
 		40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */ = {isa = PBXBuildFile; fileRef = 8652E9B7A8FD897D903A8958 /* Autoconsent */; };
+		87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */; };
+		58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */ = {isa = PBXBuildFile; fileRef = 7268B5C1E882F5DAB9A49DE8 /* Scriptlets */; };
+		E4895E2842B91B8723258DD5 /* WhisperModels in Resources */ = {isa = PBXBuildFile; fileRef = 7AADFF423E379F3DCAE70806 /* WhisperModels */; };
+		68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */ = {isa = PBXBuildFile; fileRef = 738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */; };
+		6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */ = {isa = PBXBuildFile; fileRef = 7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */; };
+		13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */ = {isa = PBXBuildFile; fileRef = E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */; };
+		B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */ = {isa = PBXBuildFile; fileRef = 835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */; };
+		87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */; };
 		BC7377FCB96ADE6D0703EE8F /* Reader in Resources */ = {isa = PBXBuildFile; fileRef = 02AB7C306633303A188E18EE /* Reader */; };
 		F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */ = {isa = PBXBuildFile; fileRef = EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */; };
 		C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */; };
 		3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */; };
 		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
 		232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */ = {isa = PBXBuildFile; fileRef = 48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */; };
+		C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */; };
+		DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */ = {isa = PBXBuildFile; fileRef = 6157FC5AB882D846E726CD36 /* BrowserCommand.m */; };
+		A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 6194890DB589857E8304FBAE /* BrowserCommandParser.m */; };
+		02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */ = {isa = PBXBuildFile; fileRef = 0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */; };
+		5D02DF38DAD770AB31ACD012 /* BrowserSpeechRecognizing.m in Sources */ = {isa = PBXBuildFile; fileRef = DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */; };
+		BB50585D1D6E039781FA6BF1 /* BrowserSpeechRecognizerStub.m in Sources */ = {isa = PBXBuildFile; fileRef = CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */; };
+		C8039D61DA1C911D9933D6AE /* BrowserWebAudioCapture.m in Sources */ = {isa = PBXBuildFile; fileRef = 1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */; };
+		1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */ = {isa = PBXBuildFile; fileRef = BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */; };
+		A74DEB982B0F00C3BF821208 /* BrowserWebSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */; };
+		33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */ = {isa = PBXBuildFile; fileRef = 5DC453250BE8BA6BD64CDA80 /* WebSubtitles */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B49ABF2D710000001D58A1 /* BrowserCursorRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCursorRenderer.h; sourceTree = "<group>"; };
+		A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCursorRenderer.m; sourceTree = "<group>"; };
 		3A2A7C1121E7805D0083CB13 /* go-back-left-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "go-back-left-arrow.png"; sourceTree = "<group>"; };
 		3A2A7C1221E7805D0083CB13 /* house-outline.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "house-outline.png"; sourceTree = "<group>"; };
 		3A2A7C1321E7805D0083CB13 /* right-arrow-forward.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "right-arrow-forward.png"; sourceTree = "<group>"; };
@@ -150,6 +171,21 @@
 		5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserGuideViewController.h; sourceTree = "<group>"; };
 		AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserGuideViewController.m; sourceTree = "<group>"; };
 		8652E9B7A8FD897D903A8958 /* Autoconsent */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Autoconsent; sourceTree = "<group>"; };
+		D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserScriptletInjector.h; sourceTree = "<group>"; };
+		0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserScriptletInjector.m; sourceTree = "<group>"; };
+		7268B5C1E882F5DAB9A49DE8 /* Scriptlets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scriptlets; sourceTree = "<group>"; };
+		7AADFF423E379F3DCAE70806 /* WhisperModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WhisperModels; sourceTree = "<group>"; };
+		1455E89A52B77AEEE98922FF /* BrowserSubtitleEngine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleEngine.h; sourceTree = "<group>"; };
+		738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleEngine.m; sourceTree = "<group>"; };
+		4B6A71C07A12B9684DC0AE03 /* BrowserSubtitleAudioSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleAudioSource.h; sourceTree = "<group>"; };
+		6E3936D077A0BC9E77C2BCF3 /* BrowserSubtitleAudioTapSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleAudioTapSource.h; sourceTree = "<group>"; };
+		7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleAudioTapSource.m; sourceTree = "<group>"; };
+		101AA9CE01C303808066F135 /* BrowserSubtitleHLSAudioSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleHLSAudioSource.h; sourceTree = "<group>"; };
+		E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleHLSAudioSource.m; sourceTree = "<group>"; };
+		6667D3AD6471CF9FA5795A21 /* BrowserSubtitleOverlayView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleOverlayView.h; sourceTree = "<group>"; };
+		835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleOverlayView.m; sourceTree = "<group>"; };
+		C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleController.h; sourceTree = "<group>"; };
+		52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleController.m; sourceTree = "<group>"; };
 		02AB7C306633303A188E18EE /* Reader */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Reader; sourceTree = "<group>"; };
 		083704A0266ED4493FABF426 /* BrowserReaderMode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserReaderMode.h; sourceTree = "<group>"; };
 		EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserReaderMode.m; sourceTree = "<group>"; };
@@ -159,6 +195,25 @@
 		70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFaviconCache.m; sourceTree = "<group>"; };
 		D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressPanelView.h; sourceTree = "<group>"; };
 		48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressPanelView.m; sourceTree = "<group>"; };
+		D1FF718DE4E2144091280B37 /* BrowserMotion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserMotion.h; sourceTree = "<group>"; };
+		7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserMotion.m; sourceTree = "<group>"; };
+		FD094D3775E8B8BF7B0BE4F6 /* BrowserCommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommand.h; sourceTree = "<group>"; };
+		6157FC5AB882D846E726CD36 /* BrowserCommand.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommand.m; sourceTree = "<group>"; };
+		73CF1E9C8FEACC09478DBC89 /* BrowserCommandParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommandParser.h; sourceTree = "<group>"; };
+		6194890DB589857E8304FBAE /* BrowserCommandParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommandParser.m; sourceTree = "<group>"; };
+		BEE1F6A58F9C800C3D2057A2 /* BrowserCommandRouter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCommandRouter.h; sourceTree = "<group>"; };
+		0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCommandRouter.m; sourceTree = "<group>"; };
+		5CF40266912907807916C4FA /* BrowserSpeechRecognizing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSpeechRecognizing.h; sourceTree = "<group>"; };
+		DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSpeechRecognizing.m; sourceTree = "<group>"; };
+		8100E8A5D5DF57BE25564110 /* BrowserSpeechRecognizerStub.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSpeechRecognizerStub.h; sourceTree = "<group>"; };
+		CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSpeechRecognizerStub.m; sourceTree = "<group>"; };
+		FE0742B1F06938F011A03A1D /* BrowserWebAudioCapture.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebAudioCapture.h; sourceTree = "<group>"; };
+		1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWebAudioCapture.m; sourceTree = "<group>"; };
+		050AED96612E61B5EA109C6C /* BrowserWebSubtitleOverlay.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebSubtitleOverlay.h; sourceTree = "<group>"; };
+		BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWebSubtitleOverlay.m; sourceTree = "<group>"; };
+		2A7416FF6924CC55F4768E04 /* BrowserWebSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserWebSubtitleController.h; sourceTree = "<group>"; };
+		067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserWebSubtitleController.m; sourceTree = "<group>"; };
+		5DC453250BE8BA6BD64CDA80 /* WebSubtitles */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebSubtitles; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -255,6 +310,8 @@
 				A1B49A4C2D680900001D58A1 /* BrowserNavigationService.h */,
 				A1B49A4D2D680900001D58A1 /* BrowserNavigationService.m */,
 				A1B49A872D700000001D58A1 /* BrowserPreferencesStore.h */,
+				A1B49ABF2D710000001D58A1 /* BrowserCursorRenderer.h */,
+				A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */,
 				A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */,
 				A1B49A562D6828D4001D58A1 /* BrowserSessionStore.h */,
 				A1B49A572D6828D4001D58A1 /* BrowserSessionStore.m */,
@@ -309,6 +366,19 @@
 				E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */,
 				5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */,
 				AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */,
+				D7D4E6379DE614287F4C103F /* BrowserScriptletInjector.h */,
+				0BAE61515CCEF2F7C0322832 /* BrowserScriptletInjector.m */,
+				1455E89A52B77AEEE98922FF /* BrowserSubtitleEngine.h */,
+				738FC1787A5FC8600C515528 /* BrowserSubtitleEngine.m */,
+				4B6A71C07A12B9684DC0AE03 /* BrowserSubtitleAudioSource.h */,
+				6E3936D077A0BC9E77C2BCF3 /* BrowserSubtitleAudioTapSource.h */,
+				7876037EC7F36DEB131968A0 /* BrowserSubtitleAudioTapSource.m */,
+				101AA9CE01C303808066F135 /* BrowserSubtitleHLSAudioSource.h */,
+				E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */,
+				6667D3AD6471CF9FA5795A21 /* BrowserSubtitleOverlayView.h */,
+				835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */,
+				C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */,
+				52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */,
 				083704A0266ED4493FABF426 /* BrowserReaderMode.h */,
 				EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */,
 				1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */,
@@ -316,6 +386,24 @@
 				70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */,
 				D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */,
 				48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */,
+				D1FF718DE4E2144091280B37 /* BrowserMotion.h */,
+				7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */,
+				FD094D3775E8B8BF7B0BE4F6 /* BrowserCommand.h */,
+				6157FC5AB882D846E726CD36 /* BrowserCommand.m */,
+				73CF1E9C8FEACC09478DBC89 /* BrowserCommandParser.h */,
+				6194890DB589857E8304FBAE /* BrowserCommandParser.m */,
+				BEE1F6A58F9C800C3D2057A2 /* BrowserCommandRouter.h */,
+				0EE1D690A8DBF0BAB7714D96 /* BrowserCommandRouter.m */,
+				5CF40266912907807916C4FA /* BrowserSpeechRecognizing.h */,
+				DB1E51F0AC204FF637029266 /* BrowserSpeechRecognizing.m */,
+				8100E8A5D5DF57BE25564110 /* BrowserSpeechRecognizerStub.h */,
+				CA2A9AF8E5A2900A2F2719F8 /* BrowserSpeechRecognizerStub.m */,
+				FE0742B1F06938F011A03A1D /* BrowserWebAudioCapture.h */,
+				1733AC514BDAB1D03E5C9082 /* BrowserWebAudioCapture.m */,
+				050AED96612E61B5EA109C6C /* BrowserWebSubtitleOverlay.h */,
+				BB8108ED8B08FA32630818B2 /* BrowserWebSubtitleOverlay.m */,
+				2A7416FF6924CC55F4768E04 /* BrowserWebSubtitleController.h */,
+				067CDC6758EA490A9D5F9DAF /* BrowserWebSubtitleController.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -385,7 +473,10 @@
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				7268B5C1E882F5DAB9A49DE8 /* Scriptlets */,
+				7AADFF423E379F3DCAE70806 /* WhisperModels */,
 				02AB7C306633303A188E18EE /* Reader */,
+				5DC453250BE8BA6BD64CDA80 /* WebSubtitles */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
@@ -403,6 +494,7 @@
 				B002B85E1BAE420500C744AF /* Sources */,
 				B002B85F1BAE420500C744AF /* Frameworks */,
 				B002B8601BAE420500C744AF /* Resources */,
+				5B1D7A3E9C2F4E6A8B0C1D2E /* Whisper-Metal-Kernel kopieren */,
 				9693F8451BF5A99E00077BAB /* ShellScript */,
 			);
 			buildRules = (
@@ -458,8 +550,11 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */,
+				E4895E2842B91B8723258DD5 /* WhisperModels in Resources */,
 				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,
 				3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */,
+				33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
@@ -488,6 +583,22 @@
 			shellPath = /bin/sh;
 			shellScript = "echo \"Versioning is controlled by MARKETING_VERSION/CURRENT_PROJECT_VERSION.\"\n";
 		};
+		5B1D7A3E9C2F4E6A8B0C1D2E /* Whisper-Metal-Kernel kopieren */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../vendor/whisper-metal/$(PLATFORM_NAME)/default.metallib",
+			);
+			name = "Whisper-Metal-Kernel kopieren";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/default.metallib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Vorkompilierte ggml-Metal-Kernel (tools/build_whisper.sh) ins App-Paket, ggml sucht default.metallib dort.\nSRC=\"${SCRIPT_INPUT_FILE_0}\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"${SCRIPT_OUTPUT_FILE_0}\"\nelse\n  echo \"Hinweis: $SRC fehlt, ggml übersetzt die eingebetteten Metal-Kernel zur Laufzeit\"\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -505,6 +616,7 @@
 				A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */,
 				A1B49A4E2D680900001D58A1 /* BrowserNavigationService.m in Sources */,
 				A1B49A892D700000001D58A1 /* BrowserPreferencesStore.m in Sources */,
+				A1B49AC12D710000001D58A1 /* BrowserCursorRenderer.m in Sources */,
 				A1B49A582D6828D4001D58A1 /* BrowserSessionStore.m in Sources */,
 				A1B49A5B2D684000001D58A1 /* BrowserTopBarView.m in Sources */,
 				A1B49A6C2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m in Sources */,
@@ -513,10 +625,25 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				87B1A89BE37A8F001A487D9E /* BrowserScriptletInjector.m in Sources */,
+				02F486178B8D744F6D9C4F93 /* BrowserCommandRouter.m in Sources */,
+				A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */,
+				DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */,
+				87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */,
+				B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */,
+				13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */,
+				6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */,
+				68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */,
+				C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */,
 				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
 				C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */,
 				232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */,
 				D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */,
+				A74DEB982B0F00C3BF821208 /* BrowserWebSubtitleController.m in Sources */,
+				1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */,
+				C8039D61DA1C911D9933D6AE /* BrowserWebAudioCapture.m in Sources */,
+				BB50585D1D6E039781FA6BF1 /* BrowserSpeechRecognizerStub.m in Sources */,
+				5D02DF38DAD770AB31ACD012 /* BrowserSpeechRecognizing.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,
@@ -666,7 +793,6 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3000;
@@ -674,6 +800,8 @@
 				EMBED_ASSET_PACKS_IN_PRODUCT_BUNDLE = YES;
 				ENABLE_ON_DEMAND_RESOURCES = NO;
 				FRAMEWORK_SEARCH_PATHS = "";
+				"FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]" = "$(SRCROOT)/../vendor/whisper.xcframework/tvos-arm64";
+				"FRAMEWORK_SEARCH_PATHS[sdk=appletvsimulator*]" = "$(SRCROOT)/../vendor/whisper.xcframework/tvos-arm64-simulator";
 				INFOPLIST_FILE = Browser/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -693,7 +821,6 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3000;
@@ -701,6 +828,8 @@
 				EMBED_ASSET_PACKS_IN_PRODUCT_BUNDLE = YES;
 				ENABLE_ON_DEMAND_RESOURCES = NO;
 				FRAMEWORK_SEARCH_PATHS = "";
+				"FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]" = "$(SRCROOT)/../vendor/whisper.xcframework/tvos-arm64";
+				"FRAMEWORK_SEARCH_PATHS[sdk=appletvsimulator*]" = "$(SRCROOT)/../vendor/whisper.xcframework/tvos-arm64-simulator";
 				INFOPLIST_FILE = Browser/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
