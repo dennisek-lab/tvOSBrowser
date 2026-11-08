@@ -19,7 +19,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 7. [Klickziele, Seitenfarbe, Glow-Farbe](#7-klickziele-seitenfarbe-glow-farbe-browserclicktargettracker)
 8. [Fernbedienung](#8-fernbedienung-browserremoteinputcontroller)
 9. [Obere Leiste](#9-obere-leiste-browsertopbarview)
-10. [Video: Hooks, nativer Player, Asset-Loader, YouTube](#10-video)
+10. [Video: Hooks, nativer Player, Asset-Loader, YouTube, automatische Untertitel](#10-video)
 11. [DNS-Proxy (Cloudflare)](#11-dns-proxy-browserdnsproxy)
 12. [Weitere Eingriffe in Systemklassen](#12-weitere-eingriffe-in-systemklassen)
 13. [Start-/Verlaufsansicht, Bedienungsdialog, Tab-Übersicht](#13-start-und-verlaufsansicht-bedienungsdialog-tab-übersicht)
@@ -43,6 +43,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Fernbedienung (GameController, Presses, Ring, Magnetic Buttons, Lupe) | `BrowserRemoteInputController.m/.h`, `UIApplication+BrowserSelectPressForwarding.m`, Host-Methoden in `ViewController.m` | hoch (GameController-Verhalten, `sendEvent:`-Tausch) |
 | Obere Leiste | `BrowserTopBarView.m/.h`, `BrowserTabCoordinator.m` (`updateTopNavAndWebView`) | mittel (`UIGlassEffect`) |
 | Nativer Videoplayer, Handover | `BrowserVideoPlaybackCoordinator.m`, `BrowserNativeVideoPlayerViewController.m`, `BrowserNativeVideoAssetLoader.m` | mittel |
+| Automatische Untertitel (whisper.cpp) | `BrowserSubtitle*.m/.h`, `vendor/whisper.xcframework`, `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | mittel (MTAudioProcessingTap, eigener HLS-Leser, Drittcode) |
 | Video-Hooks, Media-Session | `BrowserClickTargetTracker.m` (`BrowserVideoHookScript`, `BrowserMediaSessionHookScript`), `BrowserNowPlayingController.m` | mittel |
 | YouTube-Erfassung/-Extraktor | `BrowserWebView.m` (`BrowserYouTubeRequestCaptureScript`), `BrowserYouTubeExtractor.m` | hoch (Extraktion ist abgeschaltet) |
 | DNS-Proxy (Cloudflare DoH) | `BrowserDNSProxy.m/.h`, `SceneDelegate.m`, `AppDelegate.m` | hoch (`nw_*`-Privacy-Context, `proxyConfigurations`) |
@@ -373,7 +374,7 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 
 ## 10. Video
 
-Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube.
+Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Player, 10.3 Asset-Loader, 10.4 Now Playing, 10.5 YouTube, 10.6 Automatische Untertitel (whisper.cpp).
 
 ### 10.1 Video-Hooks und Medienmeldungen
 **Zweck.** Vollbild-Wünsche und Videostarts der Seite abfangen, HLS/DASH-Manifeste für MSE-Videos (`blob:`) merken, Media-Session-Handler der Seite sichern.
@@ -420,6 +421,90 @@ Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Pla
 - Logpräfix `[YouTubeExtractor]`. Risiko hoch: YouTube ändert Formate laufend, PoToken-Pflicht.
 
 **Test.** Alle Videoteile: `POINTER_SELFTEST="url:<Seite mit Video>;x,y;click;video;playpause;left;right;state"` – die Zeilen `video`, `playpause overVideo=… playing=…`, `state presented=BrowserNativeVideoPlayerViewController` zeigen, ob der Player geöffnet wurde.
+
+### 10.6 Automatische Untertitel (whisper.cpp)
+**Zweck.** Untertitel für Videos ohne eigene Untertitelspur, lokal auf dem Apple TV erzeugt (Apples Spracherkennung gibt es unter tvOS nicht). Weg A: nur im nativen Player.
+
+**Dateien.**
+| Datei | Aufgabe |
+|:--|:--|
+| `BrowserSubtitleController.m/.h` | Einhängen in den Player, Schalter in der Transportleiste, Abschnitte mit Überlappung, Abdeckung, Anzeige-Takt |
+| `BrowserSubtitleEngine.m/.h` | whisper.cpp-Hülle (Modell laden, `whisper_full`, Stille- und Rauschfilter, Echtzeitfaktor, Speicher), `BrowserSubtitleCue` |
+| `BrowserSubtitleAudioSource.h` | Protokoll der Tonquellen (16 kHz mono float, Videozeit des ersten Samples) |
+| `BrowserSubtitleAudioTapSource.m/.h` | Dateien (MP4/MOV/M4A): `MTAudioProcessingTap` über `AVAudioMix`, Abwärtsmischung im Audio-Thread, Umrechnung auf 16 kHz mit `AVAudioConverter` |
+| `BrowserSubtitleHLSAudioSource.m/.h` | HLS: Playlist selbst lesen, Audio-Segmente vor der Abspielposition laden und dekodieren |
+| `BrowserSubtitleOverlayView.m/.h` | Ebene in `contentOverlayView`, Stil nach `MACaptionAppearance` |
+| `vendor/whisper.xcframework` | whisper.cpp v1.9.5, statisch, tvOS arm64 + Simulator arm64, Metal + Accelerate (committet, ≈17 MB) |
+| `tools/build_whisper.sh`, `tools/fetch_whisper_model.sh` | Framework bauen, Modell laden |
+| `_Project/Browser/WhisperModels/` | Ordnerreferenz im App-Paket; Modelle `ggml-*.bin` sind nicht im Repo |
+
+**Bauen.**
+```bash
+tools/build_whisper.sh            # nur nötig für eine neue whisper.cpp-Version (Ergebnis ist committet)
+tools/fetch_whisper_model.sh      # Pflicht: lädt ggml-base.en-q5_1.bin (57 MB) nach _Project/Browser/WhisperModels/
+```
+- `build_whisper.sh` holt die Quelle nach `vendor/whisper.cpp` (nicht im Repo), lädt bei Bedarf CMake per pip nach `vendor/tools-venv`, baut beide Slices mit dem Xcode-Generator, fasst `libwhisper`, `libggml*` (base, cpu, blas, metal) und `libparakeet` per `libtool` zu einem statischen `whisper.framework` zusammen und erzeugt `vendor/whisper.xcframework`. Version: `WHISPER_TAG=v1.9.5`, Mindest-tvOS: `TVOS_MIN=17.0`.
+- Einbindung ins Projekt ohne Framework-Eintrag: `FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]` bzw. `[sdk=appletvsimulator*]` zeigen auf die Slices, gelinkt wird per Modul-Autolink (`#import <whisper/whisper.h>`, Modulkarte mit `link framework "whisper"`, `c++`, Accelerate, Metal, MetalKit). Fehlt das Framework, kompiliert `BrowserSubtitleEngine.m` ohne whisper (`__has_include`), die App baut, der Player meldet „nicht verfügbar“.
+- Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. Ohne installierte Metal-Toolchain (`xcodebuild -downloadComponent MetalToolchain`) wird der Kernel-Quelltext eingebettet (`GGML_METAL_EMBED_LIBRARY=ON`) und **beim ersten Laden zur Laufzeit übersetzt** (im Simulator ≈14 s, auf dem Gerät unbekannt, danach greift der Metal-Cache des Systems). Mit Toolchain baut das Skript `vendor/whisper-metal/<sdk>/default.metallib`; die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Ist sie nicht da, meldet die Phase nur einen Hinweis.
+- Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write io.github.tvosbrowser.app AutoSubtitlesCPUOnly -bool YES`.
+
+**Modell.** Reihenfolge in `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`: für „en“ `base.en-q5_1`, `base.en-q8_0`, `base.en`, `tiny.en-q5_1` …, danach mehrsprachige; für „auto“ zuerst mehrsprachige (`base-q5_1`, …). Bei Leistungsproblemen `tools/fetch_whisper_model.sh tiny.en-q5_1` und das base-Modell aus dem Ordner löschen. Mehrsprachig (Deutsch): `tools/fetch_whisper_model.sh base-q5_1`; dann erscheint im Player-Menü „Sprache automatisch“ (`autoSubtitlesLanguage = auto`, whisper erkennt die Sprache je Abschnitt).
+
+**Einhängepunkt** (`BrowserNativeVideoPlayerViewController.m`, drei Stellen): Eigenschaft `subtitleController`; in `viewDidLoad` direkt nach `self.player = …`:
+```objc
+self.subtitleController = [BrowserSubtitleController attachToPlayerViewController:self playbackURL:self.videoURL
+                                                                  requestHeaders:self.requestHeaders cookies:self.requestCookies];
+```
+und in `dealloc` `[_subtitleController detach];` (stoppt Erkennung, entfernt Zeitbeobachter, Ebene und Menüeintrag, gibt das Modell frei). Bewusst nicht in `viewWillDisappear`, damit Bild-in-Bild mit Rückkehr in denselben Player weiterläuft.
+
+**Ablauf.**
+1. `attach`: Ebene in `contentOverlayView`, Menü „Automatische Untertitel“ (An/Aus, bei mehrsprachigem Modell zusätzlich Englisch/Sprache automatisch) in `transportBarCustomMenuItems` (vorhandene Einträge bleiben, alle 2 s wird geprüft, ob der Eintrag noch da ist), `addPeriodicTimeObserverForInterval` 0,1 s. Ist `autoSubtitlesEnabled` an: Modell auf der whisper-Queue laden, dann Tonquelle starten.
+2. Tonquelle: Adresse mit `.m3u8` → HLS-Quelle, sonst Audio-Tap. Findet der Tap keine Audiospur (HLS ohne `.m3u8` in der Adresse), wird einmal die HLS-Quelle versucht.
+3. Abschnitte (`processingQueue`): Tap 5 s mit 1 s Überlappung (wenig Verzug), HLS 12 s mit 1,5 s Überlappung. Jeder Abschnitt nimmt nur Segmente, deren Mitte in `[Anfang, Ende − Überlappung/2)` liegt; eine Abdeckung im 0,1-s-Raster (`NSMutableIndexSet`) verhindert Doppelungen und überspringt nach dem Zurückspulen schon erkannte Stellen (HLS lädt solche Segmente gar nicht erst). Echtzeitquelle und whisper zu langsam: alte Abschnitte werden verworfen. Pause: angefangener Abschnitt wird sofort ausgewertet.
+4. whisper (`engineQueue`): greedy, `no_context`, `temperature_inc = 0`, `audio_ctx` passend zur Abschnittslänge (5 s → 384, 12 s → 704), Stille (RMS < 0,004) wird übersprungen, Texte in Klammern/ohne Buchstaben und `no_speech_prob > 0,8` verworfen, gleicher Text innerhalb 15 s ebenfalls.
+5. Anzeige: Untertitel mit Start ≤ t und `visibleUntil` > t, höchstens zwei Zeilen. Kommt ein Untertitel zu spät (Tap), bleibt er ab Ankunft noch 1,5–4 s stehen. Pause und Spulen ergeben sich aus dem Zeitbeobachter, Untertitel bleiben gespeichert.
+
+**HLS-Quelle.** Master: AAC-Varianten bevorzugt, kleinste Bandbreite; hat sie eine `AUDIO`-Gruppe mit `URI`, wird die Rendition genommen (Sprache der Einstellung, sonst `DEFAULT=YES`), sonst der gemuxte Ton der Variante (auch reine Audio-Varianten). Segmente: MPEG-TS (eigener Demuxer PAT → PMT → PES, Stream-Typ 0x0F AAC/ADTS, 0x03/0x04 MP3, 0x81 AC-3) → `ExtAudioFile`; gepacktes Audio (`.aac` mit ID3) → `ExtAudioFile`; fMP4 (`#EXT-X-MAP`, Init + Segment als Datei) → `AVAssetReader` mit 16 kHz mono. `#EXT-X-BYTERANGE` und AES-128 (CommonCrypto, IV aus Playlist oder Sequenznummer) gehen. Zeiten = Summe der `#EXTINF` (passt zur `currentTime` von AVPlayer bei VOD). Lädt bis 60 s voraus, höchstens 25 s unausgewerteter Ton im Stau. Header und Cookies der Seite werden mitgeschickt.
+
+**Grenzen.**
+- Bild-in-Bild: `contentOverlayView` ist im PiP-Fenster nicht sichtbar; die Erkennung läuft weiter, nach der Rückkehr stimmen die Untertitel sofort.
+- Live-HLS (ohne `#EXT-X-ENDLIST`), SAMPLE-AES/FairPlay, LATM-AAC: nicht unterstützt (Hinweis im Player). DASH geht im nativen Player ohnehin nicht.
+- Tap: Untertitel kommen um Abschnittslänge + Rechenzeit zu spät (≈5–6 s), weil der Tap nur liefert, was gerade läuft.
+- Mehrere Audiospuren in einer Datei: nur die erste.
+- Bekannter Fehler außerhalb dieser Teile (Stand 2026-11-08): HLS über `BrowserNativeVideoAssetLoader` schlägt im Simulator mit `CoreMediaErrorDomain -12881` fehl (auch ohne Untertitel); mit direktem `AVURLAsset` läuft derselbe Stream samt Untertiteln.
+
+**Schalter im Seitenmenü** (vorbereitet, nicht eingebaut, weil `BrowserMenuCoordinator.m` gerade anderweitig bearbeitet wird). In `BrowserMenuCoordinator.m` neben `autoOpenNativePlayerMenuItem` einfügen und in die Liste „Ansicht & Wiedergabe“ (bzw. `extensionMenuItems`) aufnehmen:
+```objc
+- (BrowserAdvancedMenuItem *)autoSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.autoSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Automatische Untertitel"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesEnabled = !enabled;
+    }];
+}
+```
+Der Player liest die Einstellung beim Öffnen; im Player selbst schaltet das Menü der Transportleiste sofort.
+
+**Logs** (`[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` = Warnungen/Fehler von whisper/ggml, beim Laden alles):
+- `eingehängt, an=…, Sprache …, whisper=1, Modell …` – Einstellung und gefundenes Modell.
+- `Modell base.en-q5_1 geladen in 0.20 s, … Speicher 38 → 164 MB, System: …` – Ladezeit, Speicherzuwachs, ggml-Fähigkeiten.
+- `Abschnitt 5.0 s @ 23.9 s: 1 Segmente in 0.31 s (RTF 0.06, Schnitt 0.06), ctx 384, …, Speicher 233 MB – <Text>` – je Abschnitt Echtzeitfaktor (Rechenzeit/Audiodauer) und Speicher.
+- `Stand t=…: N Untertitel, N Abschnitte, N verworfen, N wartend, RTF Schnitt …, Speicher … MB` – alle 30 s.
+- `[Subtitles][Tap] prepare rate=44100 ch=2 …`, `[Subtitles][HLS] Audio-Rendition …`, `Audio-Playlist …: N Segmente, … fMP4=…, AES=…`, `Segment @ … s: … KB → … s Ton in … s`.
+- `Modell freigegeben, Speicher … MB` beim Schließen.
+
+**Messwerte Simulator** (Mac mit Apple Silicon, CPU, 4 Threads, base.en-q5_1): Tap 5-s-Abschnitte 0,30–0,41 s (RTF ≈ 0,06), HLS 12-s-Abschnitte 0,55–1,5 s (RTF 0,05–0,13). Modell laden 0,1–0,2 s (+≈14 s Metal-Übersetzung beim allerersten Laden, wenn Metal genutzt wird). Speicher der App 38 MB → 164 MB nach dem Laden, 230–265 MB während der Erkennung, nach dem Schließen ≈ 73 MB. Gerät: noch nicht gemessen.
+
+**Test.**
+```bash
+xcrun simctl spawn <SIM> defaults write io.github.tvosbrowser.app AutoSubtitlesEnabled -bool YES
+SIMCTL_CHILD_POINTER_SELFTEST='url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;state' \
+  xcrun simctl launch --console --terminate-running-process <SIM> io.github.tvosbrowser.app | grep Subtitles
+```
+Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8` (TS, gemuxt bzw. reine Audiovariante), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü oder Seitenmenü.
+
+**Kaputt?** Keine `[Subtitles]`-Zeilen: Einhängepunkt fehlt. `whisper=0`: Framework nicht gefunden (Suchpfad). `Modell –`: `tools/fetch_whisper_model.sh` nicht ausgeführt bzw. Ordner nicht im Paket. Tap ohne `prepare`: Audio-Mix nicht angenommen (z. B. HLS, dann sollte die HLS-Quelle übernehmen). RTF > 0,8 auf dem Gerät: `tiny.en-q5_1` nehmen oder Metal prüfen (`[Subtitles][whisper]`-Zeilen beim Laden).
 
 ---
 
@@ -555,6 +640,7 @@ POINTER_SELFTEST="gestures"
 | `[Input] Clickpad über GameController`, `[Input] Raten` | `BrowserRemoteInputController` | erste: nein, zweite: ja |
 | `[InputTrace][App]`, `[InputTrace][NativePlayer]` | `UIApplication+BrowserSelectPressForwarding`, `BrowserNativeVideoPlayerViewController` | im Code nicht geprüft |
 | `[NativeVideoPlayer]`, `[NativeVideoAssetLoader]`, `[YouTubeExtractor]` | Videoteile | im Code nicht geprüft |
+| `[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` | `BrowserSubtitle*` (Abschnitt 10.6) | nein |
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
 | `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |

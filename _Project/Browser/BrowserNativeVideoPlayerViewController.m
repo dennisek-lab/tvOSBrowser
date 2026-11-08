@@ -1,6 +1,7 @@
 #import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserNativeVideoAssetLoader.h"
 #import "BrowserNowPlayingController.h"
+#import "BrowserSubtitleController.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -41,6 +42,7 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 @property (nonatomic) BOOL didApplyInitialTime;
 @property (nonatomic) BOOL didReportDismiss;
 @property (nonatomic) BOOL didReportFailure;
+@property (nonatomic, strong) BrowserSubtitleController *subtitleController; // automatische Untertitel (whisper)
 
 @end
 
@@ -119,6 +121,9 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     [BrowserNowPlayingController activateAudioSession];
     self.player = [AVPlayer playerWithPlayerItem:playerItem];
     [self log:@"created player url=%@", self.videoURL.absoluteString ?: @""];
+    // Automatische Untertitel: Ebene, Schalter in der Transportleiste, Erkennung (BrowserSubtitleController.h).
+    self.subtitleController = [BrowserSubtitleController attachToPlayerViewController:self playbackURL:self.videoURL
+                                                                      requestHeaders:self.requestHeaders cookies:self.requestCookies];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handlePlayerItemFailedToPlayToEndTime:)
@@ -162,6 +167,7 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
 }
 
 - (void)dealloc {
+    [_subtitleController detach];
     @try {
         [self.player.currentItem removeObserver:self forKeyPath:@"status"];
     } @catch (__unused NSException *exception) {}
