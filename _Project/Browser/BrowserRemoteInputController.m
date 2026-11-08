@@ -677,12 +677,15 @@ static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
 @property (nonatomic) BOOL playPauseSinglePending;
 @property (nonatomic) CFTimeInterval lastUpPressTimestamp;
 @property (nonatomic) CFTimeInterval lastDownPressTimestamp;
-/// Links/rechts: Beginn des laufenden Drucks je Richtung (0 = keiner). Ein Ende ohne Beginn ist eine doppelte
-/// Zustellung und wird verworfen; ein Druck löst genau einen Sprung aus.
+/// Links/rechts: Beginn des laufenden Drucks je Richtung (0 = keiner), nur für Haltedauer und Log.
 @property (nonatomic) CFTimeInterval leftPressBeganTime;
 @property (nonatomic) CFTimeInterval rightPressBeganTime;
-@property (nonatomic) CFTimeInterval leftPressEndedTime;
-@property (nonatomic) CFTimeInterval rightPressEndedTime;
+/// UIPress.timestamp des zuletzt verarbeiteten Beginns/Endes je Richtung. Kommt dasselbe Ereignis ein zweites Mal
+/// an (gleicher Zeitstempel), wirkt es nicht noch einmal – derselbe Mechanismus wie beim Auswahl-Druck.
+@property (nonatomic) NSTimeInterval leftPressBeganEventTime;
+@property (nonatomic) NSTimeInterval rightPressBeganEventTime;
+@property (nonatomic) NSTimeInterval leftPressEndedEventTime;
+@property (nonatomic) NSTimeInterval rightPressEndedEventTime;
 /// Gehaltene Taste links/rechts: Wiederholung läuft (dann löst das Loslassen keinen weiteren Sprung aus).
 @property (nonatomic) BOOL arrowRepeatFired;
 @property (nonatomic) UIPressType arrowRepeatType;
@@ -1770,7 +1773,7 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
             [self discardPendingMotion];
         }
         if (press.type == UIPressTypeLeftArrow || press.type == UIPressTypeRightArrow) {
-            [self arrowPressBegan:press.type];
+            [self arrowPressBegan:press];
         }
     }
 }
@@ -1799,15 +1802,26 @@ static const NSTimeInterval kArrowRepeatInterval = 0.25;
         ![self overlayCardVisible] && ![self addressPanelActive];
 }
 
-- (void)arrowPressBegan:(UIPressType)type {
+- (void)arrowPressBegan:(UIPress *)press {
+    UIPressType type = press.type;
+    BOOL right = type == UIPressTypeRightArrow;
+    NSTimeInterval eventTime = press.timestamp;
+    if (eventTime > 0.0 && eventTime == (right ? self.rightPressBeganEventTime : self.leftPressBeganEventTime)) {
+#if DEBUG
+        NSLog(@"[Keys] %@ Beginn doppelt zugestellt (gleicher Zeitstempel), verworfen", right ? @"rechts" : @"links");
+#endif
+        return;
+    }
     CFTimeInterval now = CACurrentMediaTime();
-    if (type == UIPressTypeRightArrow) {
+    if (right) {
         self.rightPressBeganTime = now;
+        self.rightPressBeganEventTime = eventTime;
     } else {
         self.leftPressBeganTime = now;
+        self.leftPressBeganEventTime = eventTime;
     }
 #if DEBUG
-    NSLog(@"[Keys] %@ Beginn", type == UIPressTypeRightArrow ? @"rechts" : @"links");
+    NSLog(@"[Keys] %@ Beginn", right ? @"rechts" : @"links");
 #endif
     [self stopArrowRepeat];
     if ([self arrowStepApplies]) {
@@ -1837,35 +1851,36 @@ static const NSTimeInterval kArrowRepeatInterval = 0.25;
 }
 
 /// Ende eines Drucks links/rechts. NO: nichts tun (doppelte Zustellung oder schon per Wiederholung gesprungen).
-- (BOOL)arrowPressEndedShouldStep:(UIPressType)type {
+- (BOOL)arrowPressEndedShouldStep:(UIPress *)press {
+    UIPressType type = press.type;
+    BOOL right = type == UIPressTypeRightArrow;
+    NSString *name = right ? @"rechts" : @"links";
+    // Dasselbe Ende zum zweiten Mal (gleicher UIPress.timestamp): verwerfen, ohne den Zustand anzufassen.
+    NSTimeInterval eventTime = press.timestamp;
+    if (eventTime > 0.0 && eventTime == (right ? self.rightPressEndedEventTime : self.leftPressEndedEventTime)) {
+        NSLog(@"[Keys] %@ Ende doppelt zugestellt (gleicher Zeitstempel), verworfen", name);
+        return NO;
+    }
+    if (right) {
+        self.rightPressEndedEventTime = eventTime;
+    } else {
+        self.leftPressEndedEventTime = eventTime;
+    }
     [self stopArrowRepeat];
     BOOL repeated = self.arrowRepeatFired;
     self.arrowRepeatFired = NO;
-    CFTimeInterval began = type == UIPressTypeRightArrow ? self.rightPressBeganTime : self.leftPressBeganTime;
-    if (type == UIPressTypeRightArrow) {
+    CFTimeInterval began = right ? self.rightPressBeganTime : self.leftPressBeganTime;
+    if (right) {
         self.rightPressBeganTime = 0;
     } else {
         self.leftPressBeganTime = 0;
     }
-    NSString *name = type == UIPressTypeRightArrow ? @"rechts" : @"links";
-    CFTimeInterval now = CACurrentMediaTime();
-    CFTimeInterval lastEnded = type == UIPressTypeRightArrow ? self.rightPressEndedTime : self.leftPressEndedTime;
-    if (began <= 0) {
-        // Ende ohne eigenen Beginn kurz nach dem letzten Ende: derselbe Druck zum zweiten Mal zugestellt.
-        if (now - lastEnded < 0.25) {
-            NSLog(@"[Keys] %@ Ende ohne Beginn %.0f ms nach dem letzten verworfen (doppelte Zustellung)", name, (now - lastEnded) * 1000.0);
-            return NO;
-        }
-        NSLog(@"[Keys] %@ Ende ohne Beginn (Beginn ging woandershin), ausgeführt", name);
-    }
-    if (type == UIPressTypeRightArrow) {
-        self.rightPressEndedTime = now;
-    } else {
-        self.leftPressEndedTime = now;
-    }
 #if DEBUG
     if (began > 0) {
-        NSLog(@"[Keys] %@ Ende nach %.0f ms%@", name, (now - began) * 1000.0, repeated ? @", gehalten: kein weiterer Sprung" : @"");
+        NSLog(@"[Keys] %@ Ende nach %.0f ms%@", name, (CACurrentMediaTime() - began) * 1000.0,
+              repeated ? @", gehalten: kein weiterer Sprung" : @"");
+    } else {
+        NSLog(@"[Keys] %@ Ende ohne Beginn (Beginn ging woandershin), ausgeführt", name);
     }
 #endif
     return !repeated;
@@ -1996,7 +2011,7 @@ static const NSTimeInterval kArrowRepeatInterval = 0.25;
                 [self scrollPageByFraction:kPageScrollFraction];
                 return YES;
             case UIPressTypeLeftArrow:
-                if (![self arrowPressEndedShouldStep:UIPressTypeLeftArrow]) {
+                if (![self arrowPressEndedShouldStep:press]) {
                     return YES;
                 }
                 [self revealCursorIfIdle];
@@ -2004,7 +2019,7 @@ static const NSTimeInterval kArrowRepeatInterval = 0.25;
                 [self.host browserRemoteInputControllerNavigateBack];
                 return YES;
             case UIPressTypeRightArrow:
-                if (![self arrowPressEndedShouldStep:UIPressTypeRightArrow]) {
+                if (![self arrowPressEndedShouldStep:press]) {
                     return YES;
                 }
                 [self revealCursorIfIdle];

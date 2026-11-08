@@ -995,7 +995,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 /// press:<taste>[@ms] – Taste über die Responder-Kette wie von der Fernbedienung: menu, playpause, playpause2
-/// (doppelt), select, up, down, left, right; @ms hält die Taste so lange (Vorgabe 80 ms, lang: playpause@900).
+/// (doppelt), select, up, down, left, right, right2 (zweimal), rightdup/leftdup (ein Druck, Beginn und Ende je zweimal
+/// mit gleichem Zeitstempel zugestellt); @ms hält die Taste so lange (Vorgabe 80 ms, lang: playpause@900).
 - (void)runSelfTestPress:(NSString *)spec {
     NSArray<NSString *> *parts = [spec componentsSeparatedByString:@"@"];
     NSString *name = parts.firstObject ?: @"";
@@ -1004,7 +1005,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         @"menu": @(UIPressTypeMenu), @"playpause": @(UIPressTypePlayPause), @"playpause2": @(UIPressTypePlayPause),
         @"select": @(UIPressTypeSelect), @"up": @(UIPressTypeUpArrow), @"down": @(UIPressTypeDownArrow),
         @"left": @(UIPressTypeLeftArrow), @"right": @(UIPressTypeRightArrow), @"right2": @(UIPressTypeRightArrow),
+        @"rightdup": @(UIPressTypeRightArrow), @"leftdup": @(UIPressTypeLeftArrow),
     };
+    BOOL duplicate = [name hasSuffix:@"dup"];
     NSNumber *type = types[name];
     if (type == nil) {
         NSLog(@"[SelfTest] press unbekannt: %@", name);
@@ -1025,10 +1028,18 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
             BrowserSelfTestPress *press = [BrowserSelfTestPress new];
             press.selfTestType = (UIPressType)type.integerValue;
             press.selfTestPhase = UIPressPhaseBegan;
+            press.selfTestTimestamp = CACurrentMediaTime();
             [target pressesBegan:[NSSet setWithObject:press] withEvent:nil];
+            if (duplicate) {
+                [target pressesBegan:[NSSet setWithObject:press] withEvent:nil];
+            }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(hold * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 press.selfTestPhase = UIPressPhaseEnded;
+                press.selfTestTimestamp = CACurrentMediaTime();
                 [target pressesEnded:[NSSet setWithObject:press] withEvent:nil];
+                if (duplicate) {
+                    [target pressesEnded:[NSSet setWithObject:press] withEvent:nil];
+                }
             });
         });
     }
