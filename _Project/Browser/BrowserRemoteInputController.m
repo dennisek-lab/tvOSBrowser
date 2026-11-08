@@ -626,12 +626,15 @@ static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
 
 /// Abstand der Hervorhebung bei Knöpfen mit eigener Fläche oder eigener Rundung: liegt eng an, Glow direkt am Knopf.
 static const CGFloat kMagneticTightPadding = 2.5;
-/// Größter Eckenradius bei Textlinks: eine Zeile (bis 40 pt hoch) bleibt Kapsel, höhere Kästen werden abgerundet.
-static const CGFloat kMagneticTextCornerRadius = 20.0;
-/// Kleinster Eckenradius eckiger Knöpfe (Hervorhebung leicht gerundet statt spitz).
-static const CGFloat kMagneticMinCornerRadius = 4.0;
+/// Eckenradius für Seitenziele ohne eigene Rundung (Textlinks, Symbole, Treffer, Karten): iOS-typisch mit
+/// kontinuierlicher Kurve (Squircle: cornerCurve continuous auf Hervorhebung und Fläche, UIBezierPath im Glow),
+/// keine Pille als Vorgabe (Nutzerwunsch 8. November 2026).
+static const CGFloat kMagneticDefaultCornerRadius = 12.0;
+/// Eckige Flächen (Radius 0, z. B. Bilder, eckige Knöpfe): Abstand plus so viel Rundung, dass die spitze Ecke des
+/// Elements nicht in den Glow ragt; die Hervorhebung bleibt erkennbar eckig.
+static const CGFloat kMagneticSquareExtraRadius = 4.0;
 
-/// Vorgabe-Rundung für Ziele unbekannter Form (frühere Regel): Knöpfe, Links und Textzeilen als Kapsel, größere
+/// Vorgabe-Rundung für Ziele ohne Formangabe (Knöpfe der oberen Leiste; frühere Regel): Knöpfe, Links und Textzeilen als Kapsel, größere
 /// Flächen mit großer, kontinuierlicher Rundung. Mehrzeilige Ziele (ab 80 pt, etwa ein Google-Treffer mit Kopfzeile
 /// und Titel) keine Kapsel: deren Halbkreise würden Favicon und Titelanfang an der linken Kante anschneiden.
 static CGFloat BrowserMagneticDefaultRadius(CGFloat height) {
@@ -1235,26 +1238,31 @@ enum { kHistoryCount = 32 };
     }
     BrowserMagneticStyle style = BrowserMagneticStyleForTarget(shapeKnown && textTarget);
     CGFloat padding = style.padding;
-    BOOL shaped = shapeKnown && !textTarget && (surface || elementRadius > 0.0);
-    if (shaped) {
-        // Knopf mit eigener Fläche oder Rundung: eng anliegend, Rundung folgt dem Knopf (eckig bleibt eckig, Kreis
-        // bleibt Kreis). Früher wurde jedes Ziel unter 80 pt Höhe zur Kapsel, auch Knöpfe mit 4-px-Ecken.
+    // Seitenziele: Hat das Element eine eigene Rundung (border-radius), übernimmt die Hervorhebung sie (Radius plus
+    // Abstand: Pille bleibt Pille, Kreis bleibt Kreis, 4-px-Ecken bleiben fast eckig). Ohne eigene Rundung gilt der
+    // iOS-typische Radius. Knöpfe mit eigener Fläche oder Rundung liegen eng an (2,5 pt), Textlinks mit 3 pt.
+    // Früher wurde jedes Ziel unter 80 pt Höhe zur Kapsel mit 6 pt Abstand, auch Knöpfe mit 4-px-Ecken.
+    BOOL ownRadius = shapeKnown && elementRadius > 0.5;
+    if (shapeKnown && !textTarget && (surface || ownRadius)) {
         padding = kMagneticTightPadding;
     }
     CGRect frame = CGRectInset(target, -padding, -padding);
     CGFloat height = CGRectGetHeight(frame);
+    CGFloat halfSide = MIN(height, CGRectGetWidth(frame)) / 2.0;
     CGFloat radius = BrowserMagneticDefaultRadius(height);
     if (appRadius >= 0.0) {
         radius = MIN(appRadius + padding, height / 2.0);
-    } else if (shapeKnown && textTarget) {
-        // Textlink: Rundung passend zur Textzeile, nicht zum ganzen Kasten (ein hoher Reiter mit einer Zeile Text
-        // wurde sonst zum Oval).
-        radius = MIN(height / 2.0, kMagneticTextCornerRadius);
-    } else if (shaped) {
-        radius = MIN(MAX(MAX(elementRadius, 0.0) + padding, kMagneticMinCornerRadius), MIN(height, CGRectGetWidth(frame)) / 2.0);
+    } else if (ownRadius) {
+        radius = MIN(elementRadius + padding, halfSide);
+    } else if (shapeKnown && surface && !textTarget) {
+        radius = MIN(padding + kMagneticSquareExtraRadius, halfSide);
+    } else if (shapeKnown) {
+        radius = MIN(kMagneticDefaultCornerRadius, halfSide);
     }
 #if DEBUG
-    if (!sameTarget) {
+    static CGRect loggedTarget;
+    if (!CGRectEqualToRect(loggedTarget, target)) {
+        loggedTarget = target;
         NSLog(@"[Magnet] Ziel %.0f,%.0f %.0f×%.0f Form %@ Radius %.1f Fläche %d Text %d → Rand %.1f Ecken %.1f",
               CGRectGetMinX(target), CGRectGetMinY(target), CGRectGetWidth(target), CGRectGetHeight(target),
               appRadius >= 0.0 ? @"App" : (shapeKnown ? @"Seite" : @"unbekannt"), appRadius >= 0.0 ? appRadius : elementRadius,
