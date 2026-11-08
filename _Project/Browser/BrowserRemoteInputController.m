@@ -370,10 +370,12 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     }
 
     CGPoint contentOffset = scrollView.contentOffset;
+    // Oben darf der Inhalt bis unter die schwebende Leiste (contentInset), unten bis zum Seitenende.
+    CGFloat minOffsetY = -scrollView.contentInset.top;
     CGFloat maxOffsetX = MAX(0.0, scrollView.contentSize.width - CGRectGetWidth(scrollView.bounds));
-    CGFloat maxOffsetY = MAX(0.0, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds));
+    CGFloat maxOffsetY = MAX(minOffsetY, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds) + scrollView.contentInset.bottom);
     CGFloat nextOffsetX = MIN(MAX(contentOffset.x + delta.x, 0.0), maxOffsetX);
-    CGFloat nextOffsetY = MIN(MAX(contentOffset.y + delta.y, 0.0), maxOffsetY);
+    CGFloat nextOffsetY = MIN(MAX(contentOffset.y + delta.y, minOffsetY), maxOffsetY);
     CGPoint nextOffset = CGPointMake(nextOffsetX, nextOffsetY);
     [scrollView setContentOffset:nextOffset animated:NO];
     return !CGPointEqualToPoint(contentOffset, nextOffset);
@@ -384,10 +386,11 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     if (scrollView == nil) {
         return;
     }
-    CGFloat maxOffsetY = MAX(0.0, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds));
-    CGFloat delta = CGRectGetHeight(scrollView.bounds) * fraction;
+    CGFloat minOffsetY = -scrollView.contentInset.top;
+    CGFloat maxOffsetY = MAX(minOffsetY, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds) + scrollView.contentInset.bottom);
+    CGFloat delta = (CGRectGetHeight(scrollView.bounds) - scrollView.contentInset.top) * fraction;
     CGPoint offset = scrollView.contentOffset;
-    offset.y = MIN(MAX(offset.y + delta, 0.0), maxOffsetY);
+    offset.y = MIN(MAX(offset.y + delta, minOffsetY), maxOffsetY);
     [self clearSnapAnimated:YES];
     [UIView animateWithDuration:0.28
                           delay:0

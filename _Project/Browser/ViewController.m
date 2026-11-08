@@ -43,6 +43,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
+@property (nonatomic) CGFloat lastPageScrollOffset;
+@property (nonatomic) CGFloat pageScrollTravel;
 
 @end
 
@@ -229,6 +231,13 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                 if ([step isEqualToString:@"next"] || [step isEqualToString:@"prev"]) {
                     [self.remoteInputController stepTargetBy:[step isEqualToString:@"next"] ? 1 : -1];
                     NSLog(@"[SelfTest] %@ cursor=%@", step, NSStringFromCGPoint(self.remoteInputController.cursorView.frame.origin));
+                    return;
+                }
+                if ([step isEqualToString:@"probe"]) {
+                    UIScrollView *sv = self.webview.scrollView;
+                    [self.webview evaluateJavaScriptAsync:@"(function(){var r=document.getElementById('red');var b=r?r.getBoundingClientRect():null;var h=document.elementFromPoint(20,20);return 'red.top='+(b?b.top:'-')+' scrollY='+scrollY+' innerH='+innerHeight+' innerW='+innerWidth+' hit20='+(h?h.id||h.tagName:'-')+' vv.top='+(window.visualViewport?visualViewport.offsetTop:'-');})()" completion:^(id result) {
+                        NSLog(@"[SelfTest] probe %@ webFrame=%@ offset=%@ inset=%@", result, NSStringFromCGRect(self.webview.frame), NSStringFromCGPoint(sv.contentOffset), NSStringFromUIEdgeInsets(sv.contentInset));
+                    }];
                     return;
                 }
                 if ([step isEqualToString:@"label"]) {
@@ -666,6 +675,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             foundAction = action;
         }
     }];
+    if (found && self.topMenuView.compact) {
+        [self.topMenuView setCompact:NO animated:YES];
+        self.pageScrollTravel = 0.0;
+        return YES;
+    }
     if (found) {
         [self performTopBarAction:foundAction];
     }
@@ -687,6 +701,31 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             [weakSelf applyPageColorOfWebView:weakWebView];
         }
     };
+    webView.scrollOffsetDidChange = ^(CGFloat offsetFromTop) {
+        if (weakSelf.webview == weakWebView) {
+            [weakSelf pageDidScrollToOffset:offsetFromTop];
+        }
+    };
+}
+
+/// Safari-Verhalten: Beim Scrollen nach unten schrumpft die Leiste zur Kapsel, nach oben oder am Seitenanfang kommt sie zurück.
+- (void)pageDidScrollToOffset:(CGFloat)offset {
+    CGFloat delta = offset - self.lastPageScrollOffset;
+    self.lastPageScrollOffset = offset;
+    if (offset < 24.0) {
+        self.pageScrollTravel = 0.0;
+        [self.topMenuView setCompact:NO animated:YES];
+        return;
+    }
+    if ((delta > 0.0) != (self.pageScrollTravel > 0.0)) {
+        self.pageScrollTravel = 0.0;
+    }
+    self.pageScrollTravel += delta;
+    if (self.pageScrollTravel > 24.0 && offset > 60.0) {
+        [self.topMenuView setCompact:YES animated:YES];
+    } else if (self.pageScrollTravel < -140.0) {
+        [self.topMenuView setCompact:NO animated:YES];
+    }
 }
 
 - (void)browserHandlePrimaryAction {
@@ -699,7 +738,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     }
 
     CGPoint point = [self.view convertPoint:self.remoteInputController.cursorView.frame.origin toView:self.webview];
-    if (point.y < 0) {
+    if (point.y < self.webview.topObscuredInset && !self.topMenuView.compact) {
         [self activateTopBarFocusMode];
         return;
     }
@@ -788,6 +827,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 /// Füllt den Streifen hinter der oberen Leiste mit der Farbe der Seite, wie Safari.
 - (void)applyPageColorOfWebView:(BrowserWebView *)webView {
     [self.tabCoordinator refreshActiveTabUI];
+    [self.topMenuView attachToScrollView:webView.scrollView];
     UIColor *color = webView.pageBackgroundColor ?: UIColor.blackColor;
     if ([self.view.backgroundColor isEqual:color]) {
         return;
@@ -809,6 +849,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     if (previous == current) {
         return;
     }
+    [self.topMenuView setCompact:NO animated:YES];
+    self.pageScrollTravel = 0.0;
+    self.lastPageScrollOffset = 0.0;
     if (previous != nil && previous.videoPlaying) {
         [previous sendVideoCommand:@"pause"];
     }
@@ -1049,7 +1092,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
     BrowserWebView *webView = self.webview;
     BOOL topBarVisible = [self topBarAcceptsPointer];
-    CGRect topBarFrame = topBarVisible ? [self.topMenuView.superview convertRect:self.topMenuView.frame toView:self.view] : CGRectNull;
+    CGRect topBarFrame = CGRectNull;
+    if (topBarVisible) {
+        topBarFrame = self.topMenuView.compact ? [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:self.view]
+                                               : [self.topMenuView.superview convertRect:self.topMenuView.frame toView:self.view];
+    }
 
     if (webView != nil && webView.window != nil) {
         [self observeClickTargetsOfWebView:webView];

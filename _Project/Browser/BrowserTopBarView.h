@@ -41,6 +41,13 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 - (void)setPageBackgroundColor:(nullable UIColor *)color;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;
 - (void)setFocusModeActive:(BOOL)focusModeActive;
+/// Kompakte Leiste beim Scrollen: kleine Glas-Kapsel nur mit dem Seitennamen (wie Safari).
+@property (nonatomic, readonly, getter=isCompact) BOOL compact;
+- (void)setCompact:(BOOL)compact animated:(BOOL)animated;
+/// Sichtbare Glasfläche in Koordinaten der Leiste.
+@property (nonatomic, readonly) CGRect chromeFrame;
+/// Scrollansicht, über deren oberem Rand die Leiste schwebt (für den Kanteneffekt des Systems).
+- (void)attachToScrollView:(nullable UIScrollView *)scrollView;
 - (nullable UIView *)preferredFocusItem;
 
 @end

@@ -500,8 +500,11 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 @property (nonatomic, copy) NSString *userAgent;
 @property (nonatomic) BOOL loading;
 @property (nonatomic, strong) BrowserClickTargetTracker *clickTargetTracker;
+@property (nonatomic, weak, nullable) UIScrollView *observedScrollView;
 
 @end
+
+static void *BrowserWebViewScrollOffsetContext = &BrowserWebViewScrollOffsetContext;
 
 @implementation BrowserWebView
 
@@ -591,14 +594,52 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     [self addSubview:runtimeView];
     [self setUserAgent:userAgent];
     self.clickTargetTracker.scrollView = [self scrollView];
+    [self observeScrollOffset];
+}
+
+- (void)observeScrollOffset {
+    UIScrollView *scrollView = [self scrollView];
+    if (scrollView == nil || scrollView == self.observedScrollView) {
+        return;
+    }
+    [self.observedScrollView removeObserver:self forKeyPath:@"contentOffset" context:BrowserWebViewScrollOffsetContext];
+    [scrollView addObserver:self forKeyPath:@"contentOffset" options:NSKeyValueObservingOptionNew context:BrowserWebViewScrollOffsetContext];
+    self.observedScrollView = scrollView;
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context != BrowserWebViewScrollOffsetContext) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
+    if (self.scrollOffsetDidChange != nil) {
+        UIScrollView *scrollView = (UIScrollView *)object;
+        self.scrollOffsetDidChange(scrollView.contentOffset.y + scrollView.contentInset.top);
+    }
+}
+
+- (void)dealloc {
+    [_observedScrollView removeObserver:self forKeyPath:@"contentOffset" context:BrowserWebViewScrollOffsetContext];
+}
+
+/// CSS-Client-Koordinaten beginnen unter der schwebenden Leiste (obscured inset), die WebView am Bildschirmrand.
+- (NSArray<NSValue *> *)rectsShiftedByTopInset:(NSArray<NSValue *> *)rects {
+    if (self.topObscuredInset == 0.0) {
+        return rects;
+    }
+    NSMutableArray<NSValue *> *shifted = [NSMutableArray arrayWithCapacity:rects.count];
+    for (NSValue *value in rects) {
+        [shifted addObject:[NSValue valueWithCGRect:CGRectOffset(value.CGRectValue, 0.0, self.topObscuredInset)]];
+    }
+    return shifted;
 }
 
 - (NSArray<NSValue *> *)clickTargetRects {
-    return [self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)];
+    return [self rectsShiftedByTopInset:[self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }
 
 - (NSArray<NSValue *> *)videoRects {
-    return [self.clickTargetTracker videoRectsForViewWidth:CGRectGetWidth(self.bounds)];
+    return [self rectsShiftedByTopInset:[self.clickTargetTracker videoRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }
 
 - (BOOL)videoPlaying {
@@ -607,7 +648,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 
 - (void)sendVideoCommand:(NSString *)command atPoint:(CGPoint)point {
     CGFloat scale = [self.clickTargetTracker cssScaleForViewWidth:CGRectGetWidth(self.bounds)];
-    CGPoint cssPoint = CGPointMake(point.x / scale, point.y / scale);
+    CGPoint cssPoint = CGPointMake(point.x / scale, (point.y - self.topObscuredInset) / scale);
     [self evaluateJavaScriptAsync:[BrowserClickTargetTracker videoCommandScriptWithCSSPoint:cssPoint command:command]];
 }
 
@@ -617,6 +658,27 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 
 - (BOOL)pageFullscreen {
     return self.clickTargetTracker.pageFullscreen;
+}
+
+- (void)setTopObscuredInset:(CGFloat)inset {
+    CGFloat previous = _topObscuredInset;
+    _topObscuredInset = inset;
+    UIScrollView *scrollView = [self scrollView];
+    if (scrollView == nil) {
+        return;
+    }
+    scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    BOOL atTop = scrollView.contentOffset.y <= -previous + 1.0;
+    UIEdgeInsets insets = scrollView.contentInset;
+    insets.top = inset;
+    scrollView.contentInset = insets;
+    SEL obscured = NSSelectorFromString(@"_setObscuredInsets:");
+    if ([self.runtimeWebView respondsToSelector:obscured]) {
+        ((void (*)(id, SEL, UIEdgeInsets))objc_msgSend)(self.runtimeWebView, obscured, UIEdgeInsetsMake(inset, 0, 0, 0));
+    }
+    if (atTop) {
+        scrollView.contentOffset = CGPointMake(scrollView.contentOffset.x, -inset);
+    }
 }
 
 - (NSString *)reportedSiteName {

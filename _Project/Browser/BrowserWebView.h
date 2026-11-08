@@ -25,6 +25,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL scalesPageToFit;
 /// Wird aufgerufen, wenn die Seite neue klickbare Elemente gemeldet hat (magnetischer Zeiger).
 @property (nullable, nonatomic, copy) void (^clickTargetsDidChange)(void);
+/// Meldet jede Scrollbewegung: Abstand vom Seitenanfang in Punkten (0 = ganz oben, unter der Leiste).
+@property (nullable, nonatomic, copy) void (^scrollOffsetDidChange)(CGFloat offsetFromTop);
 /// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)clickTargetRects;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
@@ -45,6 +47,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, copy, nullable) NSString *reportedSiteName;
 /// Färbt die Flächen der WebView außerhalb des Seiteninhalts (Streifen unter der Leiste, Überscrollen).
 - (void)setSurroundingColor:(nonnull UIColor *)color;
+/// Bereich oben, den die schwebende Leiste verdeckt. Die Seite beginnt darunter, scrollt aber unter die Leiste
+/// (Liquid Glass braucht Inhalt dahinter).
+@property (nonatomic) CGFloat topObscuredInset;
 /// Verlässt das Vollbild der Seite.
 - (void)exitPageFullscreen;
 /// Angaben zum aktiven Video für „Now Playing“ (siehe BrowserClickTargetTracker.mediaInfo).

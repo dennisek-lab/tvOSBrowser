@@ -16,6 +16,9 @@ static CGFloat const kTopBarLabelSpacing = 28.0;
 static CGFloat const kTopBarSpinnerSpacing = 22.0;
 static CGFloat const kTopBarFocusHighlightInset = 10.0;
 static CGFloat const kTopBarUniformFocusHeight = 72.0;
+static CGFloat const kTopBarCompactHeight = 58.0;
+static CGFloat const kTopBarCompactWidth = 560.0;
+static CGFloat const kTopBarCompactLabelScale = 0.8;
 
 @interface BrowserTopBarFocusButton : UIButton
 
@@ -61,6 +64,9 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 @property (nonatomic) BrowserTopBarFocusButton *menuFocusButton;
 @property (nonatomic) BrowserTopBarFocusButton *lastFocusedButton;
 @property (nonatomic, getter=isFocusModeActive) BOOL focusModeActive;
+@property (nonatomic, readwrite, getter=isCompact) BOOL compact;
+@property (nonatomic) BOOL lightPage;
+@property (nonatomic, strong, nullable) id scrollEdgeInteraction;
 
 @end
 
@@ -220,6 +226,8 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     self.URLLabel.textColor = [foreground colorWithAlphaComponent:0.75];
     self.loadingSpinner.color = foreground;
     self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
+    self.lightPage = light;
+    [self applyContrastStyle];
 }
 
 - (BrowserTopBarFocusButton *)newFocusButtonForAction:(BrowserTopBarAction)action
@@ -236,32 +244,77 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 }
 
 - (void)applyVisualStyle {
+    // Abheben vom Inhalt auch auf einfarbigen Seiten: weicher Schatten und feine Kante (HIG: Glas schwebt über dem Inhalt).
+    self.chromeContainerView.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.chromeContainerView.layer.shadowOffset = CGSizeMake(0.0, 8.0);
+    self.chromeContainerView.layer.shadowRadius = 24.0;
+    self.chromeEffectView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.chromeEffectView.layer.borderWidth = 1.0;
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
         self.effect = nil;
-
+        // Reguläres Glas ohne Tönung: Das System weichzeichnet und regelt die Helligkeit für die Lesbarkeit selbst.
         UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
         glassEffect.interactive = YES;
-        glassEffect.tintColor = [UIColor colorWithWhite:1.0 alpha:0.10];
         self.chromeEffectView.effect = glassEffect;
         self.chromeEffectView.alpha = 1.0;
-        self.chromeContainerView.layer.shadowOpacity = 0.0;
-        self.chromeContainerView.layer.shadowOffset = CGSizeZero;
-        self.chromeContainerView.layer.shadowRadius = 0.0;
-        self.chromeContainerView.layer.borderWidth = 0.0;
+        [self applyContrastStyle];
         return;
     }
 #endif
-
     self.effect = nil;
     self.chromeEffectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
     self.chromeEffectView.alpha = 0.98;
-    self.chromeContainerView.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.chromeContainerView.layer.shadowOpacity = 0.28;
-    self.chromeContainerView.layer.shadowOffset = CGSizeMake(0.0, 12.0);
-    self.chromeContainerView.layer.shadowRadius = 22.0;
-    self.chromeContainerView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
-    self.chromeContainerView.layer.borderWidth = 1.0;
+    [self applyContrastStyle];
+}
+
+- (void)applyContrastStyle {
+    BOOL light = self.lightPage;
+    self.chromeContainerView.layer.shadowOpacity = light ? 0.24 : 0.35;
+    self.chromeEffectView.layer.borderColor = (light ? [UIColor colorWithWhite:0.0 alpha:0.14]
+                                                     : [UIColor colorWithWhite:1.0 alpha:0.16]).CGColor;
+}
+
+- (void)attachToScrollView:(UIScrollView *)scrollView {
+    if (@available(tvOS 26.0, *)) {
+        UIScrollEdgeElementContainerInteraction *interaction = self.scrollEdgeInteraction;
+        if (interaction == nil) {
+            interaction = [[UIScrollEdgeElementContainerInteraction alloc] init];
+            interaction.edge = UIRectEdgeTop;
+            [self.chromeContainerView addInteraction:interaction];
+            self.scrollEdgeInteraction = interaction;
+        }
+        if (interaction.scrollView != scrollView) {
+            interaction.scrollView = scrollView;
+            scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.softStyle;
+            scrollView.topEdgeEffect.hidden = NO;
+        }
+    }
+}
+
+- (CGRect)chromeFrame {
+    return self.chromeContainerView.frame;
+}
+
+- (void)setCompact:(BOOL)compact animated:(BOOL)animated {
+    if (_compact == compact) {
+        return;
+    }
+    if (compact && self.focusModeActive) {
+        return;
+    }
+    _compact = compact;
+    void (^changes)(void) = ^{
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+    };
+    if (animated) {
+        [UIView animateWithDuration:0.32 delay:0.0 usingSpringWithDamping:0.86 initialSpringVelocity:0.0
+                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                         animations:changes completion:nil];
+    } else {
+        changes();
+    }
 }
 
 - (void)layoutSubviews {
@@ -271,8 +324,13 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 
     CGFloat width = MIN(CGRectGetWidth(self.bounds) - (kTopBarHorizontalInset * 2.0), kTopBarMaxWidth);
     width = MAX(width, 860.0);
+    CGFloat height = kTopBarHeight;
+    if (self.compact) {
+        width = kTopBarCompactWidth;
+        height = kTopBarCompactHeight;
+    }
     CGFloat originX = floor((CGRectGetWidth(self.bounds) - width) / 2.0);
-    CGRect chromeFrame = CGRectMake(originX, kTopBarVerticalInset, width, kTopBarHeight);
+    CGRect chromeFrame = CGRectMake(originX, kTopBarVerticalInset, width, height);
 
     self.chromeContainerView.frame = chromeFrame;
     self.chromeContainerView.layer.cornerRadius = chromeFrame.size.height / 2.0;
@@ -312,10 +370,26 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     CGFloat labelOriginX = CGRectGetMaxX(self.tabsImageView.frame) + kTopBarLabelSpacing;
     CGFloat labelTrailingX = CGRectGetMinX(self.loadingSpinner.frame) - kTopBarLabelSpacing;
     CGFloat labelWidth = MAX(200.0, labelTrailingX - labelOriginX);
-    self.URLLabel.frame = CGRectMake(labelOriginX,
-                                     0.0,
-                                     labelWidth,
-                                     CGRectGetHeight(chromeFrame));
+    CGRect labelFrame = CGRectMake(labelOriginX, 0.0, labelWidth, CGRectGetHeight(chromeFrame));
+    CGFloat iconAlpha = self.compact ? 0.0 : 0.95;
+    for (UIImageView *imageView in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
+                                     self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
+        imageView.alpha = iconAlpha;
+    }
+    if (self.compact) {
+        // Nur der Seitenname, verkleinert und mittig; der Ladekreisel rechts in der Kapsel.
+        CGFloat compactSpinner = 28.0;
+        self.loadingSpinner.frame = CGRectMake(CGRectGetWidth(chromeFrame) - 22.0 - compactSpinner,
+                                               floor((CGRectGetHeight(chromeFrame) - compactSpinner) / 2.0),
+                                               compactSpinner, compactSpinner);
+        CGFloat inner = CGRectGetWidth(chromeFrame) - 2.0 * (22.0 + compactSpinner + 8.0);
+        labelFrame = CGRectMake(0.0, 0.0, inner / kTopBarCompactLabelScale, CGRectGetHeight(chromeFrame));
+    }
+    self.URLLabel.bounds = CGRectMake(0.0, 0.0, CGRectGetWidth(labelFrame), CGRectGetHeight(labelFrame));
+    self.URLLabel.center = self.compact ? CGPointMake(CGRectGetWidth(chromeFrame) / 2.0, CGRectGetHeight(chromeFrame) / 2.0)
+                                        : CGPointMake(CGRectGetMidX(labelFrame), CGRectGetMidY(labelFrame));
+    self.URLLabel.transform = self.compact ? CGAffineTransformMakeScale(kTopBarCompactLabelScale, kTopBarCompactLabelScale)
+                                           : CGAffineTransformIdentity;
 
     self.backFocusButton.frame = [self focusFrameForIconView:self.backImageView];
     self.refreshFocusButton.frame = [self focusFrameForIconView:self.refreshImageView];
@@ -340,6 +414,11 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block {
     if (block == nil || self.hidden) {
+        return;
+    }
+    if (self.compact) {
+        // Die ganze Kapsel ist ein Ziel; ein Klick klappt die Leiste wieder auf.
+        block(self.chromeContainerView.frame, BrowserTopBarActionURL);
         return;
     }
     NSArray *items = @[
@@ -449,6 +528,9 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     }
 
     _focusModeActive = focusModeActive;
+    if (focusModeActive) {
+        [self setCompact:NO animated:YES];
+    }
     for (BrowserTopBarFocusButton *button in self.focusButtons) {
         button.hidden = !focusModeActive;
         button.enabled = focusModeActive;

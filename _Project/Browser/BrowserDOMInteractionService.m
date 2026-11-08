@@ -11,6 +11,8 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                             inView:(UIView *)containerView
                            webView:(BrowserWebView *)webView {
     CGPoint point = [containerView convertPoint:cursorOrigin toView:webView];
+    // Der CSS-Viewport beginnt unter der schwebenden Leiste.
+    point.y -= webView.topObscuredInset;
     if (point.y < 0.0) {
         return point;
     }

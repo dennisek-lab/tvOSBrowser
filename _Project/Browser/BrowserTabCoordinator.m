@@ -103,14 +103,9 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     if (self.activeWebView == nil) {
         return;
     }
-    if (self.topNavigationVisible) {
-        self.activeWebView.frame = CGRectMake(self.rootView.bounds.origin.x,
-                                              self.rootView.bounds.origin.y + self.topMenuBrowserOffset,
-                                              self.rootView.bounds.size.width,
-                                              self.rootView.bounds.size.height - self.topMenuBrowserOffset);
-    } else {
-        self.activeWebView.frame = self.rootView.bounds;
-    }
+    // Die WebView reicht bis unter die schwebende Leiste, der Inhalt beginnt per Inset darunter.
+    self.activeWebView.frame = self.rootView.bounds;
+    self.activeWebView.topObscuredInset = self.topNavigationVisible ? self.topMenuBrowserOffset : 0.0;
 }
 
 - (CGSize)thumbnailViewportSize {
@@ -471,9 +466,10 @@ static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSStr
     dispatch_async(dispatch_get_main_queue(), ^{
         [scrollView layoutIfNeeded];
         CGFloat maxOffsetX = MAX(0.0, scrollView.contentSize.width - CGRectGetWidth(scrollView.bounds));
-        CGFloat maxOffsetY = MAX(0.0, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds));
+        CGFloat minOffsetY = -scrollView.contentInset.top;
+        CGFloat maxOffsetY = MAX(minOffsetY, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds));
         CGPoint clampedScrollOffset = CGPointMake(MIN(MAX(savedScrollOffset.x, 0.0), maxOffsetX),
-                                                  MIN(MAX(savedScrollOffset.y, 0.0), maxOffsetY));
+                                                  MIN(MAX(savedScrollOffset.y, minOffsetY), maxOffsetY));
         [scrollView setContentOffset:clampedScrollOffset animated:NO];
         tab.savedScrollOffset = clampedScrollOffset;
         tab.hasSavedScrollOffset = YES;
