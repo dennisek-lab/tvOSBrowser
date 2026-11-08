@@ -54,6 +54,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSString *)playerBridgeClickAtCSSPoint:(CGPoint)cssPoint;
 /// Videobefehl an den Frame mit dieser Adresse (asynchron), z. B. Position nach dem nativen Player zurückgeben.
 - (void)sendVideoCommand:(NSString * _Nonnull)command toFrameURL:(NSString * _Nonnull)frameURL;
+#if DEBUG
+/// Selbsttest `fvideo`: Zustand der Videos in allen Frames (auch fremden iframes), je Frame eine Zeile.
+- (void)debugFrameVideoStatesWithCompletion:(void (^ _Nonnull)(NSString * _Nonnull report))completion;
+#endif
 /// Ist auf der Seite gerade etwas im Vollbild (Element-Vollbild oder Video-Vollbild von WebKit)?
 @property (nonatomic, readonly) BOOL pageFullscreen;
 /// Farbe der Seite für die Umgebung (Hintergrund hinter der oberen Leiste).

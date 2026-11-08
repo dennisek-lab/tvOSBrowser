@@ -707,6 +707,19 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     NSLog(@"[SelfTest] websubs start %@", [options componentsJoinedByString:@","]);
                     return;
                 }
+                if ([step isEqualToString:@"fvideo"]) {
+                    // Videos aller Frames (auch fremder iframes), z. B. ob ein eingebetteter Player wirklich läuft.
+                    [self.webview debugFrameVideoStatesWithCompletion:^(NSString *report) {
+                        NSLog(@"[SelfTest] fvideo %@", report);
+                    }];
+                    return;
+                }
+                if ([step hasPrefix:@"pcmd:"]) {
+                    // Befehl über die Player-Brücke am Zeiger (strict), wie Play/Pause ohne erkanntes Video.
+                    NSString *result = [self.webview playerCommand:[step substringFromIndex:5] atPoint:[self pointerPointInWebView] strict:YES];
+                    NSLog(@"[SelfTest] pcmd %@ -> %@", [step substringFromIndex:5], result);
+                    return;
+                }
                 if ([step isEqualToString:@"video"]) {
                     [self.webview evaluateJavaScriptAsync:@"(function(){var v=document.querySelector('video');return v?('t='+v.currentTime.toFixed(1)+' paused='+v.paused+' ready='+v.readyState+' net='+v.networkState+' err='+(v.error?v.error.code:0)+' playErr='+(window.__browserLastPlayError||'')):'none';})()"
                                                completion:^(id result) {

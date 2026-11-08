@@ -813,6 +813,51 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     [self evaluatePlayerBridgeScript:[BrowserClickTargetTracker playerBridgeScriptForFrameURL:frameURL command:command] completion:nil];
 }
 
+#if DEBUG
+- (void)debugFrameVideoStatesWithCompletion:(void (^)(NSString *))completion {
+    SEL framesSelector = NSSelectorFromString(@"_frames:");
+    SEL evaluate = NSSelectorFromString(@"evaluateJavaScript:inFrame:inContentWorld:completionHandler:");
+    Class worldClass = NSClassFromString(@"WKContentWorld");
+    id pageWorld = [worldClass respondsToSelector:NSSelectorFromString(@"pageWorld")] ? ((id (*)(id, SEL))objc_msgSend)(worldClass, NSSelectorFromString(@"pageWorld")) : nil;
+    if (![self.runtimeWebView respondsToSelector:framesSelector] || ![self.runtimeWebView respondsToSelector:evaluate] || pageWorld == nil) {
+        completion(@"_frames: oder evaluateJavaScript:inFrame: fehlt");
+        return;
+    }
+    id webView = self.runtimeWebView;
+    NSString *script = @"(function(){var vs=document.querySelectorAll('video'),o=[];for(var i=0;i<vs.length;i++){var v=vs[i],r=v.getBoundingClientRect();o.push(Math.round(r.width)+'x'+Math.round(r.height)+' t='+v.currentTime.toFixed(1)+' paused='+v.paused+' ready='+v.readyState+(v.error?' err='+v.error.code:''));}return location.host+location.pathname.slice(0,40)+': '+(o.join(' ; ')||'kein video')+(document.querySelector('iframe[data-browser-player]')?' [markiert: '+[].map.call(document.querySelectorAll('iframe[data-browser-player]'),function(f){return f.getAttribute('data-browser-player')}).join(',')+']':'');})()";
+    ((void (*)(id, SEL, id))objc_msgSend)(webView, framesSelector, ^(id root) {
+        NSMutableArray *infos = [NSMutableArray array];
+        NSMutableArray *queue = root != nil ? [NSMutableArray arrayWithObject:root] : [NSMutableArray array];
+        while (queue.count > 0 && infos.count < 30) {
+            id node = queue.firstObject;
+            [queue removeObjectAtIndex:0];
+            id info = [node valueForKey:@"info"];
+            if (info != nil) {
+                [infos addObject:info];
+            }
+            NSArray *children = [node valueForKey:@"childFrames"];
+            if ([children isKindOfClass:NSArray.class]) {
+                [queue addObjectsFromArray:children];
+            }
+        }
+        NSMutableArray<NSString *> *lines = [NSMutableArray array];
+        dispatch_group_t group = dispatch_group_create();
+        for (id info in infos) {
+            dispatch_group_enter(group);
+            ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(webView, evaluate, script, info, pageWorld, ^(id result, NSError *error) {
+                @synchronized (lines) {
+                    [lines addObject:[result isKindOfClass:NSString.class] ? result : [NSString stringWithFormat:@"Fehler %@", error.localizedDescription]];
+                }
+                dispatch_group_leave(group);
+            });
+        }
+        dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+            completion([lines componentsJoinedByString:@" || "]);
+        });
+    });
+}
+#endif
+
 /// Skript in der Welt der Player-Brücke im Hauptframe (ohne eigene Content World: Seitenwelt).
 - (void)evaluatePlayerBridgeScript:(NSString *)script completion:(void (^)(id result))completion {
     id world = [BrowserClickTargetTracker playerBridgeContentWorld];
