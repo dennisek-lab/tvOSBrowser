@@ -563,6 +563,9 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 @property (nonatomic) CFTimeInterval navigationStartTime;
 @property (nonatomic) BOOL navigationCommitted;
 @property (nonatomic, strong, nullable) id contentController;
+/// Letztes automatisches Neuladen nach beendetem Seitenprozess (Schleifenschutz).
+@property (nonatomic, copy, nullable) NSString *crashReloadHost;
+@property (nonatomic) CFTimeInterval crashReloadTime;
 
 @end
 
@@ -829,16 +832,22 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 }
 
 - (void)evaluateJavaScriptAsync:(NSString *)script completion:(void (^)(id))completion {
+    [self evaluateJavaScriptAsync:script resultHandler:completion == nil ? nil : ^(id result, __unused NSError *error) {
+        completion(result);
+    }];
+}
+
+- (void)evaluateJavaScriptAsync:(NSString *)script resultHandler:(void (^)(id, NSError *))resultHandler {
     SEL selector = NSSelectorFromString(@"evaluateJavaScript:completionHandler:");
     if (script.length == 0 || self.runtimeWebView == nil || ![self.runtimeWebView respondsToSelector:selector]) {
-        if (completion != nil) {
-            completion(nil);
+        if (resultHandler != nil) {
+            resultHandler(nil, nil);
         }
         return;
     }
-    void (^handler)(id, NSError *) = completion == nil ? nil : ^(id result, __unused NSError *error) {
+    void (^handler)(id, NSError *) = resultHandler == nil ? nil : ^(id result, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            completion(result);
+            resultHandler(result, error);
         });
     };
     ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, handler);
@@ -1304,8 +1313,48 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     }
 }
 
+// Seitenprozess (com.apple.WebKit.WebContent) beendet. Häufigster Fall auf dem Apple TV: Jetsam beendet ihn, weil er die
+// Speichergrenze überschreitet (rund 1,5 GB; JetsamEvent-*.ips, Grund „highwater“). WebKit meldet das als Absturz (3).
+// Ohne Reaktion bleibt die Seite leer stehen (weiß/schwarz, JavaScript liefert nur noch Fehler 5), bis der Nutzer neu lädt.
+// Safari lädt in diesem Fall selbst neu; hier ebenso, einmal je Host innerhalb von 60 s (sonst Schleife bei Seiten, die
+// immer wieder zu groß werden). Beim zweiten Mal Fehlermeldung statt Neuladen.
 - (void)webViewWebContentProcessDidTerminate:(id)webView {
+    [self handleWebContentProcessTerminationWithReason:-1];
+}
+
+// Private Variante mit Grund (_WKProcessTerminationReason: 0 Speichergrenze von WebKit, 1 CPU-Grenze, 2 von der App
+// verlangt, 3 Absturz/Jetsam). Ist sie implementiert, ruft WebKit nur sie auf.
+- (void)_webView:(id)webView webContentProcessDidTerminateWithReason:(NSInteger)reason {
+    [self handleWebContentProcessTerminationWithReason:reason];
+}
+
+- (void)handleWebContentProcessTerminationWithReason:(NSInteger)reason {
     self.loading = NO;
+    NSURL *url = self.committedURL ?: self.request.URL;
+    NSString *host = url.host ?: @"";
+    CFTimeInterval now = CACurrentMediaTime();
+    BOOL repeated = host.length > 0 && [host isEqualToString:self.crashReloadHost] && now - self.crashReloadTime < 60.0;
+    NSLog(@"[WebProcess] Seitenprozess beendet (Grund %ld) %@ -> %@", (long)reason, host,
+          url == nil ? @"keine Seite" : (repeated ? @"wiederholt, kein Neuladen" : @"neu laden"));
+    if (url == nil || reason == 2) {
+        return;
+    }
+    if (repeated) {
+        if ([self.delegate respondsToSelector:@selector(webView:didFailLoadWithError:)]) {
+            NSError *error = [NSError errorWithDomain:@"BrowserWebContentProcess" code:reason userInfo:@{
+                NSLocalizedDescriptionKey: @"Die Seite ist wiederholt abgestürzt (meist zu viel Speicher für das Apple TV).",
+                NSURLErrorFailingURLErrorKey: self.request.URL ?: url,
+            }];
+            [self.delegate webView:self didFailLoadWithError:error];
+        }
+        return;
+    }
+    self.crashReloadHost = host;
+    self.crashReloadTime = now;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weakSelf reload];
+    });
 }
 
 - (NSURLRequest *)requestFromNavigationAction:(id)navigationAction {
