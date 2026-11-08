@@ -39,7 +39,7 @@ Bedienung
 | Play/Pause | Video starten/stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü (•••) |
 | Menü-Taste | Adressleiste schließen, Reader beenden, dann eine Seite zurück |
 
-**Adressleiste:** Zweimal oben drücken öffnet ein Diktierfeld mit Favoriten, oft besuchten und zuletzt besuchten Seiten. Die Siri-Taste halten und eine Adresse, einen Suchbegriff oder einen **Sprachbefehl** sagen, z. B. „Reader“, „zurück“, „neuer Tab“, „suche Wetter“, „öffne heise punkt de“, „30 Sekunden zurück“, „fasse zusammen“, „übersetzen“.
+**Adressleiste:** Ein Druck auf die Leiste (oder zweimal oben) öffnet die Tastatur direkt unter der Leiste, darunter Favoriten, oft besuchte und zuletzt besuchte Seiten. Ohne weiteren Klick die Siri-Taste halten und eine Adresse, einen Suchbegriff oder einen **Sprachbefehl** sagen, z. B. „Reader“, „zurück“, „neuer Tab“, „suche Wetter“, „öffne heise punkt de“, „30 Sekunden zurück“, „fasse zusammen“, „übersetzen“.
 
 **Texteingabe:** Bei jedem Textfeld bietet das iPhone eine Tastatur-Mitteilung an; darüber lassen sich auch Passwörter einfügen.
 
