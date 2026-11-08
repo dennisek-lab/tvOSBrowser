@@ -195,12 +195,26 @@
 
   // FastCMP (w3schools u. a.): same-origin iframe#fast-cmp-iframe ohne src. Eine verlässliche JS-API ist nicht bekannt,
   // daher wird der „Ablehnen“-Knopf im iframe-Dokument angeklickt (vom Hauptframe aus oder im iframe selbst).
+  // FastCMP verdrahtet seine Knöpfe erst kurz nach dem Erscheinen: Ein zu früher Klick verpufft.
+  // Deshalb erst klicken, wenn der Dialog seit 1,2 s sichtbar ist, und danach prüfen, ob er wirklich weg ist.
+  var fastSeenAt = 0, fastTries = 0;
+  function fastCmpVisible() {
+    var fr = document.getElementById('fast-cmp-iframe');
+    if (!fr) { return false; }
+    var r = fr.getBoundingClientRect(), cs = getComputedStyle(fr);
+    return r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden';
+  }
   function fastCmp() {
     var doc = null;
     try {
       var fr = document.getElementById('fast-cmp-iframe');
       if (fr && fr.contentDocument && fr.contentDocument.body) { doc = fr.contentDocument; }
     } catch (e) {}
+    if (TOP && doc) {
+      if (!fastCmpVisible()) { return false; }
+      if (!fastSeenAt) { fastSeenAt = Date.now(); }
+      if (Date.now() - fastSeenAt < 1200 || fastTries >= 4) { return false; }
+    }
     if (!doc && !TOP && document.querySelector('.fast-cmp-home-refuse,.top-refuse-btn,.fast-cmp-button-secondary')) { doc = document; }
     if (!doc) { return false; }
     var sels = ['.fast-cmp-home-refuse', '.top-refuse-btn', '.fast-cmp-button-secondary'];
@@ -211,6 +225,15 @@
         if (!vis(el)) { continue; }
         var t = norm(label(el));
         if (t && !isRejectText(t) && !/^(refuse|ablehnen|reject|decline)/.test(t)) { continue; }
+        if (TOP && doc !== document) {
+          // Vom Hauptframe: klicken und nach 1 s nachsehen; ist der Dialog noch da, erneut versuchen.
+          fastTries++;
+          click(el);
+          setTimeout(function () {
+            if (!fastCmpVisible()) { done('fastcmp', 'reject', lastClicked) } else { schedule() }
+          }, 1000);
+          return false;
+        }
         if (click(el)) { return true; }
       }
     }

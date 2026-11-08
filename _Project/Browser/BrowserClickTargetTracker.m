@@ -93,7 +93,14 @@ static NSString *BrowserClickTargetScript(void) {
         // Wie Safari: Farbe am oberen Rand der Seite abtasten (oberstes Element mit deckendem Hintergrund).
         "var xs=[innerWidth*0.5, innerWidth*0.15, innerWidth*0.85];"
         "for (var s=0;s<xs.length;s++){"
-            "for (var n=document.elementFromPoint(xs[s],2); n; n=n.parentElement){"
+            // Bildschirmfüllende Overlays (Cookie-Dialoge, Modals) und iframes überspringen: Sie sind nicht die Seitenfarbe.
+            "var stack=document.elementsFromPoint ? document.elementsFromPoint(xs[s],2) : [document.elementFromPoint(xs[s],2)];"
+            "var start=null;"
+            "for (var k=0;k<stack.length;k++){ var e=stack[k]; if (!e) { continue; } if (e.tagName==='IFRAME') { continue; }"
+                "var es=getComputedStyle(e); var er=e.getBoundingClientRect();"
+                "if ((es.position==='fixed'||es.position==='absolute') && er.width>=innerWidth*0.9 && er.height>=innerHeight*0.8 && e!==document.body && e!==document.documentElement) { continue; }"
+                "start=e; break; }"
+            "for (var n=start; n; n=n.parentElement){"
                 "var cs=rgba(getComputedStyle(n).backgroundColor);"
                 "if (cs && cs[3]>0.5) { return cs; }"
                 "if (getComputedStyle(n).backgroundImage!=='none' && n!==document.body && n!==document.documentElement) { break; }"

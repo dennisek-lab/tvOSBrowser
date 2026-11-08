@@ -66,6 +66,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, getter=isFocusModeActive) BOOL focusModeActive;
 @property (nonatomic, readwrite, getter=isCompact) BOOL compact;
 @property (nonatomic) BOOL lightPage;
+@property (nonatomic) BOOL colorfulPage;
 @property (nonatomic, nullable) UIColor *pageForegroundColor;
 @property (nonatomic, strong, nullable) id scrollEdgeInteraction;
 @property (nonatomic) UIView *glassDimmingView;
@@ -240,6 +241,13 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     // Relative Helligkeit: helle Seite -> dunkle Symbole und Schrift, dunkle Seite -> helle.
     CGFloat luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
     BOOL light = luminance > 0.6;
+    CGFloat hue = 0, saturation = 0, brightness = 0, hueAlpha = 0;
+    // Kräftig gefärbte Seiten (z. B. rote Leiste): Grün wäre dort schlecht lesbar.
+    self.colorfulPage = color != nil && [color getHue:&hue saturation:&saturation brightness:&brightness alpha:&hueAlpha] &&
+        saturation > 0.4 && brightness > 0.25;
+#if DEBUG
+    NSLog(@"[TopBar] Seitenfarbe %@ s=%.2f b=%.2f bunt=%d", color, saturation, brightness, self.colorfulPage);
+#endif
     UIColor *foreground = light ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
     for (UIImageView *imageView in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
                                      self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
@@ -374,10 +382,22 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     UIColor *green = self.lightPage ? [UIColor colorWithRed:0.05 green:0.52 blue:0.20 alpha:1.0]
                                     : [UIColor colorWithRed:0.36 green:0.82 blue:0.48 alpha:1.0];
     NSString *title = self.displayTitle ?: @"";
-    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title attributes:@{
-        NSForegroundColorAttributeName: self.displaySecure ? green : [foreground colorWithAlphaComponent:0.9],
+    BOOL greenTitle = self.displaySecure && !self.colorfulPage;
+    NSMutableAttributedString *text = [NSMutableAttributedString new];
+    if (self.displaySecure && self.colorfulPage) {
+        // Verschlüsselt auf farbiger Seite: Schloss in Schriftfarbe statt grünem Namen.
+        UIImageSymbolConfiguration *lockConfiguration = [UIImageSymbolConfiguration configurationWithFont:self.URLLabel.font scale:UIImageSymbolScaleSmall];
+        UIImage *lock = [[UIImage systemImageNamed:@"lock.fill" withConfiguration:lockConfiguration]
+                         imageWithTintColor:[foreground colorWithAlphaComponent:0.8] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        if (lock != nil) {
+            [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:[NSTextAttachment textAttachmentWithImage:lock]]];
+            [text appendAttributedString:[[NSAttributedString alloc] initWithString:@" " attributes:@{NSFontAttributeName: self.URLLabel.font}]];
+        }
+    }
+    [text appendAttributedString:[[NSAttributedString alloc] initWithString:title attributes:@{
+        NSForegroundColorAttributeName: greenTitle ? green : [foreground colorWithAlphaComponent:0.9],
         NSFontAttributeName: self.URLLabel.font,
-    }];
+    }]];
     if (self.displayDomain.length > 0) {
         [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  ·  " stringByAppendingString:self.displayDomain] attributes:@{
             NSForegroundColorAttributeName: [foreground colorWithAlphaComponent:0.5],
