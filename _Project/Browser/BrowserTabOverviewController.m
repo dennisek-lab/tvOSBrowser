@@ -387,6 +387,11 @@ static CGFloat const kTabCardURLHeight = 64.0;
         [self reload];
         return;
     }
+    if ([self.collectionView numberOfItemsInSection:0] != [self.overviewController numberOfDisplayItems]) {
+        // Tabzahl hat sich ohne reloadData geändert: reloadItems würde eine Inkonsistenz-Ausnahme werfen.
+        [self reload];
+        return;
+    }
     NSIndexPath *indexPath = [NSIndexPath indexPathForItem:itemIndex inSection:0];
     if ([[self.collectionView indexPathsForVisibleItems] containsObject:indexPath]) {
         [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];

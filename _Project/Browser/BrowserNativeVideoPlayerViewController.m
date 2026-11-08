@@ -404,6 +404,10 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     [self log:@"Bild-in-Bild fehlgeschlagen %@", error];
     self.pictureInPictureStarting = NO;
     self.pictureInPictureActive = NO;
+    if (self.presentingViewController == nil) {
+        // AVKit hat den Player zum Start schon geschlossen (viewWillDisappear sah „startet“): Sitzung sonst nie beendet.
+        [self endSession];
+    }
 }
 
 - (void)playerViewController:(AVPlayerViewController *)playerViewController
@@ -445,6 +449,10 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
         return YES;
     }
     AVPlayerItem *item = self.player.currentItem;
+    // Vor „bereit“ lädt mediaSelectionGroupForMediaCharacteristic: die Playlist synchron (blockiert den Main-Thread).
+    if (item.status != AVPlayerItemStatusReadyToPlay) {
+        return NO;
+    }
     AVMediaSelectionGroup *group = [item.asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
     if (group == nil) {
         return NO;
@@ -576,7 +584,15 @@ static BOOL BrowserLanguageMatches(NSString *candidate, NSString *wanted) {
                                   identifier:nil
                                      options:UIMenuOptionsSingleSelection
                                     children:actions];
-        self.transportBarCustomMenuItems = @[menu];
+        // Fremde Einträge (z. B. „Automatische Untertitel“) behalten, nur den eigenen ersetzen.
+        NSMutableArray<UIMenuElement *> *items = [NSMutableArray array];
+        for (UIMenuElement *element in self.transportBarCustomMenuItems ?: @[]) {
+            if (!([element isKindOfClass:UIMenu.class] && [((UIMenu *)element).title isEqualToString:menu.title])) {
+                [items addObject:element];
+            }
+        }
+        [items addObject:menu];
+        self.transportBarCustomMenuItems = items;
     }
 }
 

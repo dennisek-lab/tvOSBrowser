@@ -523,7 +523,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     }
 
     if (userContentController == nil && [configuration respondsToSelector:setUserContentControllerSelector]) {
-        userContentController = ((id (*)(id, SEL))objc_msgSend)((id)userContentControllerClass, @selector(new));
+        userContentController = [userContentControllerClass new];
         ((void (*)(id, SEL, id))objc_msgSend)(configuration, setUserContentControllerSelector, userContentController);
     }
 
@@ -535,13 +535,13 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
         return;
     }
 
-    id userScript = ((id (*)(id, SEL))objc_msgSend)((id)userScriptClass, @selector(alloc));
+    id userScript = [userScriptClass alloc];
     userScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(userScript, userScriptInitializer, BrowserYouTubeRequestCaptureScript(), 0, NO);
     if (userScript != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, userScript);
     }
 
-    id viewportScript = ((id (*)(id, SEL))objc_msgSend)((id)userScriptClass, @selector(alloc));
+    id viewportScript = [userScriptClass alloc];
     viewportScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(viewportScript, userScriptInitializer, BrowserViewportNormalizerScript(), 0, YES);
     if (viewportScript != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, viewportScript);
@@ -611,7 +611,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
         return;
     }
 
-    id configuration = ((id (*)(id, SEL))objc_msgSend)((id)configurationClass, @selector(new));
+    id configuration = [configurationClass new];
     SEL allowsInlineMediaPlaybackSelector = NSSelectorFromString(@"setAllowsInlineMediaPlayback:");
     if (configuration != nil && [configuration respondsToSelector:allowsInlineMediaPlaybackSelector]) {
         ((void (*)(id, SEL, BOOL))objc_msgSend)(configuration, allowsInlineMediaPlaybackSelector, allowsInlineMediaPlayback);
@@ -645,7 +645,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     }
     [[BrowserDNSProxy sharedProxy] applyToWebsiteDataStore:dataStore];
 
-    id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
+    id webViewObject = [webViewClass alloc];
     SEL initializer = NSSelectorFromString(@"initWithFrame:configuration:");
     webViewObject = ((id (*)(id, SEL, CGRect, id))objc_msgSend)(webViewObject, initializer, self.bounds, configuration);
     if (webViewObject == nil) {
@@ -1522,7 +1522,8 @@ static id BrowserCreatePersistentWebsiteDataStore(void) {
     return ((id (*)(id, SEL))objc_msgSend)(dataStore, selector);
 }
 
-+ (NSArray<NSHTTPCookie *> *)allCookies {
+/// nil, wenn der Cookie-Speicher nicht innerhalb der Zeitgrenze antwortet.
++ (nullable NSArray<NSHTTPCookie *> *)fetchAllCookiesWithinTimeLimit {
     id cookieStore = [self defaultCookieStore];
     SEL selector = NSSelectorFromString(@"getAllCookies:");
     if (cookieStore == nil || ![cookieStore respondsToSelector:selector]) {
@@ -1536,11 +1537,20 @@ static id BrowserCreatePersistentWebsiteDataStore(void) {
         finished = YES;
     });
     BrowserPumpRunLoopUntil(&finished);
-    return cookies ?: @[];
+    return finished ? (cookies ?: @[]) : nil;
+}
+
++ (NSArray<NSHTTPCookie *> *)allCookies {
+    return [self fetchAllCookiesWithinTimeLimit] ?: @[];
 }
 
 + (NSData *)cookieDataRepresentation {
-    NSArray<NSHTTPCookie *> *cookies = [self allCookies];
+    // Zeitüberschreitung (Netzwerkprozess beschäftigt): nichts sichern, statt die Sicherung mit einer leeren Liste zu überschreiben.
+    NSArray<NSHTTPCookie *> *cookies = [self fetchAllCookiesWithinTimeLimit];
+    if (cookies == nil) {
+        NSLog(@"[Cookies] Sicherung übersprungen: Cookie-Speicher antwortet nicht");
+        return nil;
+    }
     NSError *error = nil;
     NSData *cookieData = [NSKeyedArchiver archivedDataWithRootObject:cookies requiringSecureCoding:NO error:&error];
     return error == nil ? cookieData : nil;

@@ -340,7 +340,7 @@ static NSString *BrowserClickTargetScript(void) {
     proxy.tracker = self;
     ((void (*)(id, SEL, id, id))objc_msgSend)(controller, addHandler, proxy, kBrowserTargetsMessageName);
 
-    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id script = [scriptClass alloc];
     // injectionTime 1 = WKUserScriptInjectionTimeAtDocumentEnd, nur Hauptframe.
     script = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, BrowserClickTargetScript(), 1, YES);
     if (script != nil) {
@@ -352,18 +352,18 @@ static NSString *BrowserClickTargetScript(void) {
     BrowserVideoMessageProxy *videoProxy = [BrowserVideoMessageProxy new];
     videoProxy.tracker = self;
     ((void (*)(id, SEL, id, id))objc_msgSend)(controller, addHandler, videoProxy, kBrowserVideoMessageName);
-    id videoHook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id videoHook = [scriptClass alloc];
     videoHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(videoHook, scriptInit, BrowserVideoHookScript(), 0, YES);
     if (videoHook != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, videoHook);
     }
     // Eingebettete Frames (forMainFrameOnly NO; das Skript selbst überspringt den Hauptframe).
-    id frameHook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id frameHook = [scriptClass alloc];
     frameHook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(frameHook, scriptInit, BrowserFrameVideoScript(), 0, NO);
     if (frameHook != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, frameHook);
     }
-    id hook = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id hook = [scriptClass alloc];
     // injectionTime 0 = WKUserScriptInjectionTimeAtDocumentStart.
     hook = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(hook, scriptInit, BrowserMediaSessionHookScript(), 0, YES);
     if (hook != nil) {

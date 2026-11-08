@@ -133,7 +133,18 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 }
 
 - (void)dealloc {
-    [self detach];
+    // Die letzte Referenz kann in einem Block der processingQueue liegen: dann kein detach (dispatch_sync auf die
+    // eigene Queue, UIKit abseits des Main-Threads). Quelle und Engine dürfen von jedem Thread gestoppt werden.
+    if (_detached) {
+        return;
+    }
+    if (NSThread.isMainThread) {
+        [self detach];
+        return;
+    }
+    _source.delegate = nil;
+    [_source stop];
+    [_engine cancel];
 }
 
 #pragma mark Einhängen
@@ -192,6 +203,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         self.timeObserver = nil;
     }
     [self.overlay removeFromSuperview];
+    self.overlay = nil;  // UIView hier auf dem Main-Thread freigeben, nicht im letzten Queue-Block
     AVPlayerViewController *playerViewController = self.playerViewController;
     if (playerViewController != nil) {
         playerViewController.transportBarCustomMenuItems = [self menuItemsWithoutOwn:playerViewController.transportBarCustomMenuItems];

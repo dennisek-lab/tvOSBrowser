@@ -218,8 +218,10 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
     }];
 
     __weak typeof(self) weakSelf = self;
+    // Schwach: der Dialog hält seine Aktionen, die Aktionen halten diesen Block (sonst Zyklus, Dialog und WebView bleiben im Speicher).
+    __weak UIAlertController *weakAlert = alertController;
     void (^apply)(BOOL submit) = ^(BOOL submit) {
-        NSString *escaped = [weakSelf.domInteractionService javaScriptEscapedString:alertController.textFields.firstObject.text ?: @""];
+        NSString *escaped = [weakSelf.domInteractionService javaScriptEscapedString:weakAlert.textFields.firstObject.text ?: @""];
         NSString *script = [BrowserFormHelpersScript() stringByAppendingFormat:
             @"var target = browserEditableTarget();"
              "if (!target) { return 'false'; }"
@@ -272,9 +274,15 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
     }];
 
     __weak typeof(self) weakSelf = self;
+    // Schwach wie oben: sonst bleiben Dialog (mit Passwort im Textfeld) und WebView im Speicher.
+    __weak UIAlertController *weakAlert = alertController;
     void (^apply)(BOOL submit) = ^(BOOL submit) {
-        NSString *user = [weakSelf.domInteractionService javaScriptEscapedString:alertController.textFields[0].text ?: @""];
-        NSString *pass = [weakSelf.domInteractionService javaScriptEscapedString:alertController.textFields[1].text ?: @""];
+        UIAlertController *alert = weakAlert;
+        if (alert.textFields.count < 2) {
+            return;
+        }
+        NSString *user = [weakSelf.domInteractionService javaScriptEscapedString:alert.textFields[0].text ?: @""];
+        NSString *pass = [weakSelf.domInteractionService javaScriptEscapedString:alert.textFields[1].text ?: @""];
         NSString *script = [BrowserFormHelpersScript() stringByAppendingFormat:
             @"var login = window.__browserLoginFields;"
              "if (!login || !login.pass || !login.pass.isConnected) { return 'false'; }"

@@ -701,6 +701,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit benennen"
                                                                        message:currentURL];
     __weak typeof(self) weakSelf = self;
+    __weak UIAlertController *weakAlert = alertController;  // Aktion im Dialog: schwach, sonst Zyklus
     
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeDefault;
@@ -713,7 +714,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     [alertController addAction:[self browserActionWithTitle:@"Sichern"
                                                       style:UIAlertActionStyleDestructive
                                                     handler:^(__unused UIAlertAction *action) {
-        UITextField *titleTextField = alertController.textFields.firstObject;
+        UITextField *titleTextField = weakAlert.textFields.firstObject;
         NSString *savedTitle = titleTextField.text;
         if (![weakSelf stringHasVisibleContent:savedTitle]) {
             savedTitle = currentURL;

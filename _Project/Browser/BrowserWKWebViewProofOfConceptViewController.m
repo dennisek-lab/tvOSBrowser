@@ -82,7 +82,7 @@ static NSString * const kWKProofOfConceptURLString = @"https://youtube.com";
         return;
     }
 
-    id configuration = ((id (*)(id, SEL))objc_msgSend)((id)configurationClass, @selector(new));
+    id configuration = [configurationClass new];
     if (configuration == nil) {
         [self.activityIndicatorView stopAnimating];
         self.detailLabel.text = @"WKWebViewConfiguration exists but could not be instantiated.";
@@ -94,7 +94,7 @@ static NSString * const kWKProofOfConceptURLString = @"https://youtube.com";
         ((void (*)(id, SEL, BOOL))objc_msgSend)(configuration, inlineMediaPlaybackSelector, YES);
     }
 
-    id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
+    id webViewObject = [webViewClass alloc];
     SEL initializer = NSSelectorFromString(@"initWithFrame:configuration:");
     webViewObject = ((id (*)(id, SEL, CGRect, id))objc_msgSend)(webViewObject, initializer, self.view.bounds, configuration);
     if (webViewObject == nil) {

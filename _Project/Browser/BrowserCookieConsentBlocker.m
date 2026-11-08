@@ -140,7 +140,7 @@ static BOOL BrowserConsentHostMatches(NSString *host, NSString *entry) {
     // Schalter für die Brücke: Bezahlschranken (kein Ablehnen möglich) annehmen.
     BOOL acceptPayWalls = [BrowserPreferencesStore new].cookieBannerAcceptPayWalls;
     source = [NSString stringWithFormat:@"window.__browserAcceptPayWalls=%@;\n%@", acceptPayWalls ? @"true" : @"false", source];
-    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    id script = [scriptClass alloc];
     // injectionTime 0 = document-start (frühes Vorausblenden), forMainFrameOnly NO: CMPs laufen oft in fremden iframes.
     // Das Skript läuft in der Seitenwelt, damit eval-Regeln der Bibliothek direkt im Seitenkontext laufen.
     return ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, source, 0, NO);

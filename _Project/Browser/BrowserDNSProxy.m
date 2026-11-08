@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
     BrowserSOCKSStateRequest,
     BrowserSOCKSStateConnecting,
     BrowserSOCKSStateRelaying,
+    BrowserSOCKSStateReplying,  // Fehlerantwort unterwegs: spätere Zustände der Gegenstelle nicht mehr auswerten
     BrowserSOCKSStateClosed,
 };
 
@@ -276,6 +277,11 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
 }
 
 - (void)replyAndClose:(uint8_t)code {
+    if (self.state == BrowserSOCKSStateClosed || self.state == BrowserSOCKSStateReplying) {
+        return;
+    }
+    // Sonst bliebe der Zustand „Connecting“: ein späteres ready schickte nach der Fehler- noch eine Erfolgsantwort.
+    self.state = BrowserSOCKSStateReplying;
     uint8_t reply[] = {0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
     __weak typeof(self) weakSelf = self;
     [self sendToClient:[NSData dataWithBytes:reply length:sizeof(reply)] completion:^{
@@ -360,6 +366,11 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
 
     dispatch_semaphore_t ready = dispatch_semaphore_create(0);
     dispatch_async(self.queue, ^{
+        if (self.listener != nil) {
+            // Alter Listener (z. B. noch „waiting“ aus dem ersten Start): abbauen, damit er den neuen nicht später zurücksetzt.
+            nw_listener_cancel(self.listener);
+            self.listener = nil;
+        }
         nw_parameters_t parameters = nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL, NW_PARAMETERS_DEFAULT_CONFIGURATION);
         nw_parameters_set_local_endpoint(parameters, nw_endpoint_create_host("127.0.0.1", "0"));
         nw_listener_t listener = nw_listener_create(parameters);
@@ -388,8 +399,13 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
                 NSLog(@"[DNSProxy] SOCKS5 auf 127.0.0.1:%u, DNS über Cloudflare", self.port);
             } else if (state == nw_listener_state_failed || state == nw_listener_state_cancelled) {
                 NSLog(@"[DNSProxy] Listener beendet (%d)", state);
-                self.port = 0;
-                self.listener = nil;
+                if (self.listener == listener) {
+                    self.port = 0;
+                    self.listener = nil;
+                }
+                if (state == nw_listener_state_failed) {
+                    nw_listener_cancel(listener);  // gibt den Listener und seine Blöcke frei
+                }
             }
             if (!signalled && state != nw_listener_state_invalid && state != nw_listener_state_waiting) {
                 signalled = YES;
