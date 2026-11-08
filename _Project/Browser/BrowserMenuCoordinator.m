@@ -51,6 +51,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Obere Leiste": @"rectangle.topthird.inset.filled",
             @"Regenbogen-Leuchten": @"sparkles",
             @"Liquid-Glass-Animationen": @"drop",
+            @"Glow-Animation": @"arrow.clockwise.circle",
             @"Zeiger": @"cursorarrow",
             @"Zeigertempo": @"speedometer",
             @"Zeiger gleitet aus": @"cursorarrow.motionlines",
@@ -1378,6 +1379,16 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Glow-Animation: Regenbogen dreht sich und atmet, aus = stehender Verlauf (bei „Bewegung reduzieren“ immer stehend).
+- (BrowserAdvancedMenuItem *)glowAnimationMenuItem {
+    BOOL enabled = self.preferencesStore.glowAnimationEnabled;
+    return [self advancedMenuItemWithTitle:@"Glow-Animation"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.glowAnimationEnabled = !enabled;
+    }];
+}
+
 /// Liquid-Glass-Animationen (Federn, materialisierendes Glas) oder schlichte Überblendungen, s. BrowserMotion.
 - (BrowserAdvancedMenuItem *)liquidGlassAnimationsMenuItem {
     BOOL enabled = self.preferencesStore.liquidGlassAnimationsEnabled;
@@ -1615,6 +1626,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self topNavigationVisibilityMenuItem],
             [self rainbowGlowMenuItem],
             [self designMenuItem],
+            [self glowAnimationMenuItem],
             [self liquidGlassAnimationsMenuItem],
             [self cursorStyleMenuItem],
             [self pointerSpeedMenuItem],

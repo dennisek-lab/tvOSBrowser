@@ -170,6 +170,14 @@ static NSString *BrowserClickTargetScript(void) {
         "}"
         "return -1;"
     "}"
+    // Reines Textziel (Textlink, Link im Fließtext, Navigationslink): kein Feld/Knopf, kein Bild darin, keine eigene Fläche.
+    "function textLike(el,s){"
+        "var t=el.tagName; if (t==='INPUT'||t==='SELECT'||t==='TEXTAREA'||t==='BUTTON') { return 0; }"
+        "var role=el.getAttribute('role'); if (role && role!=='link') { return 0; }"
+        "if (el.querySelector('img,svg,picture,video,canvas')) { return 0; }"
+        "var b=rgba(s.backgroundColor); if ((b && b[3]>0.2) || s.backgroundImage!=='none') { return 0; }"
+        "return (el.textContent||'').trim().length>0 ? 1 : 0;"
+    "}"
     "function usable(el, r){"
         "if (r.width<6||r.height<6) { return false; }"
         "if (r.bottom<0||r.right<0||r.top>innerHeight||r.left>innerWidth) { return false; }"
@@ -179,14 +187,34 @@ static NSString *BrowserClickTargetScript(void) {
         "var hit=document.elementFromPoint(cx,cy);"
         "return !!hit && (hit===el || el.contains(hit) || hit.contains(el));"
     "}"
+    // Inline-Link mit Block-Kindern (z. B. Google-Treffer: <a> mit Kopfzeile und <h3>): getBoundingClientRect
+    // liefert nur die Zeilenkästen des <a> selbst, die gegen die Kinder versetzt sind. Dann zählt die Vereinigung
+    // mit den sichtbaren Nachfahren (höchstens 24, je höchstens 120 px über das eigene Rechteck hinaus).
+    "function boxOf(el,r,cs){"
+        "if (cs.display!=='inline' && cs.display!=='contents') { return r; }"
+        "if (!el.firstElementChild) { return r; }"
+        "var empty=(r.width<1||r.height<1), L=r.left, T=r.top, R=r.right, B=r.bottom, grew=false;"
+        "var kids=el.querySelectorAll('*'), n=Math.min(kids.length,24);"
+        "for (var k=0;k<n;k++){"
+            "var kr=kids[k].getBoundingClientRect();"
+            "if (kr.width<1||kr.height<1) { continue; }"
+            "if (!empty && (kr.left<r.left-120||kr.top<r.top-120||kr.right>r.right+120||kr.bottom>r.bottom+120)) { continue; }"
+            "var ks=getComputedStyle(kids[k]); if (ks.visibility==='hidden'||ks.position==='fixed') { continue; }"
+            "if (empty) { L=kr.left; T=kr.top; R=kr.right; B=kr.bottom; empty=false; grew=true; continue; }"
+            "if (kr.left<L) { L=kr.left; grew=true; } if (kr.top<T) { T=kr.top; grew=true; }"
+            "if (kr.right>R) { R=kr.right; grew=true; } if (kr.bottom>B) { B=kr.bottom; grew=true; }"
+        "}"
+        "if (!grew) { return r; }"
+        "return {left:L,top:T,right:R,bottom:B,width:R-L,height:B-T};"
+    "}"
     "function collect(){"
         "pending=false;"
         "if (!document.documentElement) { return; }"
         "var out=[], els=document.querySelectorAll(SEL);"
         "for (var i=0; i<els.length && out.length<500; i++){"
-            "var el=els[i], r=el.getBoundingClientRect();"
-            "if (!usable(el,r)) { continue; }"
-            "out.push([Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height),fixedLike(el),glow(getComputedStyle(el))]);"
+            "var el=els[i], cs=getComputedStyle(el), r0=el.getBoundingClientRect(), r=boxOf(el,r0,cs);"
+            "if (!usable(el,r)) { if (r===r0 || !usable(el,r0)) { continue; } r=r0; }"
+            "out.push([Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height),fixedLike(el),glow(cs),textLike(el,cs)]);"
         "}"
         "var vids=[], playing=false, vs=document.querySelectorAll('video');"
         "for (var j=0; j<vs.length && vids.length<20; j++){"
@@ -452,7 +480,8 @@ static NSString *BrowserClickTargetScript(void) {
     return [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
 }
 
-- (UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
+/// Index des kleinsten Ziels unter dem Punkt, -1 = keins.
+- (NSInteger)smallestTargetIndexAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
     NSArray<NSValue *> *rects = [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
     NSInteger best = -1;
     CGFloat bestArea = CGFLOAT_MAX;
@@ -464,6 +493,16 @@ static NSString *BrowserClickTargetScript(void) {
             bestArea = area;
         }
     }
+    return best;
+}
+
+- (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
+    NSInteger best = [self smallestTargetIndexAtViewPoint:point viewWidth:viewWidth];
+    return best >= 0 && self.rawTargets[best].count >= 7 && self.rawTargets[best][6].integerValue == 1;
+}
+
+- (UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth {
+    NSInteger best = [self smallestTargetIndexAtViewPoint:point viewWidth:viewWidth];
     if (best < 0 || self.rawTargets[best].count < 6) {
         return nil;
     }

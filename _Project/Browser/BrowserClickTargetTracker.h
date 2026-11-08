@@ -27,6 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Leuchtfarbe des Ziels unter dem Punkt (Koordinaten der WebView ohne Leisteneinschub), nil = keine eigene Farbe.
 - (nullable UIColor *)glowColorAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
+/// YES, wenn das Ziel unter dem Punkt ein reines Textziel ist (Textlink ohne Bild, Fläche oder Feld; Feld 7 der Meldung).
+- (BOOL)isTextTargetAtViewPoint:(CGPoint)point viewWidth:(CGFloat)viewWidth;
 
 /// Sichtbare Videos (mindestens 120 × 80 CSS-Pixel), in Koordinaten der WebView.
 - (NSArray<NSValue *> *)videoRectsForViewWidth:(CGFloat)viewWidth;

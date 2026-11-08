@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *autoSubtitlesLanguage;
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
+/// Glow-Animation: Regenbogen dreht sich und atmet (Standard: an). Aus: stehender Farbverlauf, s. BrowserMotion.glowAnimationEnabled.
+@property (nonatomic) BOOL glowAnimationEnabled;
 /// Zeigertempo (Faktor auf die Beschleunigungskurve des Clickpads). Standard 1.0, begrenzt auf 0.3 bis 3.0.
 /// Schlüssel „PointerSpeed“ (war schon vorher in NSUserDefaults lesbar).
 @property (nonatomic) double pointerSpeed;

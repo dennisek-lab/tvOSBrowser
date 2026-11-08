@@ -181,6 +181,7 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
 @property (nonatomic) NSArray<UIView *> *columnViews;
 @property (nonatomic) NSMutableArray<BrowserAddressTileView *> *tiles;
 @property (nonatomic) CGRect barFrame;
+@property (nonatomic, readwrite) CGFloat keyboardSpace;
 @property (nonatomic) BOOL dismissing;
 @end
 
@@ -359,7 +360,7 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
         CGFloat half = floor(CGRectGetHeight(bar) / 2.0);
         return CGRectMake(CGRectGetMinX(bar) + half, CGRectGetMaxY(bar) - half, CGRectGetWidth(bar) - 2.0 * half, half);
     }
-    CGFloat top = CGRectGetMaxY(bar) + kPanelGapBelowBar;
+    CGFloat top = CGRectGetMaxY(bar) + kPanelGapBelowBar + self.keyboardSpace;
     // Zusammengeklappt: flacher Streifen direkt unter der Leiste, aus dem die Karte herauswächst.
     CGFloat height = expanded ? [self cardHeight] : kPanelCornerRadius * 2.0;
     CGFloat inset = expanded ? 0.0 : 40.0;
@@ -441,6 +442,25 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
     [BrowserMotion animateKind:BrowserMotionKindFade delay:0.12 options:0 animations:^{
         self.contentHostView.alpha = 1.0;
     } completion:nil];
+}
+
+- (void)setKeyboardSpace:(CGFloat)keyboardSpace animated:(BOOL)animated {
+    if (self.keyboardSpace == keyboardSpace) {
+        return;
+    }
+    self.keyboardSpace = keyboardSpace;
+    if (self.dismissing || self.columnViews == nil) {
+        return;
+    }
+    void (^move)(void) = ^{
+        self.cardView.frame = [self cardFrameExpanded:YES];
+        [self layoutIfNeeded];
+    };
+    if (!animated) {
+        move();
+        return;
+    }
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:move completion:nil];
 }
 
 /// Zusammengeklappt in Liquid Glass: Kapselform der Leiste, damit die Karte nahtlos aus ihr herauswächst.

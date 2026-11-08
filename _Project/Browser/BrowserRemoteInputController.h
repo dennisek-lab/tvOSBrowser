@@ -41,6 +41,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target;
 /// Leuchtfarbe für das Ziel (Koordinaten von rootView); nil = Standardblau.
 - (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
+/// YES, wenn das Ziel ein reines Textziel ist (Textlink, Link im Fließtext); nur für die DEBUG-Varianten der Hervorhebung.
+- (BOOL)browserRemoteInputControllerTargetIsText:(CGRect)target;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
 /// Adressleiste im Bearbeiten-Zustand mit Aufklapp-Bereich: Pfeiltasten springen räumlich zwischen den Zielen,
@@ -73,7 +75,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)init NS_UNAVAILABLE;
 
-- (void)handleGlobalSelectPressEndedNotification;
+/// Auswahl-Druck aus UIApplication sendEvent: (timestamp = UIPress.timestamp, 0 = unbekannt). Kam derselbe Druck
+/// schon direkt an, passiert nichts.
+- (void)handleGlobalSelectPressEndedWithTimestamp:(NSTimeInterval)timestamp;
 - (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;

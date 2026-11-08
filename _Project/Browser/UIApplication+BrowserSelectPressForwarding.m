@@ -268,8 +268,11 @@ static UIViewController *BrowserFindPresentedNativeVideoPlayerViewController(UIA
     for (UIPress *press in presses) {
         if (press.type == UIPressTypeSelect && press.phase == UIPressPhaseEnded) {
             NSLog(@"[InputTrace][App] post BrowserGlobalSelectPressEndedNotification");
+            // Zeitstempel des Drucks mitgeben: Derselbe Druck kommt meist auch direkt (pressesEnded) an und darf
+            // nur einmal wirken, egal wie lange der erste Klick den Hauptthread belegt hat.
+            NSDictionary *info = @{@"timestamp": @(press.timestamp)};
             dispatch_async(dispatch_get_main_queue(), ^{
-                [[NSNotificationCenter defaultCenter] postNotificationName:BrowserGlobalSelectPressEndedNotification object:nil];
+                [[NSNotificationCenter defaultCenter] postNotificationName:BrowserGlobalSelectPressEndedNotification object:nil userInfo:info];
             });
             break;
         }
