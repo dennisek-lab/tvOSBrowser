@@ -62,6 +62,8 @@
 		F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */ = {isa = PBXBuildFile; fileRef = EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */; };
 		C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */; };
 		3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */; };
+		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
+		232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */ = {isa = PBXBuildFile; fileRef = 48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -153,6 +155,10 @@
 		EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserReaderMode.m; sourceTree = "<group>"; };
 		1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAppIntents.swift; sourceTree = "<group>"; };
 		CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
+		2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFaviconCache.h; sourceTree = "<group>"; };
+		70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFaviconCache.m; sourceTree = "<group>"; };
+		D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressPanelView.h; sourceTree = "<group>"; };
+		48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressPanelView.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -306,6 +312,10 @@
 				083704A0266ED4493FABF426 /* BrowserReaderMode.h */,
 				EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */,
 				1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */,
+				2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */,
+				70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */,
+				D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */,
+				48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -505,6 +515,8 @@
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
 				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
 				C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */,
+				232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */,
+				D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,

@@ -84,6 +84,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, copy, nullable) NSString *displayTitle;
 @property (nonatomic, copy, nullable) NSString *displayDomain;
 @property (nonatomic) BOOL displaySecure;
+// Adresse bearbeiten (Diktierfeld), siehe Abschnitt am Ende der Datei.
+@property (nonatomic, readwrite, getter=isAddressEditing) BOOL addressEditing;
+@property (nonatomic) UIView *dictationFieldView;
+@property (nonatomic) UIImageView *dictationIconView;
+@property (nonatomic) UILabel *dictationLabel;
 
 @end
 
@@ -236,6 +241,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         [self.chromeEffectView.contentView addSubview:button];
     }
 
+    [self setUpAddressEditingViews];
     [self applyVisualStyle];
     [self setFocusModeActive:NO];
 }
@@ -283,6 +289,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.lightPage = light;
     [self applyContrastStyle];
     [self renderTitle];
+    [self applyAddressEditingStyle];
 }
 
 /// Reader-Knopf: nur sichtbar, wenn die Seite lesbar ist; im Reader weiß auf blauer Hervorhebung.
@@ -299,7 +306,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
 - (void)applyReaderStyle {
     self.readerImageView.tintColor = self.readerActive ? UIColor.whiteColor : (self.pageForegroundColor ?: UIColor.whiteColor);
-    BOOL visible = self.readerAvailable && !self.compact;
+    BOOL visible = self.readerAvailable && !self.compact && !self.addressEditing;
     self.readerImageView.alpha = visible ? 0.95 : 0.0;
     self.readerHighlightView.alpha = (visible && self.readerActive) ? 1.0 : 0.0;
 }
@@ -483,6 +490,9 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     if (compact && self.focusModeActive) {
         return;
     }
+    if (compact && self.addressEditing) {
+        return;
+    }
     _compact = compact;
     if (!animated) {
         [self setNeedsLayout];
@@ -612,6 +622,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.URLLabel.transform = self.compact ? CGAffineTransformMakeScale(kTopBarCompactLabelScale, kTopBarCompactLabelScale)
                                            : CGAffineTransformIdentity;
 
+    [self layoutAddressEditingViewsInChromeFrame:chromeFrame];
+
     self.backFocusButton.frame = [self focusFrameForIconView:self.backImageView];
     self.refreshFocusButton.frame = [self focusFrameForIconView:self.refreshImageView];
     self.forwardFocusButton.frame = [self focusFrameForIconView:self.forwardImageView];
@@ -637,6 +649,11 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block {
     if (block == nil || self.hidden) {
+        return;
+    }
+    if (self.addressEditing) {
+        // Bearbeiten-Zustand: nur das Diktierfeld.
+        block(self.addressFieldFrame, BrowserTopBarActionURL);
         return;
     }
     if (self.compact) {
@@ -831,6 +848,99 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
             [self resetFocusVisualState];
         }
     }];
+}
+
+#pragma mark - Adresse bearbeiten (Diktierfeld)
+
+- (void)setUpAddressEditingViews {
+    self.dictationFieldView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.dictationFieldView.userInteractionEnabled = NO;
+    self.dictationFieldView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.dictationFieldView.alpha = 0.0;
+    [self.chromeEffectView.contentView addSubview:self.dictationFieldView];
+
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *mic = [[UIImage systemImageNamed:@"mic.fill" withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.dictationIconView = [[UIImageView alloc] initWithImage:mic];
+    self.dictationIconView.contentMode = UIViewContentModeCenter;
+    [self.dictationFieldView addSubview:self.dictationIconView];
+
+    self.dictationLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.dictationLabel.text = @"Sprechen, um zu diktieren";
+    self.dictationLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.dictationFieldView addSubview:self.dictationLabel];
+    [self applyAddressEditingStyle];
+}
+
+- (void)applyAddressEditingStyle {
+    UIColor *foreground = self.lightPage ? [UIColor colorWithWhite:0.08 alpha:1.0] : UIColor.whiteColor;
+    // Dezent: Platzhalter und Mikrofon halb transparent, das Feld selbst nur leicht abgesetzt.
+    self.dictationIconView.tintColor = [foreground colorWithAlphaComponent:0.7];
+    self.dictationLabel.textColor = [foreground colorWithAlphaComponent:0.55];
+    self.dictationFieldView.backgroundColor = self.lightPage ? [UIColor colorWithWhite:0.0 alpha:0.06] : [UIColor colorWithWhite:1.0 alpha:0.09];
+}
+
+- (CGRect)addressFieldFrame {
+    if (!self.addressEditing) {
+        return CGRectNull;
+    }
+    return [self convertRect:self.dictationFieldView.frame fromView:self.chromeEffectView.contentView];
+}
+
+- (void)layoutAddressEditingViewsInChromeFrame:(CGRect)chromeFrame {
+    CGFloat inset = 10.0;
+    CGRect field = CGRectInset(CGRectMake(0.0, 0.0, CGRectGetWidth(chromeFrame), CGRectGetHeight(chromeFrame)), inset, inset);
+    self.dictationFieldView.frame = field;
+    self.dictationFieldView.layer.cornerRadius = CGRectGetHeight(field) / 2.0;
+    CGSize iconSize = CGSizeMake(44.0, CGRectGetHeight(field));
+    CGFloat gap = 14.0;
+    CGFloat textWidth = ceil([self.dictationLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGRectGetHeight(field))].width);
+    textWidth = MIN(textWidth, CGRectGetWidth(field) - iconSize.width - gap - 40.0);
+    CGFloat groupX = floor((CGRectGetWidth(field) - iconSize.width - gap - textWidth) / 2.0);
+    self.dictationIconView.frame = CGRectMake(groupX, 0.0, iconSize.width, iconSize.height);
+    self.dictationLabel.frame = CGRectMake(groupX + iconSize.width + gap, 0.0, textWidth, CGRectGetHeight(field));
+
+    if (!self.addressEditing) {
+        self.dictationFieldView.alpha = 0.0;
+        return;
+    }
+    // Bearbeiten: alles andere aus, nur das Diktierfeld bleibt.
+    self.dictationFieldView.alpha = 1.0;
+    for (UIView *view in @[self.backImageView, self.refreshImageView, self.forwardImageView, self.homeImageView,
+                           self.tabsImageView, self.fullscreenImageView, self.menuImageView, self.URLLabel, self.loadingSpinner,
+                           self.readerImageView, self.readerHighlightView]) {
+        view.alpha = 0.0;
+    }
+}
+
+- (void)setAddressEditing:(BOOL)addressEditing animated:(BOOL)animated {
+    if (_addressEditing == addressEditing) {
+        return;
+    }
+    if (addressEditing && self.compact) {
+        _compact = NO;
+    }
+    _addressEditing = addressEditing;
+    if (!addressEditing) {
+        // Seitenname und Knöpfe zurück (layoutSubviews setzt die Symbole, Name und Kreisel brauchen es hier).
+        self.URLLabel.alpha = 1.0;
+        self.loadingSpinner.alpha = 1.0;
+    }
+    if (!animated) {
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+        return;
+    }
+    [UIView animateWithDuration:0.3 delay:0.0
+                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+        if (!addressEditing) {
+            self.URLLabel.alpha = 1.0;
+            self.loadingSpinner.alpha = 1.0;
+        }
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+    } completion:nil];
 }
 
 @end
