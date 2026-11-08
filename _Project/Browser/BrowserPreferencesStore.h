@@ -32,6 +32,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Bezahlschranken („Mit Werbung weiterlesen oder Abo“): zustimmen, damit kein Banner stehen bleibt. Standard: an.
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
 
+/// Zeigerstil (`BrowserCursorStyle`: 0 macOS schwarz/weiß, 1 invertiert, 2 SF Symbols). Standard 0.
+@property (nonatomic) NSUInteger cursorStyle;
+
 - (void)ensureUserAgentConsistency;
 
 @end

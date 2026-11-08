@@ -10,6 +10,7 @@ static NSString * const kAutoOpenNativePlayerDefaultsKey = @"AutoOpenVideosInNat
 static NSString * const kPageZoomDefaultsKey = @"PageZoom";
 static double const kDefaultPageZoom = 1.5;
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
+static NSString * const kCursorStyleDefaultsKey = @"CursorStyle";
 static NSString * const kHomepageDefaultsKey = @"homepage";
 static NSString * const kAdBlockEnabledDefaultsKey = @"AdBlockEnabled";
 static NSString * const kAdBlockExceptionHostsDefaultsKey = @"AdBlockExceptionHosts";
@@ -127,6 +128,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setPageZoom:(double)pageZoom {
     [[self defaults] setDouble:MIN(3.0, MAX(0.5, pageZoom)) forKey:kPageZoomDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (NSUInteger)cursorStyle {
+    NSInteger value = [[self defaults] integerForKey:kCursorStyleDefaultsKey];
+    return value >= 0 && value <= 2 ? (NSUInteger)value : 0;
+}
+
+- (void)setCursorStyle:(NSUInteger)cursorStyle {
+    [[self defaults] setInteger:(NSInteger)MIN(cursorStyle, 2) forKey:kCursorStyleDefaultsKey];
     [[self defaults] synchronize];
 }
 
