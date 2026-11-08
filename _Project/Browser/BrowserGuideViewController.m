@@ -20,9 +20,9 @@
 /// Neuerungen gegenüber dem ursprünglichen tvOS Browser (Symbol, Titel, Text). Zwei Spalten, höchstens 14.
 + (NSArray<NSArray<NSString *> *> *)whatsNewItems {
     return @[
+        @[@"sparkles", @"Magnetic Buttons", @"Der Zeiger zieht sich auf Links und Knöpfe, sie heben sich als Glas ab und leuchten."],
         @[@"drop", @"Liquid Glass", @"Leiste, Menüs und Dialoge aus Glas, federnde Animationen."],
-        @[@"sparkles", @"Regenbogen-Leuchten", @"Das gewählte Element leuchtet weich in allen Farben."],
-        @[@"cursorarrow.motionlines", @"Neuer Zeiger", @"Gleitet flüssig, rastet auf Links ein, Lupe über kleinem Text."],
+        @[@"cursorarrow.motionlines", @"Neuer Zeiger", @"Gleitet flüssig ohne Ruckeln, Lupe über kleinem Text."],
         @[@"square.on.square", @"Tabs", @"Übersicht mit Vorschau, bleiben nach Neustart erhalten."],
         @[@"text.page", @"Reader", @"Artikel ohne Werbung und Ablenkung lesen."],
         @[@"hand.raised.fill", @"Werbeblocker", @"Filterlisten von uBlock Origin Lite, Ausnahme bei Sperrseiten."],
@@ -163,7 +163,7 @@
     }
     for (NSUInteger i = 0; i < items.count; i++) {
         NSArray<NSString *> *item = items[i];
-        UIView *row = [self compactRowWithSymbol:item[0] title:item[1] text:item[2]];
+        UIView *row = [self compactRowWithSymbol:item[0] title:item[1] text:item[2] featured:(i == 0)];
         [(i < half ? left : right) addArrangedSubview:row];
     }
     UIStackView *columns = [[UIStackView alloc] initWithArrangedSubviews:@[left, right]];
@@ -198,12 +198,30 @@
     ]];
 }
 
-- (UIView *)compactRowWithSymbol:(NSString *)symbol title:(NSString *)title text:(NSString *)text {
+- (UIView *)compactRowWithSymbol:(NSString *)symbol title:(NSString *)title text:(NSString *)text featured:(BOOL)featured {
     CGFloat side = 60.0;
     UIView *circle = [[UIView alloc] init];
     circle.translatesAutoresizingMaskIntoConstraints = NO;
     circle.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.16];
     BrowserShapeApply(circle.layer, side / 2.0);
+    if (featured) {
+        // Hauptfunktion (Magnetic Buttons): Kreis im Regenbogen-Leuchten, wie der Glow um gewählte Elemente.
+        CAGradientLayer *rainbow = [CAGradientLayer layer];
+        rainbow.type = kCAGradientLayerConic;
+        rainbow.startPoint = CGPointMake(0.5, 0.5);
+        rainbow.endPoint = CGPointMake(0.5, 0.0);
+        rainbow.frame = CGRectMake(0.0, 0.0, side, side);
+        rainbow.cornerRadius = side / 2.0;
+        rainbow.colors = @[(id)UIColor.systemPinkColor.CGColor, (id)UIColor.systemOrangeColor.CGColor,
+                           (id)UIColor.systemYellowColor.CGColor, (id)UIColor.systemGreenColor.CGColor,
+                           (id)UIColor.systemTealColor.CGColor, (id)UIColor.systemBlueColor.CGColor,
+                           (id)UIColor.systemPurpleColor.CGColor, (id)UIColor.systemPinkColor.CGColor];
+        [circle.layer addSublayer:rainbow];
+        circle.layer.shadowColor = UIColor.systemPinkColor.CGColor;
+        circle.layer.shadowOpacity = 0.5;
+        circle.layer.shadowRadius = 12.0;
+        circle.layer.shadowOffset = CGSizeZero;
+    }
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:27.0 weight:UIImageSymbolWeightSemibold];
     UIImage *image = [UIImage systemImageNamed:symbol withConfiguration:config] ?: [UIImage systemImageNamed:@"sparkles" withConfiguration:config];
     UIImageView *icon = [[UIImageView alloc] initWithImage:image];

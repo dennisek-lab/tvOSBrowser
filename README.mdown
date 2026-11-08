@@ -3,7 +3,7 @@ tvOS Browser
 
 ![App-Icon](/docs/icon/preview.png?raw=true "App-Icon im Liquid-Glass-Stil")
 
-Ein Webbrowser für das Apple TV (tvOS 17 bis 27) mit Liquid-Glass-Oberfläche, Zeigersteuerung über das Clickpad, Werbe- und Cookie-Blocker, nativem Videoplayer und lokalen Untertiteln.
+Ein Webbrowser für das Apple TV (tvOS 17 bis 27) mit **Magnetic Buttons**, Liquid-Glass-Oberfläche, Zeigersteuerung über das Clickpad, Werbe- und Cookie-Blocker, nativem Videoplayer und lokalen Untertiteln.
 
 Die App nutzt **private APIs** (WebKit wird zur Laufzeit geladen). Apple erlaubt das im App Store nicht. Sie ist nur zum Selbstbauen gedacht – bitte keine Builds im App Store veröffentlichen. Keine Gewähr, Nutzung auf eigenes Risiko.
 
@@ -31,7 +31,7 @@ Bedienung
 
 | Taste / Geste | Wirkung |
 |:--|:--|
-| Über das Clickpad wischen | Zeiger bewegen; er rastet weich auf Links und Knöpfen ein (mit Leuchten) |
+| Über das Clickpad wischen | Zeiger bewegen; Magnetic Buttons: er rastet weich auf Links und Knöpfen ein (mit Leuchten) |
 | Clickpad drücken | Klicken |
 | Clickpad oben / unten drücken | Scrollen. Zweimal oben: Adressleiste. Zweimal unten: Leiste verkleinern |
 | Clickpad links / rechts drücken | Von Knopf zu Knopf springen; im Video 10 s spulen |
@@ -49,9 +49,10 @@ Beim ersten Start erscheint „Was ist neu“ (Neuerungen dieser Fassung), danac
 Funktionen
 =============
 
+- **Magnetic Buttons:** das Herzstück dieser Fassung. Der Zeiger zieht sich auf Links und Knöpfe, sobald er in ihre Nähe kommt, und bleibt dort mit spürbarem Halt (Hysterese), bis man deutlich weiterwischt. Das gewählte Element hebt sich als Glasfläche mit feiner Lichtkante ab und wird von einem weichen, wandernden Regenbogen-Leuchten umrahmt; die Form folgt dem Element (Kapsel bei Knöpfen, abgerundetes Rechteck bei Bildern und Karten), Größenwechsel federn. Über kleinem Text erscheint eine Lupe. So lässt sich eine für Maus und Touch gebaute Webseite mit dem Clickpad bedienen wie eine tvOS-App.
 - **Oberfläche:** Leiste, Seitenleiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben (kontinuierlich, konzentrisch, Kapseln), animiertes Regenbogen-Leuchten um das gewählte Element. Seitenleiste mit Symbolen und Schaltern. Neue App-Icons mit Parallax-Ebenen.
 - **Was ist neu:** Beim ersten Start nach einem Update zeigt die App alle Neuerungen dieser Fassung, jederzeit unter *••• → Hilfe → Was ist neu*.
-- **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), Einrasten mit Hysterese, Lupe über kleinem Text, moderne Zeigerbilder in drei Stilen.
+- **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), moderne Zeigerbilder in drei Stilen.
 - **Tabs:** Tab-Übersicht mit Vorschaubildern, Sitzung bleibt nach Neustart erhalten.
 - **Reader-Modus:** Artikel ohne Ablenkung (Readability), Knopf links neben •••.
 - **Werbeblocker:** Filterlisten von uBlock Origin Lite als WebKit-Inhaltsregeln, dazu erweiterte Regeln (Scriptlets, prozedurales CSS) je Seite. Erkennt eine Seite den Blocker und sperrt sie (z. B. bild.de), wird für diese Seite automatisch eine Ausnahme gesetzt.
