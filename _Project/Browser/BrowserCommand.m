@@ -252,6 +252,11 @@ static void BrowserCommandExpandPatternLinear(NSString *pattern, NSMutableArray<
                                            @"(seite|webseite|artikel) übersetzen", @"(auf deutsch|ins deutsche) übersetzen", @"übersetzung",
                                            @"(translate|translate this page|translate the page|translate page|translate to german)"]}
                          prefixes:@[]],
+            [self commandWithName:@"original" title:@"Übersetzung beenden" symbol:@"character.book.closed" argument:BrowserCommandArgumentNone video:NO
+                         patterns:@{@"": @[@"(übersetzung beenden|übersetzung aus|übersetzung ausschalten|übersetzung stoppen|ohne übersetzung)",
+                                           @"(original|original anzeigen|originalseite|zum original|zurück zum original|originalsprache)",
+                                           @"(show original|stop translating|stop translation)"]}
+                         prefixes:@[]],
             // „Frag die Seite“: Frage im Diktat, Antwort ist die passendste Stelle der Seite (hervorgehoben).
             // „frage“ und „ask“ nur mit Fragewort danach (BrowserCommandParser), sonst bleibt es eine Suche.
             [self commandWithName:@"ask" title:@"Frag die Seite" symbol:@"text.magnifyingglass" argument:BrowserCommandArgumentText video:NO

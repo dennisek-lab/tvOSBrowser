@@ -229,7 +229,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     BrowserPerfLog(@"viewDidAppear");
+    BrowserWebView *webViewBefore = self.webview;
     [self.tabCoordinator webViewDidAppear];
+    if (webViewBefore != nil && self.webview != webViewBefore) {
+        [self activeWebViewChangedFrom:webViewBefore]; // Start: Tab mit der Startseite nach vorn geholt
+    }
     if (!self.displayedHintsOnLaunch) {
         // Neue Fassung: einmal „Was ist neu“, sonst wie gewohnt die Bedienungshilfe (abschaltbar).
         NSString *seen = [NSUserDefaults.standardUserDefaults stringForKey:@"WhatsNewSeenVersion"];
@@ -1999,6 +2003,10 @@ static NSString *BrowserDisplayHost(NSString *host) {
     return [self.intelligenceController translateCurrentPage];
 }
 
+- (BOOL)browserCommandShowOriginal {
+    return [self.intelligenceController showOriginalOfCurrentPage];
+}
+
 - (void)browserCommandAskPage:(NSString *)question {
     [self.intelligenceController askCurrentPage:question];
 }
@@ -2009,6 +2017,14 @@ static NSString *BrowserDisplayHost(NSString *host) {
 
 - (void)browserTranslatePage {
     [self.intelligenceController translateCurrentPage];
+}
+
+- (BOOL)browserCurrentPageIsTranslated {
+    return [self.intelligenceController currentPageIsTranslated];
+}
+
+- (void)browserShowOriginalPage {
+    [self.intelligenceController showOriginalOfCurrentPage];
 }
 
 - (void)browserCommandBeginAddressEditing {

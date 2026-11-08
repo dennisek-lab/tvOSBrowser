@@ -31,6 +31,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)summarizeCurrentPage;
 /// Öffnet die Seite über translate.goog. NO (mit Rückmeldung), wenn das nicht geht oder schon übersetzt ist.
 - (BOOL)translateCurrentPage;
+/// Übersetzung beenden: lädt die Originaladresse der translate.goog-Seite. NO, wenn die Seite nicht übersetzt ist.
+- (BOOL)showOriginalOfCurrentPage;
+/// Läuft die aktuelle Seite über den Übersetzungs-Proxy?
+- (BOOL)currentPageIsTranslated;
 /// „Frag die Seite“: passendste Stelle suchen, in der Seite hervorheben, hinscrollen, Antwort-Karte unten.
 /// Kein Treffer: Rückmeldung „Keine passende Stelle gefunden“.
 - (void)askCurrentPage:(NSString *)question;

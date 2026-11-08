@@ -1616,6 +1616,39 @@ static NSString * const kLanguageProbeScript =
     return [host isEqualToString:@"translate.goog"] || [host hasSuffix:@".translate.goog"];
 }
 
++ (NSURL *)originalURLForTranslationProxyURL:(NSURL *)url {
+    if (![self isTranslationProxyURL:url]) {
+        return nil;
+    }
+    NSString *host = url.host.lowercaseString;
+    NSString *proxyPart = [host substringToIndex:host.length - @".translate.goog".length];
+    if (proxyPart.length == 0 || [host isEqualToString:@"translate.goog"]) {
+        return nil;
+    }
+    // Googles Schema rückwärts: "--" war ein Bindestrich, "-" ein Punkt.
+    NSString *marker = @"\u00A7\u00A7";
+    NSString *original = [[[proxyPart stringByReplacingOccurrencesOfString:@"--" withString:marker]
+                           stringByReplacingOccurrencesOfString:@"-" withString:@"."]
+                          stringByReplacingOccurrencesOfString:marker withString:@"-"];
+    NSURLComponents *source = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    NSString *scheme = @"https";
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
+    for (NSURLQueryItem *item in source.queryItems) {
+        if ([item.name isEqualToString:@"_x_tr_sch"]) {
+            scheme = item.value.length > 0 ? item.value : scheme;
+        } else if (![item.name hasPrefix:@"_x_tr_"]) {
+            [items addObject:item];
+        }
+    }
+    NSURLComponents *components = [NSURLComponents new];
+    components.scheme = scheme;
+    components.host = original;
+    components.percentEncodedPath = source.percentEncodedPath.length > 0 ? source.percentEncodedPath : @"/";
+    components.queryItems = items.count > 0 ? items : nil;
+    components.percentEncodedFragment = source.percentEncodedFragment;
+    return components.URL;
+}
+
 + (NSURL *)translationProxyURLForURL:(NSURL *)url targetLanguage:(NSString *)targetLanguage {
     NSString *scheme = url.scheme.lowercaseString;
     NSString *host = url.host.lowercaseString;

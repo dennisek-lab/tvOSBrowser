@@ -32,6 +32,9 @@
 /// Intelligente Funktionen (BrowserIntelligenceController), Menü „Diese Seite“.
 - (void)browserSummarizePage;
 - (void)browserTranslatePage;
+/// Läuft die Seite gerade übersetzt (translate.goog)? Dann bietet das Menü „Übersetzung beenden“ statt „Übersetzen“.
+- (BOOL)browserCurrentPageIsTranslated;
+- (void)browserShowOriginalPage;
 
 @end
 

@@ -31,6 +31,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
         symbols = @{
             @"Zusammenfassen": @"list.bullet.rectangle",
             @"Übersetzen": @"translate",
+            @"Übersetzung beenden": @"character.book.closed",
             @"Neu laden": @"arrow.clockwise",
             @"Seitenzoom": @"plus.magnifyingglass",
             @"Werbeblocker hier": @"hand.raised",
@@ -69,7 +70,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Cookies löschen": @"xmark.bin",
             @"Bedienung": @"questionmark.circle",
             @"Was ist neu": @"gift",
-            @"Einrichtung": @"wand.and.stars",
+            @"Einrichtung wiederholen": @"wand.and.stars",
             @"Medien-Diagnose": @"waveform.path.ecg",
             @"WebKit-Medieneinstellungen": @"slider.horizontal.3",
         };
@@ -1065,7 +1066,12 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self.host browserSummarizePage];
         }]];
     }
-    if ([self.host respondsToSelector:@selector(browserTranslatePage)]) {
+    if ([self.host respondsToSelector:@selector(browserCurrentPageIsTranslated)] && [self.host browserCurrentPageIsTranslated] &&
+        [self.host respondsToSelector:@selector(browserShowOriginalPage)]) {
+        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzung beenden" detail:@"Original" handler:^{
+            [self.host browserShowOriginalPage];
+        }]];
+    } else if ([self.host respondsToSelector:@selector(browserTranslatePage)]) {
         [items addObject:[self advancedMenuItemWithTitle:@"Übersetzen" detail:@"Google" handler:^{
             [self.host browserTranslatePage];
         }]];
@@ -1208,7 +1214,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (BrowserAdvancedMenuItem *)setupMenuItem {
-    return [self advancedMenuItemWithTitle:@"Einrichtung"
+    return [self advancedMenuItemWithTitle:@"Einrichtung wiederholen"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserShowSetup];
@@ -1687,9 +1693,9 @@ referenceSizeForHeaderInSection:(NSInteger)section {
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Hilfe"
                                                items:@[
+            [self setupMenuItem],
             [self usageGuideMenuItem],
             [self whatsNewMenuItem],
-            [self setupMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Erweitert"
                                                items:@[

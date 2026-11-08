@@ -732,6 +732,24 @@ static const CGFloat kAnswerPaddingY = 34.0;
     return YES;
 }
 
+- (BOOL)currentPageIsTranslated {
+    BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    return [BrowserIntelligence isTranslationProxyURL:webView.request.URL];
+}
+
+- (BOOL)showOriginalOfCurrentPage {
+    BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
+    NSURL *original = [BrowserIntelligence originalURLForTranslationProxyURL:webView.request.URL];
+    NSLog(@"[AI] Übersetzung beenden %@ -> %@", webView.request.URL.absoluteString, original.absoluteString ?: @"(keine)");
+    if (original == nil) {
+        [self feedback:@"Seite ist nicht übersetzt" symbol:@"translate" success:NO];
+        return NO;
+    }
+    [webView loadRequest:[NSURLRequest requestWithURL:original]];
+    [self feedback:@"Original wird geladen" symbol:@"translate" success:YES];
+    return YES;
+}
+
 - (BOOL)translateCurrentPage {
     return [self translateCurrentPageFromHint:NO];
 }
