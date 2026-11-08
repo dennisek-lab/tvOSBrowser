@@ -52,6 +52,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Klick schließt sie (browserRemoteInputControllerDismissOverlayCard), Menü und Play/Pause laufen über den Host.
 - (BOOL)browserRemoteInputControllerOverlayCardVisible;
 - (void)browserRemoteInputControllerDismissOverlayCard;
+/// Darf zweimal rechts (innerhalb 0,35 s) die Seitenleiste öffnen? NO, wenn rechts gerade ein Video spult.
+/// Ohne Umsetzung: ja.
+- (BOOL)browserRemoteInputControllerRightDoublePressOpensMenu;
 @required
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
@@ -87,6 +90,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)stepTargetInDirection:(CGVector)direction;
 #if DEBUG
 /// Testet die Kreiserkennung mit künstlichen Bewegungen. Rückgabe: Anzahl der Proben im Kreismodus (0 = kein Kreis).
+/// Wie ein Druck rechts auf dem Clickpad (gleiche Logik inkl. zweimal rechts → Seitenleiste).
+- (void)debugPressRight;
+/// Sprungziele in der Reihenfolge, in der links/rechts sie anspringen.
+- (NSArray<NSValue *> *)debugSortedStepTargets;
 - (NSInteger)debugRunGestureWithDeltas:(NSArray<NSValue *> *)deltas;
 /// Synthetisches Wischen auf dem Clickpad (Strecke in Clickpad-Einheiten, ganze Breite = 2) über dieselbe Pipeline
 /// wie die echte Fernbedienung (artifacts: Achsen einzeln beim Aufsetzen/Loslassen, Ausreißer am Ende); loggt Messwerte der sichtbaren Zeigerbewegung als „[PointerTest] …“.

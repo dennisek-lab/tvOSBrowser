@@ -446,6 +446,15 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     }
                     return;
                 }
+                if ([step isEqualToString:@"steporder"]) {
+                    NSMutableArray<NSString *> *rects = [NSMutableArray array];
+                    for (NSValue *value in [self.remoteInputController debugSortedStepTargets]) {
+                        CGRect rect = value.CGRectValue;
+                        [rects addObject:[NSString stringWithFormat:@"(%.0f,%.0f %.0fx%.0f)", CGRectGetMinX(rect), CGRectGetMinY(rect), CGRectGetWidth(rect), CGRectGetHeight(rect)]];
+                    }
+                    NSLog(@"[SelfTest] steporder %@", [rects componentsJoinedByString:@" "]);
+                    return;
+                }
                 if ([step isEqualToString:@"tabinfo"]) {
                     NSTimeInterval now = NSDate.date.timeIntervalSince1970;
                     NSLog(@"[SelfTest] tabinfo %lu Tabs, aktiv %ld, Ablauf %.0f s, Einblendung %@ „%@“", (unsigned long)self.viewModel.tabs.count,

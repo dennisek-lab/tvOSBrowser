@@ -487,6 +487,28 @@ static CGFloat BrowserDistanceToRect(CGPoint point, CGRect rect) {
 @property (nonatomic) BOOL playPauseSinglePending;
 @property (nonatomic) CFTimeInterval lastUpPressTimestamp;
 @property (nonatomic) CFTimeInterval lastDownPressTimestamp;
+/// Links/rechts: Beginn des laufenden Drucks je Richtung (0 = keiner). Ein Ende ohne Beginn ist eine doppelte
+/// Zustellung und wird verworfen; ein Druck löst genau einen Sprung aus.
+@property (nonatomic) CFTimeInterval leftPressBeganTime;
+@property (nonatomic) CFTimeInterval rightPressBeganTime;
+@property (nonatomic) CFTimeInterval leftPressEndedTime;
+@property (nonatomic) CFTimeInterval rightPressEndedTime;
+/// Gehaltene Taste links/rechts: Wiederholung läuft (dann löst das Loslassen keinen weiteren Sprung aus).
+@property (nonatomic) BOOL arrowRepeatFired;
+@property (nonatomic) UIPressType arrowRepeatType;
+/// Woher der laufende Sprung kommt (Log „[Keys] Sprung …“): Taste, Wiederholung, Ring, Drehung, Selbsttest.
+@property (nonatomic, copy) NSString *stepSource;
+/// Ziel des letzten Sprungs und die dabei gesetzte Fingerlage: Steht der Zeiger noch dort, zählt der nächste Sprung
+/// von genau diesem Ziel aus (nicht vom eingerasteten Rahmen, der ein umgebender Container sein kann).
+@property (nonatomic) CGRect lastStepTarget;
+@property (nonatomic) CGPoint lastStepPoint;
+/// Doppelt rechts → Seitenleiste: Zeitpunkt des ersten Drucks und Zustand davor (zum Rückgängigmachen des Sprungs).
+@property (nonatomic) CFTimeInterval lastRightPressTimestamp;
+@property (nonatomic) CGPoint rightUndoFreePoint;
+@property (nonatomic) CGPoint rightUndoScrollOffset;
+@property (nonatomic) BOOL rightUndoHasScrollOffset;
+/// Zählt Rücknahmen (zweimal rechts); ein verzögerter Sprung nach dem Scrollen (scrollThenStep:) verfällt dann.
+@property (nonatomic) NSUInteger stepGeneration;
 
 // Kreisgeste am Clickpad-Ring: Drehung der Bewegungsrichtung aufsummieren.
 @property (nonatomic) CGPoint rotationSegment;
@@ -579,6 +601,7 @@ enum { kHistoryCount = 32 };
         _lastTouchLocation = CGPointMake(-1, -1);
         _cursorModeEnabled = YES;
         _snappedTarget = CGRectNull;
+        _lastStepTarget = CGRectNull;
 
         CGRect screen = [UIScreen mainScreen].bounds;
         _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
@@ -1324,6 +1347,9 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
             self.pressInProgress = YES;
             [self discardPendingMotion];
         }
+        if (press.type == UIPressTypeLeftArrow || press.type == UIPressTypeRightArrow) {
+            [self arrowPressBegan:press.type];
+        }
     }
 }
 
@@ -1334,6 +1360,93 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     self.lastTouchLocation = CGPointMake(-1, -1);
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(firePlayPauseLongPress) object:nil];
     self.playPauseLongPressFired = NO;
+    [self stopArrowRepeat];
+    self.leftPressBeganTime = 0;
+    self.rightPressBeganTime = 0;
+}
+
+#pragma mark Links/rechts: ein Druck = ein Sprung, Halten wiederholt
+
+/// Halten links/rechts: erste Wiederholung nach 0,5 s, danach alle 0,25 s ein Sprung.
+static const NSTimeInterval kArrowRepeatDelay = 0.5;
+static const NSTimeInterval kArrowRepeatInterval = 0.25;
+
+- (BOOL)arrowStepApplies {
+    return [self.host browserRemoteInputControllerPresentedViewController] == nil && self.cursorModeEnabled &&
+        ![self.host browserRemoteInputControllerTopBarFocusActive] && ![self.host browserRemoteInputControllerTabOverviewVisible] &&
+        ![self overlayCardVisible] && ![self addressPanelActive];
+}
+
+- (void)arrowPressBegan:(UIPressType)type {
+    CFTimeInterval now = CACurrentMediaTime();
+    if (type == UIPressTypeRightArrow) {
+        self.rightPressBeganTime = now;
+    } else {
+        self.leftPressBeganTime = now;
+    }
+#if DEBUG
+    NSLog(@"[Keys] %@ Beginn", type == UIPressTypeRightArrow ? @"rechts" : @"links");
+#endif
+    [self stopArrowRepeat];
+    if ([self arrowStepApplies]) {
+        self.arrowRepeatType = type;
+        [self performSelector:@selector(fireArrowRepeat) withObject:nil afterDelay:kArrowRepeatDelay];
+    }
+}
+
+- (void)fireArrowRepeat {
+    if (![self arrowStepApplies]) {
+        return;
+    }
+    self.arrowRepeatFired = YES;
+    self.lastRightPressTimestamp = 0; // gehalten ist kein Doppelklick
+    self.stepSource = @"Wiederholung";
+    [self revealCursorIfIdle];
+    if (self.arrowRepeatType == UIPressTypeRightArrow) {
+        [self.host browserRemoteInputControllerNavigateForward];
+    } else {
+        [self.host browserRemoteInputControllerNavigateBack];
+    }
+    [self performSelector:@selector(fireArrowRepeat) withObject:nil afterDelay:kArrowRepeatInterval];
+}
+
+- (void)stopArrowRepeat {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fireArrowRepeat) object:nil];
+}
+
+/// Ende eines Drucks links/rechts. NO: nichts tun (doppelte Zustellung oder schon per Wiederholung gesprungen).
+- (BOOL)arrowPressEndedShouldStep:(UIPressType)type {
+    [self stopArrowRepeat];
+    BOOL repeated = self.arrowRepeatFired;
+    self.arrowRepeatFired = NO;
+    CFTimeInterval began = type == UIPressTypeRightArrow ? self.rightPressBeganTime : self.leftPressBeganTime;
+    if (type == UIPressTypeRightArrow) {
+        self.rightPressBeganTime = 0;
+    } else {
+        self.leftPressBeganTime = 0;
+    }
+    NSString *name = type == UIPressTypeRightArrow ? @"rechts" : @"links";
+    CFTimeInterval now = CACurrentMediaTime();
+    CFTimeInterval lastEnded = type == UIPressTypeRightArrow ? self.rightPressEndedTime : self.leftPressEndedTime;
+    if (began <= 0) {
+        // Ende ohne eigenen Beginn kurz nach dem letzten Ende: derselbe Druck zum zweiten Mal zugestellt.
+        if (now - lastEnded < 0.25) {
+            NSLog(@"[Keys] %@ Ende ohne Beginn %.0f ms nach dem letzten verworfen (doppelte Zustellung)", name, (now - lastEnded) * 1000.0);
+            return NO;
+        }
+        NSLog(@"[Keys] %@ Ende ohne Beginn (Beginn ging woandershin), ausgeführt", name);
+    }
+    if (type == UIPressTypeRightArrow) {
+        self.rightPressEndedTime = now;
+    } else {
+        self.leftPressEndedTime = now;
+    }
+#if DEBUG
+    if (began > 0) {
+        NSLog(@"[Keys] %@ Ende nach %.0f ms%@", name, (now - began) * 1000.0, repeated ? @", gehalten: kein weiterer Sprung" : @"");
+    }
+#endif
+    return !repeated;
 }
 
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
@@ -1458,12 +1571,19 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
                 [self scrollPageByFraction:kPageScrollFraction];
                 return YES;
             case UIPressTypeLeftArrow:
+                if (![self arrowPressEndedShouldStep:UIPressTypeLeftArrow]) {
+                    return YES;
+                }
                 [self revealCursorIfIdle];
+                self.stepSource = @"Taste links";
                 [self.host browserRemoteInputControllerNavigateBack];
                 return YES;
             case UIPressTypeRightArrow:
+                if (![self arrowPressEndedShouldStep:UIPressTypeRightArrow]) {
+                    return YES;
+                }
                 [self revealCursorIfIdle];
-                [self.host browserRemoteInputControllerNavigateForward];
+                [self handleRightPress];
                 return YES;
             default:
                 break;
@@ -1483,6 +1603,68 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     }
     return NO;
 }
+
+#pragma mark - Rechts: einmal springen, zweimal Seitenleiste
+
+/// Zweiter Druck rechts innerhalb dieses Fensters öffnet die Seitenleiste (wie zweimal oben die Adressleiste).
+static const NSTimeInterval kRightDoublePressWindow = 0.35;
+
+/// Rechts wirkt sofort (Sprung zum nächsten Element bzw. 10 s vor im Video). Kommt innerhalb von 0,35 s ein zweiter
+/// Druck, wird der Sprung des ersten zurückgenommen (Zeigerlage und Scrollstand von vorher) und die Seitenleiste
+/// geöffnet. Spult der Druck ein laufendes Video vor (Host sagt NO), bleibt es beim Spulen: zweimal = 20 s.
+- (void)handleRightPress {
+    CFTimeInterval now = CACurrentMediaTime();
+    BOOL allowed = ![self.host respondsToSelector:@selector(browserRemoteInputControllerRightDoublePressOpensMenu)] ||
+        [self.host browserRemoteInputControllerRightDoublePressOpensMenu];
+    if (allowed && self.lastRightPressTimestamp > 0 && now - self.lastRightPressTimestamp < kRightDoublePressWindow) {
+        self.lastRightPressTimestamp = 0;
+        [self undoRightStep];
+        NSLog(@"[Input] rechts doppelt: Sprung zurückgenommen, Seitenleiste");
+        [self.host browserRemoteInputControllerHandleAdvancedMenuPress];
+        return;
+    }
+    if (allowed) {
+        self.lastRightPressTimestamp = now;
+        self.rightUndoFreePoint = self.freePoint;
+        UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
+        self.rightUndoHasScrollOffset = scrollView != nil;
+        self.rightUndoScrollOffset = scrollView.contentOffset;
+    } else {
+        self.lastRightPressTimestamp = 0;
+    }
+    self.stepSource = @"Taste rechts";
+    [self.host browserRemoteInputControllerNavigateForward];
+}
+
+- (void)undoRightStep {
+    self.stepGeneration++; // verzögerten Sprung aus scrollThenStep: verwerfen
+    UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
+    if (self.rightUndoHasScrollOffset && scrollView != nil &&
+        fabs(scrollView.contentOffset.y - self.rightUndoScrollOffset.y) > 0.5) {
+        CGPoint offset = self.rightUndoScrollOffset;
+        [UIView animateWithDuration:0.18
+                              delay:0
+                            options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState
+                         animations:^{ [scrollView setContentOffset:offset animated:NO]; }
+                         completion:^(__unused BOOL finished) {
+            [self updatePointerAnimated:YES];
+        }];
+    }
+    [self setPointerPositionDirectly:self.rightUndoFreePoint];
+    self.snappedTarget = CGRectNull;
+    [self updatePointerAnimated:YES];
+}
+
+#if DEBUG
+- (void)debugPressRight {
+    [self revealCursorIfIdle];
+    [self handleRightPress];
+}
+
+- (NSArray<NSValue *> *)debugSortedStepTargets {
+    return [self sortedStepTargets];
+}
+#endif
 
 #pragma mark - Wischen (UIKit-Berührungen, nur Rückfallweg)
 
@@ -1994,6 +2176,16 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
         [weakSelf handlePadValue:CGPointMake(xValue, yValue)];
     };
     NSLog(@"[Input] Clickpad über GameController: %@", controller.vendorName ?: @"Fernbedienung");
+#if DEBUG
+    // Welche Tasten die Fernbedienung einer App überhaupt meldet (Siri-/Mikrofon- und TV-Taste fehlen erwartungsgemäß).
+    NSArray<NSString *> *buttons = [controller.physicalInputProfile.buttons.allKeys sortedArrayUsingSelector:@selector(compare:)];
+    NSLog(@"[Input] Tasten der Fernbedienung (%@): %@", controller.productCategory, [buttons componentsJoinedByString:@", "]);
+    [controller.physicalInputProfile.buttons enumerateKeysAndObjectsUsingBlock:^(NSString *name, GCControllerButtonInput *button, __unused BOOL *stop) {
+        button.pressedChangedHandler = ^(__unused GCControllerButtonInput *input, __unused float value, BOOL pressed) {
+            NSLog(@"[Input] GameController-Taste %@ %@", name, pressed ? @"gedrückt" : @"losgelassen");
+        };
+    }];
+#endif
 }
 
 /// Eine Probe des Clickpads (absolute Lage −1…1, (0,0) = kein Finger). Bewegung entsteht nur aus Differenzen,
@@ -2164,6 +2356,7 @@ static const CGFloat kRingStepAngle = 60.0 * M_PI / 180.0;
 #if DEBUG
     self.debugRingSteps += direction;
 #endif
+    self.stepSource = @"Ring";
     [self stepTargetBy:direction];
 }
 
@@ -2217,6 +2410,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         [self setPointerPositionDirectly:self.gestureStartPoint];
         self.snappedTarget = self.gestureStartTarget;
         [self updatePointerAnimated:NO];
+        self.stepSource = @"Drehung";
         [self stepTargetBy:self.rotationAccumulated > 0 ? 1 : -1];
         return YES;
     }
@@ -2225,6 +2419,7 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     if (fabs(self.rotationStepAccumulated) >= kRotationStepAngle) {
         NSInteger direction = self.rotationStepAccumulated > 0 ? 1 : -1;
         self.rotationStepAccumulated -= direction * kRotationStepAngle;
+        self.stepSource = @"Drehung";
         [self stepTargetBy:direction];
     }
     return YES;
@@ -2236,14 +2431,44 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     NSArray<NSValue *> *candidates = [self.host respondsToSelector:@selector(browserRemoteInputControllerStepTargets)]
         ? [self.host browserRemoteInputControllerStepTargets]
         : [self.host browserRemoteInputControllerPointerTargets];
-    return [candidates sortedArrayUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
-        CGRect ra = a.CGRectValue, rb = b.CGRectValue;
-        CGFloat rowA = round(CGRectGetMidY(ra) / 24.0), rowB = round(CGRectGetMidY(rb) / 24.0);
-        if (rowA != rowB) {
-            return rowA < rowB ? NSOrderedAscending : NSOrderedDescending;
+    // Zeilen bilden: nach Mitte von oben nach unten; ein Ziel gehört zur laufenden Zeile, wenn seine Mitte höchstens
+    // die halbe (kleinere) Höhe bzw. 12 pt von der Mitte des ersten Ziels der Zeile abweicht. Das feste 24-pt-Raster
+    // zuvor riss nebeneinanderliegende Knöpfe mit leicht versetzter Mitte in zwei Zeilen; rechts sprang dann über
+    // die Nachbarn hinweg in die „nächste Zeile“ und wieder zurück.
+    NSArray<NSValue *> *byMidY = [candidates sortedArrayUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
+        CGFloat ya = CGRectGetMidY(a.CGRectValue), yb = CGRectGetMidY(b.CGRectValue);
+        if (ya != yb) {
+            return ya < yb ? NSOrderedAscending : NSOrderedDescending;
         }
-        return CGRectGetMidX(ra) < CGRectGetMidX(rb) ? NSOrderedAscending : NSOrderedDescending;
+        return CGRectGetMidX(a.CGRectValue) < CGRectGetMidX(b.CGRectValue) ? NSOrderedAscending : NSOrderedDescending;
     }];
+    NSMutableArray<NSValue *> *ordered = [NSMutableArray arrayWithCapacity:byMidY.count];
+    NSMutableArray<NSValue *> *row = [NSMutableArray array];
+    CGRect rowFirst = CGRectNull;
+    void (^flushRow)(void) = ^{
+        [row sortUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
+            CGFloat xa = CGRectGetMidX(a.CGRectValue), xb = CGRectGetMidX(b.CGRectValue);
+            return xa < xb ? NSOrderedAscending : (xa > xb ? NSOrderedDescending : NSOrderedSame);
+        }];
+        [ordered addObjectsFromArray:row];
+        [row removeAllObjects];
+    };
+    for (NSValue *value in byMidY) {
+        CGRect rect = value.CGRectValue;
+        if (!CGRectIsNull(rowFirst)) {
+            CGFloat tolerance = MAX(12.0, 0.5 * MIN(CGRectGetHeight(rect), CGRectGetHeight(rowFirst)));
+            if (CGRectGetMidY(rect) - CGRectGetMidY(rowFirst) > tolerance) {
+                flushRow();
+                rowFirst = CGRectNull;
+            }
+        }
+        if (CGRectIsNull(rowFirst)) {
+            rowFirst = rect;
+        }
+        [row addObject:value];
+    }
+    flushRow();
+    return ordered;
 }
 
 - (void)stepTargetBy:(NSInteger)direction {
@@ -2304,6 +2529,13 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     CGFloat bestDistance = CGFLOAT_MAX;
     CGPoint reference = CGRectIsNull(self.snappedTarget) ? self.freePoint
         : CGPointMake(CGRectGetMidX(self.snappedTarget), CGRectGetMidY(self.snappedTarget));
+    // Zeiger steht noch auf dem Ziel des letzten Sprungs: von dort weiter, auch wenn das Einrasten einen größeren,
+    // umgebenden Rahmen gewählt hat (dessen Mitte läge woanders, der Sprung übersprünge dann Ziele).
+    BOOL fromLastStep = !CGRectIsNull(self.lastStepTarget) &&
+        hypot(self.freePoint.x - self.lastStepPoint.x, self.freePoint.y - self.lastStepPoint.y) < 1.0;
+    if (fromLastStep) {
+        reference = CGPointMake(CGRectGetMidX(self.lastStepTarget), CGRectGetMidY(self.lastStepTarget));
+    }
     for (NSUInteger i = 0; i < targets.count; i++) {
         CGRect rect = targets[i].CGRectValue;
         CGFloat distance = hypot(CGRectGetMidX(rect) - reference.x, CGRectGetMidY(rect) - reference.y);
@@ -2312,16 +2544,29 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
             index = (NSInteger)i;
         }
     }
-    BOOL onTarget = !CGRectIsNull(self.snappedTarget) && bestDistance < 2.0;
+    BOOL onTarget = (fromLastStep || !CGRectIsNull(self.snappedTarget)) && bestDistance < 2.0;
     NSInteger next = onTarget ? index + direction : index;
+    NSString *source = self.stepSource ?: @"?";
+    self.stepSource = nil;
     if ((next < 0 || next >= (NSInteger)targets.count) && allowScroll) {
         // Am Rand des sichtbaren Bereichs: Seite weiterscrollen und dort weiterspringen.
+#if DEBUG
+        NSLog(@"[Keys] Sprung %+ld (%@): Rand bei %ld von %lu, scrollen", (long)direction, source, (long)index, (unsigned long)targets.count);
+#endif
+        self.lastStepTarget = CGRectNull;
         [self scrollThenStep:direction];
         return;
     }
     next = MIN(MAX(next, 0), (NSInteger)targets.count - 1);
     CGRect target = targets[next].CGRectValue;
-    [self setPointerPositionDirectly:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
+#if DEBUG
+    NSLog(@"[Keys] Sprung %+ld (%@): Ziel %ld -> %ld von %lu%@", (long)direction, source, (long)index, (long)next,
+          (unsigned long)targets.count, onTarget ? @"" : @" (Zeiger stand nicht auf einem Ziel: nächstes Ziel)");
+#endif
+    CGPoint point = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    [self setPointerPositionDirectly:point];
+    self.lastStepTarget = target;
+    self.lastStepPoint = point;
     self.snappedTarget = CGRectNull;
     [self updatePointerAnimated:YES];
 }
@@ -2338,7 +2583,11 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     CGFloat anchorY = reference.y - scrolled;
     CGFloat anchorX = reference.x;
     // Neue Ziele meldet die Seite erst nach dem Scrollen.
+    NSUInteger generation = self.stepGeneration;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self.stepGeneration != generation) {
+            return; // inzwischen zurückgenommen (zweimal rechts)
+        }
         // Erstes Ziel, das in Leserichtung hinter (bzw. vor) dem bisherigen Element liegt.
         CGFloat anchorRow = round(anchorY / 24.0);
         NSArray<NSValue *> *targets = [self sortedStepTargets];
@@ -2364,7 +2613,13 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
             return;
         }
         CGRect target = chosen.CGRectValue;
-        [self setPointerPositionDirectly:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target))];
+        CGPoint point = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+#if DEBUG
+        NSLog(@"[Keys] Sprung %+ld nach dem Scrollen: %@", (long)direction, NSStringFromCGRect(target));
+#endif
+        [self setPointerPositionDirectly:point];
+        self.lastStepTarget = target;
+        self.lastStepPoint = point;
         self.snappedTarget = CGRectNull;
         [self updatePointerAnimated:YES];
     });
