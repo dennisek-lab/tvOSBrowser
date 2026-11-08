@@ -56,6 +56,7 @@
 		4E74E160BF506F77842D2BDF /* BrowserContentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */; };
 		BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */ = {isa = PBXBuildFile; fileRef = 59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */; };
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
+		40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */ = {isa = PBXBuildFile; fileRef = 8652E9B7A8FD897D903A8958 /* Autoconsent */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -139,6 +140,7 @@
 		59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ContentBlocker; sourceTree = "<group>"; };
 		40607E1D6455EA12B85887D4 /* BrowserCookieConsentBlocker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCookieConsentBlocker.h; sourceTree = "<group>"; };
 		E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCookieConsentBlocker.m; sourceTree = "<group>"; };
+		8652E9B7A8FD897D903A8958 /* Autoconsent */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Autoconsent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -355,6 +357,7 @@
 				B002B8661BAE420500C744AF /* main.m */,
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
 			);
@@ -425,6 +428,7 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
 				3A2A7C1821E7805D0083CB13 /* right-arrow-forward.png in Resources */,
