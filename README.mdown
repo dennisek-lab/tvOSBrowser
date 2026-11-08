@@ -95,5 +95,6 @@ Für Entwickler
 
 - `PLAN.md` – Plan und Stand aller Phasen
 - `docs/ERWEITERUNGEN.md` – alle Eigenbauten, Risiken, Selbsttests, Logpräfixe
+- `docs/BERICHT-STABILITAET-LEISTUNG.md` – Stabilitäts- und Leistungsprüfung vom 8. November 2026 mit Messwerten am Apple TV
 - `docs/SIRI_STEUERUNG.md`, `docs/APPLE_INTELLIGENCE.md` – Befunde zu Siri und Apple Intelligence auf tvOS
 - `THIRD_PARTY_NOTICES.md` – Lizenzen (u. a. uBlock-Origin-Filterlisten, autoconsent, Readability, AdGuard Scriptlets, whisper.cpp)
