@@ -108,6 +108,20 @@ static BOOL BrowserMotionLogEnabled(void) {
     [UIView animateWithDuration:p.duration delay:delay options:options | p.curve animations:animations completion:completion];
 }
 
++ (CABasicAnimation *)layerAnimationForKind:(BrowserMotionKind)kind {
+    if (self.liquidGlassEnabled) {
+        BrowserMotionParameters p = BrowserMotionLiquidParameters(kind);
+        CASpringAnimation *spring = [[CASpringAnimation alloc] initWithPerceptualDuration:p.duration bounce:p.bounce];
+        spring.duration = spring.settlingDuration;
+        return spring;
+    }
+    BrowserMotionParameters p = BrowserMotionPlainParameters(kind);
+    CABasicAnimation *animation = [CABasicAnimation animation];
+    animation.duration = p.duration;
+    animation.timingFunction = BrowserMotionTimingFunction(p.curve);
+    return animation;
+}
+
 + (void)animateShadowPathOfLayer:(CALayer *)layer fromPath:(CGPathRef)fromPath kind:(BrowserMotionKind)kind {
     // Läuft schon eine Umriss-Animation, vom sichtbaren Zwischenstand aus weiter (Präsentationsebene).
     CALayer *presentation = [layer animationForKey:@"shadowPath"] != nil ? layer.presentationLayer : nil;

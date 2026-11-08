@@ -56,6 +56,10 @@ typedef NS_ENUM(NSInteger, BrowserMotionKind) {
 /// vom gerade sichtbaren Umriss (kein Sprung bei schnellem Hin und Her).
 + (void)animateShadowPathOfLayer:(CALayer *)layer fromPath:(nullable CGPathRef)fromPath kind:(BrowserMotionKind)kind;
 
+/// Ebenen-Animation (ohne keyPath/Werte) mit derselben Kurve wie animateKind: – für Eigenschaften, die
+/// UIView-Animationen nicht mitnehmen (Pfade, Unterebenen).
++ (CABasicAnimation *)layerAnimationForKind:(BrowserMotionKind)kind;
+
 /// Glas erscheinen lassen. Liquid Glass: effect nil → effect im Federblock (Materialisieren), extra wird
 /// mitanimiert. Schlicht: effect sofort, Alpha 0 → 1.
 + (void)glassAppear:(UIVisualEffectView *)view

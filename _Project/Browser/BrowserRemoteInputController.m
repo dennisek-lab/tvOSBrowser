@@ -92,7 +92,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 @property (nonatomic, strong) NSArray<CAGradientLayer *> *gradients;
 @property (nonatomic, strong) NSArray<NSNumber *> *ringWidths;
 - (void)setGlowColor:(UIColor *)color;
-- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius;
+- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius animated:(BOOL)animated;
 @end
 
 @implementation BrowserGlowView
@@ -255,7 +255,49 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
     self.layer.shadowColor = color.CGColor;
 }
 
-- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius {
+/// Ebeneneigenschaft vom sichtbaren Stand auf den neuen Modellwert federn (wie die Fläche über BrowserMotion).
+static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
+    id toValue = [layer valueForKey:key];
+    if (fromValue == nil || toValue == nil || [fromValue isEqual:toValue]) {
+        return;
+    }
+    CABasicAnimation *animation = [BrowserMotion layerAnimationForKind:BrowserMotionKindSnap];
+    animation.keyPath = key;
+    animation.fromValue = fromValue;
+    animation.toValue = toValue;
+    [layer addAnimation:animation forKey:key];
+}
+
+- (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius animated:(BOOL)animated {
+    // Sichtbaren Zwischenstand aller Ebenen merken, damit der Glow beim Einrasten mit der Fläche mitfedert
+    // statt sofort auf die neue Größe zu springen.
+    NSMutableArray<NSArray *> *before = [NSMutableArray array];
+    NSMutableArray<CALayer *> *animatedLayers = [NSMutableArray arrayWithObjects:self.layer, self.maskLayer, nil];
+    [animatedLayers addObjectsFromArray:self.glowWrappers];
+    [animatedLayers addObjectsFromArray:self.ringContainers];
+    [animatedLayers addObjectsFromArray:self.ringMasks];
+    [animatedLayers addObjectsFromArray:self.gradients];
+    NSArray<NSString *> *keys = @[@"bounds", @"position", @"path", @"shadowPath"];
+    if (animated && !self.hidden) {
+        for (CALayer *layer in animatedLayers) {
+            CALayer *visible = layer.presentationLayer ?: layer;
+            NSMutableDictionary *values = [NSMutableDictionary dictionary];
+            for (NSString *key in keys) {
+                if ([key isEqualToString:@"path"] && ![layer isKindOfClass:CAShapeLayer.class]) {
+                    continue;
+                }
+                if ([key isEqualToString:@"shadowPath"] && layer != self.layer) {
+                    continue;
+                }
+                id value = [visible valueForKey:key];
+                if (value != nil) {
+                    values[key] = value;
+                }
+            }
+            [before addObject:@[layer, values]];
+        }
+    }
+
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     CGRect shape = CGRectMake(0, 0, size.width, size.height);
@@ -282,6 +324,13 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
         self.ringMasks[i].path = [UIBezierPath bezierPathWithRoundedRect:ring cornerRadius:ringRadius].CGPath;
         self.gradients[i].bounds = CGRectMake(0, 0, diagonal, diagonal);
         self.gradients[i].position = CGPointMake(CGRectGetMidX(local), CGRectGetMidY(local));
+    }
+    for (NSArray *entry in before) {
+        CALayer *layer = entry[0];
+        NSDictionary *values = entry[1];
+        for (NSString *key in values) {
+            BrowserGlowAnimateKey(layer, key, values[key]);
+        }
     }
     [CATransaction commit];
 }
@@ -597,8 +646,9 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
     if (glow.rainbow != rainbow) {
         glow.rainbow = rainbow;
     }
+    BOOL springs = animated && highlight.alpha > 0.0;
     glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
-    [glow setShapeSize:frame.size cornerRadius:radius];
+    [glow setShapeSize:frame.size cornerRadius:radius animated:springs];
     [self updateLensForFrame:frame radius:radius];
     void (^apply)(void) = ^{
         highlight.frame = frame;
