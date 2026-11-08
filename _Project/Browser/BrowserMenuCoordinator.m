@@ -88,12 +88,14 @@ static UIColor *BrowserMenuTintForSection(NSString *title) {
 }
 
 // Zwei Spalten großer Schaltflächen. Kachelradius konzentrisch zum Panel (50 − 14 = 36).
-static CGFloat const kMenuPanelWidth = 1060.0;
-static CGFloat const kMenuTileHeight = 112.0;
-static CGFloat const kMenuTileSpacing = 16.0;
-static CGFloat const kMenuIconSide = 60.0;
-static CGFloat const kMenuSwitchWidth = 72.0;
-static CGFloat const kMenuSwitchHeight = 42.0;
+// Panelbreite wie die frühere einspaltige Liste (38 % der Bildschirmbreite, 480–700 pt). Kacheln hochkant:
+// Symbol oben links, Schalter oben rechts, Titel und Wert darunter.
+static CGFloat const kMenuTileHeight = 150.0;
+static CGFloat const kMenuTilePadding = 20.0;
+static CGFloat const kMenuTileSpacing = 14.0;
+static CGFloat const kMenuIconSide = 50.0;
+static CGFloat const kMenuSwitchWidth = 64.0;
+static CGFloat const kMenuSwitchHeight = 38.0;
 
 @interface BrowserAdvancedMenuItem : NSObject
 
@@ -158,8 +160,6 @@ static CGFloat const kMenuSwitchHeight = 42.0;
     UIView *_switchTrack;
     UIView *_switchKnob;
     NSLayoutConstraint *_knobLeading;
-    NSLayoutConstraint *_textsToEdge;
-    NSLayoutConstraint *_textsToSwitch;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -169,7 +169,7 @@ static CGFloat const kMenuSwitchHeight = 42.0;
         self.contentView.clipsToBounds = NO;
         self.clipsToBounds = NO;
         CGFloat radius = BrowserShapeConcentricRadius(BrowserShapePanelRadius, BrowserShapePanelInset);
-        CGFloat inset = (kMenuTileHeight - kMenuIconSide) / 2.0;
+        CGFloat inset = kMenuTilePadding;
 
         _platter = [UIView new];
         _platter.translatesAutoresizingMaskIntoConstraints = NO;
@@ -191,19 +191,19 @@ static CGFloat const kMenuSwitchHeight = 42.0;
         [_iconCircle addSubview:_iconView];
 
         _titleLabel = [UILabel new];
-        _titleLabel.font = [UIFont systemFontOfSize:29.0 weight:UIFontWeightSemibold];
+        _titleLabel.font = [UIFont systemFontOfSize:25.0 weight:UIFontWeightSemibold];
         _titleLabel.numberOfLines = 2;
         _titleLabel.adjustsFontSizeToFitWidth = YES;
-        _titleLabel.minimumScaleFactor = 0.8;
+        _titleLabel.minimumScaleFactor = 0.85;
         _detailLabel = [UILabel new];
-        _detailLabel.font = [UIFont systemFontOfSize:23.0 weight:UIFontWeightRegular];
+        _detailLabel.font = [UIFont systemFontOfSize:21.0 weight:UIFontWeightRegular];
         _detailLabel.textColor = UIColor.secondaryLabelColor;
         _detailLabel.adjustsFontSizeToFitWidth = YES;
         _detailLabel.minimumScaleFactor = 0.75;
         _texts = [[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel, _detailLabel]];
         _texts.translatesAutoresizingMaskIntoConstraints = NO;
         _texts.axis = UILayoutConstraintAxisVertical;
-        _texts.spacing = 2.0;
+        _texts.spacing = 0.0;
         [self.contentView addSubview:_texts];
 
         _switchTrack = [UIView new];
@@ -221,8 +221,6 @@ static CGFloat const kMenuSwitchHeight = 42.0;
         [_switchTrack addSubview:_switchKnob];
 
         _knobLeading = [_switchKnob.leadingAnchor constraintEqualToAnchor:_switchTrack.leadingAnchor constant:3.0];
-        _textsToEdge = [_texts.trailingAnchor constraintLessThanOrEqualToAnchor:self.contentView.trailingAnchor constant:-inset];
-        _textsToSwitch = [_texts.trailingAnchor constraintLessThanOrEqualToAnchor:_switchTrack.leadingAnchor constant:-14.0];
         [NSLayoutConstraint activateConstraints:@[
             [_platter.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor],
             [_platter.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor],
@@ -230,17 +228,19 @@ static CGFloat const kMenuSwitchHeight = 42.0;
             [_platter.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor],
 
             [_iconCircle.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:inset],
-            [_iconCircle.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_iconCircle.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:inset - 2.0],
             [_iconCircle.widthAnchor constraintEqualToConstant:kMenuIconSide],
             [_iconCircle.heightAnchor constraintEqualToConstant:kMenuIconSide],
             [_iconView.centerXAnchor constraintEqualToAnchor:_iconCircle.centerXAnchor],
             [_iconView.centerYAnchor constraintEqualToAnchor:_iconCircle.centerYAnchor],
 
-            [_texts.leadingAnchor constraintEqualToAnchor:_iconCircle.trailingAnchor constant:20.0],
-            [_texts.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_texts.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:inset + 2.0],
+            [_texts.trailingAnchor constraintLessThanOrEqualToAnchor:self.contentView.trailingAnchor constant:-inset],
+            [_texts.topAnchor constraintEqualToAnchor:_iconCircle.bottomAnchor constant:8.0],
+            [_texts.bottomAnchor constraintLessThanOrEqualToAnchor:self.contentView.bottomAnchor constant:-12.0],
 
             [_switchTrack.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-inset],
-            [_switchTrack.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_switchTrack.centerYAnchor constraintEqualToAnchor:_iconCircle.centerYAnchor],
             [_switchTrack.widthAnchor constraintEqualToConstant:kMenuSwitchWidth],
             [_switchTrack.heightAnchor constraintEqualToConstant:kMenuSwitchHeight],
             [_switchKnob.centerYAnchor constraintEqualToAnchor:_switchTrack.centerYAnchor],
@@ -258,7 +258,7 @@ static CGFloat const kMenuSwitchHeight = 42.0;
     _titleLabel.text = item.title;
     _titleLabel.textColor = destructive ? UIColor.systemRedColor : UIColor.labelColor;
     _iconCircle.backgroundColor = destructive ? UIColor.systemRedColor : tint;
-    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:27.0 weight:UIImageSymbolWeightSemibold];
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:23.0 weight:UIImageSymbolWeightSemibold];
     _iconView.image = [UIImage systemImageNamed:BrowserMenuSymbolForTitle(item.title) withConfiguration:config]
         ?: [UIImage systemImageNamed:@"circle.fill" withConfiguration:config];
 
@@ -268,8 +268,6 @@ static CGFloat const kMenuSwitchHeight = 42.0;
     _switchTrack.hidden = !isSwitch;
     _detailLabel.text = item.detail;
     _detailLabel.hidden = isSwitch || item.detail.length == 0;
-    _textsToSwitch.active = isSwitch;
-    _textsToEdge.active = !isSwitch;
     _switchTrack.backgroundColor = isOn ? UIColor.systemGreenColor : [UIColor colorWithWhite:1.0 alpha:0.22];
     _knobLeading.constant = isOn ? kMenuSwitchWidth - kMenuSwitchHeight + 3.0 : 3.0;
 }
@@ -278,7 +276,7 @@ static CGFloat const kMenuSwitchHeight = 42.0;
     _platter.backgroundColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.2 : 0.07];
     _platter.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:focused ? 0.32 : 0.08].CGColor;
     _platter.layer.shadowOpacity = focused ? 0.3 : 0.0;
-    self.contentView.transform = focused ? CGAffineTransformMakeScale(1.04, 1.04) : CGAffineTransformIdentity;
+    self.contentView.transform = focused ? CGAffineTransformMakeScale(1.05, 1.05) : CGAffineTransformIdentity;
 }
 
 - (void)didUpdateFocusInContext:(UIFocusUpdateContext *)context withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
@@ -371,7 +369,7 @@ static CGFloat const kMenuSwitchHeight = 42.0;
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
-    self.panelWidth = MIN(kMenuPanelWidth, CGRectGetWidth(UIScreen.mainScreen.bounds) - 64.0);
+    self.panelWidth = MIN(MAX(CGRectGetWidth(UIScreen.mainScreen.bounds) * 0.38, 480.0), 700.0);
     self.usingNativeGlassEffect = (NSClassFromString(@"UIGlassEffect") != Nil);
 
     UIView *dimView = [UIView new];
@@ -393,7 +391,7 @@ static CGFloat const kMenuSwitchHeight = 42.0;
     UILabel *titleLabel = [UILabel new];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     titleLabel.text = self.menuTitle;
-    titleLabel.font = [UIFont systemFontOfSize:40.0 weight:UIFontWeightBold];
+    titleLabel.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightBold];
     titleLabel.textColor = UIColor.labelColor;
     [panelView.contentView addSubview:titleLabel];
 
