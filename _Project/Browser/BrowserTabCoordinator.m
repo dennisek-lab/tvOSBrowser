@@ -217,6 +217,73 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     return webView;
 }
 
+static NSString *BrowserLetters(NSString *string) {
+    NSMutableString *result = [NSMutableString string];
+    NSString *folded = [string.lowercaseString stringByFoldingWithOptions:NSDiacriticInsensitiveSearch locale:nil];
+    [folded enumerateSubstringsInRange:NSMakeRange(0, folded.length) options:NSStringEnumerationByComposedCharacterSequences
+                            usingBlock:^(NSString *character, __unused NSRange range, __unused NSRange enclosing, __unused BOOL *stop) {
+        if ([character rangeOfCharacterFromSet:NSCharacterSet.alphanumericCharacterSet].location != NSNotFound) {
+            [result appendString:character];
+        }
+    }];
+    return result;
+}
+
+/// Hauptteil der Domain ohne Endung, z. B. "github" aus "github.com" oder "computerbase" aus "www.computerbase.de".
+static NSString *BrowserHostLabel(NSString *host) {
+    NSArray<NSString *> *parts = [host componentsSeparatedByString:@"."];
+    if (parts.count >= 2) {
+        NSString *label = parts[parts.count - 2];
+        // co.uk, com.au usw.
+        if (label.length <= 3 && parts.count >= 3) {
+            label = parts[parts.count - 3];
+        }
+        return label;
+    }
+    return host;
+}
+
+static BOOL BrowserNameMatchesHost(NSString *name, NSString *host) {
+    NSString *letters = BrowserLetters(name);
+    NSString *label = BrowserLetters(BrowserHostLabel(host));
+    return letters.length > 0 && label.length > 0 && ([letters containsString:label] || [label containsString:letters]);
+}
+
+/// Kurzer Name der Website wie in Safari: Metadaten, sonst der zur Domain passende Teil des Titels.
+static NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *host) {
+    NSCharacterSet *whitespace = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    siteName = [siteName stringByTrimmingCharactersInSet:whitespace];
+    if (siteName.length > 0) {
+        return siteName;
+    }
+    title = [title stringByTrimmingCharactersInSet:whitespace];
+    if (title.length == 0) {
+        return @"";
+    }
+    NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObject:title];
+    for (NSString *separator in @[@" – ", @" — ", @" - ", @" | ", @" · ", @" • ", @": ", @" :: "]) {
+        NSMutableArray<NSString *> *next = [NSMutableArray array];
+        for (NSString *part in parts) {
+            [next addObjectsFromArray:[part componentsSeparatedByString:separator]];
+        }
+        parts = next;
+    }
+    NSString *best = nil;
+    for (NSString *part in parts) {
+        NSString *trimmed = [part stringByTrimmingCharactersInSet:whitespace];
+        if (trimmed.length > 0 && BrowserNameMatchesHost(trimmed, host) && (best == nil || trimmed.length < best.length)) {
+            best = trimmed;
+        }
+    }
+    if (best == nil) {
+        best = [parts.firstObject stringByTrimmingCharactersInSet:whitespace];
+    }
+    if (best.length > 40) {
+        best = [[best substringToIndex:38] stringByAppendingString:@"…"];
+    }
+    return best;
+}
+
 - (void)refreshActiveTabUI {
     BrowserTabViewModel *tab = self.activeTab;
     if (tab == nil) {
@@ -231,13 +298,12 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     if ([host hasPrefix:@"www."]) {
         host = [host substringFromIndex:4];
     }
-    NSString *title = self.activeWebView.reportedPageTitle.length > 0 ? self.activeWebView.reportedPageTitle : self.activeWebView.title;
-    title = [title stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *fullTitle = self.activeWebView.reportedPageTitle.length > 0 ? self.activeWebView.reportedPageTitle : self.activeWebView.title;
+    NSString *title = BrowserShortSiteName(self.activeWebView.reportedSiteName, fullTitle, host);
     UILabel *label = self.topMenuView.URLLabel;
-    if (title.length > 48) {
-        title = [[title substringToIndex:46] stringByAppendingString:@"…"];
-    }
-    if (title.length > 0 && host.length > 0) {
+    if (title.length > 0 && BrowserNameMatchesHost(title, host)) {
+        label.text = title;
+    } else if (title.length > 0 && host.length > 0) {
         UIColor *color = label.textColor ?: UIColor.whiteColor;
         NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title
                                                                                  attributes:@{NSForegroundColorAttributeName: [color colorWithAlphaComponent:0.95]}];

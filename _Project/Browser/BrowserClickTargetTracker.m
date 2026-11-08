@@ -32,6 +32,11 @@ static NSString *BrowserClickTargetScript(void) {
         "return 0;"
     "}"
     "function rgba(c){ var m=/rgba?\\(([^)]+)\\)/.exec(c||''); if(!m){ return null; } var p=m[1].split(/[ ,\\/]+/).filter(Boolean).map(parseFloat); return [p[0],p[1],p[2],p.length>3?p[3]:1]; }"
+    "function siteName(){"
+        "var sel=['meta[property=\"og:site_name\"]','meta[name=\"application-name\"]','meta[name=\"apple-mobile-web-app-title\"]'];"
+        "for (var i=0;i<sel.length;i++){ var m=document.querySelector(sel[i]); if (m && m.content && m.content.trim().length && m.content.length<40) { return m.content.trim(); } }"
+        "return '';"
+    "}"
     "function pageColor(){"
         // Wie Safari: Farbe am oberen Rand der Seite abtasten (oberstes Element mit deckendem Hintergrund).
         "var xs=[innerWidth*0.5, innerWidth*0.15, innerWidth*0.85];"
@@ -90,7 +95,7 @@ static NSString *BrowserClickTargetScript(void) {
         "var key=document.title+':'+bg+':'+fs+':'+innerWidth+':'+scrollX+':'+scrollY+':'+playing+':'+vids.join(';')+':'+out.join(';')+':'+JSON.stringify(m);"
         "if (key===last) { return; }"
         "last=key;"
-        "try { webkit.messageHandlers.browserTargets.postMessage({ti:document.title||'',w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m,fs:fs,bg:bg}); } catch(e) {}"
+        "try { webkit.messageHandlers.browserTargets.postMessage({ti:document.title||'',sn:siteName(),w:innerWidth,sx:scrollX,sy:scrollY,t:out,v:vids,p:playing,m:m,fs:fs,bg:bg}); } catch(e) {}"
     "}"
     "function schedule(delay){"
         "if (pending) { return; }"
@@ -121,6 +126,7 @@ static NSString *BrowserClickTargetScript(void) {
 @property (nonatomic, readwrite, copy, nullable) NSDictionary *mediaInfo;
 @property (nonatomic, readwrite) BOOL pageFullscreen;
 @property (nonatomic, readwrite, copy, nullable) NSString *pageTitle;
+@property (nonatomic, readwrite, copy, nullable) NSString *siteName;
 @property (nonatomic, readwrite, nullable) UIColor *pageBackgroundColor;
 @property (nonatomic) CGFloat cssViewportWidth;
 @property (nonatomic) CGPoint contentOffsetAtReport;
@@ -242,6 +248,7 @@ static NSString *BrowserClickTargetScript(void) {
     self.mediaInfo = [dictionary[@"m"] isKindOfClass:NSDictionary.class] ? dictionary[@"m"] : nil;
     self.pageFullscreen = [dictionary[@"fs"] boolValue];
     self.pageTitle = [dictionary[@"ti"] isKindOfClass:NSString.class] ? dictionary[@"ti"] : nil;
+    self.siteName = [dictionary[@"sn"] isKindOfClass:NSString.class] ? dictionary[@"sn"] : nil;
     NSArray *bg = [dictionary[@"bg"] isKindOfClass:NSArray.class] ? dictionary[@"bg"] : nil;
     if (bg.count >= 3) {
         self.pageBackgroundColor = [UIColor colorWithRed:[bg[0] doubleValue] / 255.0 green:[bg[1] doubleValue] / 255.0 blue:[bg[2] doubleValue] / 255.0 alpha:1.0];

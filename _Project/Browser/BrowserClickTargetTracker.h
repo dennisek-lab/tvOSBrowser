@@ -45,6 +45,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Titel der Seite, Stand der letzten Meldung (auch nach Änderungen durch Skripte).
 @property (nonatomic, readonly, copy, nullable) NSString *pageTitle;
+/// Name der Website aus den Metadaten (og:site_name, application-name, apple-mobile-web-app-title).
+@property (nonatomic, readonly, copy, nullable) NSString *siteName;
 
 /// JavaScript, das das Vollbild der Seite verlässt.
 + (NSString *)exitFullscreenScript;

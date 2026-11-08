@@ -41,6 +41,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, nullable) UIColor *pageBackgroundColor;
 /// Titel der Seite laut Seiten-Skript (aktueller als `title` beim Laden).
 @property (nonatomic, readonly, copy, nullable) NSString *reportedPageTitle;
+/// Name der Website aus den Metadaten, falls vorhanden.
+@property (nonatomic, readonly, copy, nullable) NSString *reportedSiteName;
 /// Färbt die Flächen der WebView außerhalb des Seiteninhalts (Streifen unter der Leiste, Überscrollen).
 - (void)setSurroundingColor:(nonnull UIColor *)color;
 /// Verlässt das Vollbild der Seite.

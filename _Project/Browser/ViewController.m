@@ -37,6 +37,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
 @property (nonatomic) BrowserNowPlayingController *nowPlayingController;
 @property (nonatomic) CFTimeInterval lastFullscreenExitAttempt;
+@property (nonatomic, weak) UIAlertController *searchAlert;
+@property (nonatomic) NSUInteger searchAlertLastTextLength;
 @property (nonatomic) BrowserViewModel *viewModel;
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
@@ -190,6 +192,21 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                             }
                         }];
                     }
+                    return;
+                }
+                if ([step hasPrefix:@"dictate:"]) {
+                    [self browserRemoteInputControllerHandlePlayPauseLongPress];
+                    NSString *spoken = [step substringFromIndex:8];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        UITextField *field = self.searchAlert.textFields.firstObject;
+                        NSLog(@"[SelfTest] dictate field=%@ text=%@", field != nil ? @"ok" : @"nil", spoken);
+                        field.text = spoken;
+                        [NSNotificationCenter.defaultCenter postNotificationName:UITextFieldTextDidChangeNotification object:field];
+                    });
+                    return;
+                }
+                if ([step isEqualToString:@"label"]) {
+                    NSLog(@"[SelfTest] label %@", self.topMenuView.URLLabel.text);
                     return;
                 }
                 if ([step isEqualToString:@"views"]) {
@@ -420,51 +437,110 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self.webview stringByEvaluatingJavaScriptFromString:jsString];
 }
 
-- (void)showInputURLorSearchGoogle {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Adresse oder Suchbegriff"
-                                                                             message:@""
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
+/// Sieht die Eingabe wie eine Adresse aus (kein Leerzeichen, mit Punkt oder Schema)?
+- (BOOL)enteredTextLooksLikeAddress:(NSString *)text {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (trimmed.length == 0 || [trimmed rangeOfCharacterFromSet:NSCharacterSet.whitespaceCharacterSet].location != NSNotFound) {
+        return NO;
+    }
+    return [trimmed containsString:@"://"] || [trimmed hasPrefix:@"localhost"] ||
+        ([trimmed containsString:@"."] && ![trimmed hasSuffix:@"."]);
+}
 
-    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.keyboardType = UIKeyboardTypeURL;
-        textField.placeholder = @"z. B. computerbase.de oder Suchbegriff";
-        [textField setReturnKeyType:UIReturnKeyDone];
-    }];
+/// Adresse öffnen oder mit Google suchen, je nach Eingabe.
+- (void)openAddressOrSearch:(NSString *)text {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (trimmed.length == 0) {
+        return;
+    }
+    NSURLRequest *request = nil;
+    if ([self enteredTextLooksLikeAddress:trimmed]) {
+        NSString *address = [trimmed containsString:@"://"] ? trimmed : [@"https://" stringByAppendingString:trimmed];
+        request = [self.navigationService requestForEnteredAddressString:address];
+    }
+    if (request == nil) {
+        request = [self.navigationService googleSearchRequestForQuery:trimmed];
+    }
+    if (request != nil) {
+        [self.webview loadRequest:request];
+    }
+}
 
+- (void)searchFieldDidEndOnExit:(UITextField *)textField {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(submitSearchAlert) object:nil];
+    [self submitSearchAlert];
+}
+
+- (void)searchFieldDidChange:(NSNotification *)notification {
+    UITextField *textField = notification.object;
+    if (![textField isKindOfClass:UITextField.class] || textField != self.searchAlert.textFields.firstObject) {
+        return;
+    }
+    NSUInteger previousLength = self.searchAlertLastTextLength;
+    self.searchAlertLastTextLength = textField.text.length;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(submitSearchAlert) object:nil];
+    // Diktat (Siri-Taste halten) fügt den ganzen Satz auf einmal ein. Dann ohne weiteren Druck suchen.
+    if (previousLength == 0 && textField.text.length >= 3) {
+        [self performSelector:@selector(submitSearchAlert) withObject:nil afterDelay:1.5];
+    }
+}
+
+- (void)submitSearchAlert {
+    UIAlertController *alert = self.searchAlert;
+    NSString *text = alert.textFields.firstObject.text ?: @"";
+    if (alert == nil || text.length == 0) {
+        return;
+    }
+    self.searchAlert = nil;
+    [NSNotificationCenter.defaultCenter removeObserver:self name:UITextFieldTextDidChangeNotification object:nil];
+    [alert.textFields.firstObject resignFirstResponder];
     __weak typeof(self) weakSelf = self;
+    [alert dismissViewControllerAnimated:YES completion:^{
+        [weakSelf openAddressOrSearch:text];
+    }];
+}
+
+- (void)showInputURLorSearchGoogle {
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Suchen oder Adresse eingeben"
+                                                                             message:@"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
+                                                                      preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.keyboardType = UIKeyboardTypeWebSearch;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.placeholder = @"Suchbegriff oder z. B. computerbase.de";
+        textField.returnKeyType = UIReturnKeySearch;
+        [textField addTarget:weakSelf action:@selector(searchFieldDidEndOnExit:) forControlEvents:UIControlEventEditingDidEndOnExit];
+    }];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Los"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        weakSelf.searchAlert = nil;
+        [weakSelf openAddressOrSearch:alertController.textFields.firstObject.text];
+    }]];
     [alertController addAction:[UIAlertAction actionWithTitle:@"Mit Google suchen"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
-        UITextField *textField = alertController.textFields.firstObject;
-        NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForQuery:textField.text];
-        if (searchRequest != nil) {
-            [weakSelf.webview loadRequest:searchRequest];
-        } else {
-            [weakSelf requestURLorSearchInput];
+        weakSelf.searchAlert = nil;
+        NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:alertController.textFields.firstObject.text];
+        if (request != nil) {
+            [weakSelf.webview loadRequest:request];
         }
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Website öffnen"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        UITextField *textField = alertController.textFields.firstObject;
-        if (textField.text.length == 0) {
-            [weakSelf requestURLorSearchInput];
-            return;
-        }
-        NSURLRequest *navigationRequest = [weakSelf.navigationService requestForEnteredAddressString:textField.text];
-        if (navigationRequest != nil) {
-            [weakSelf.webview loadRequest:navigationRequest];
-        } else {
-            [weakSelf requestURLorSearchInput];
-        }
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+        weakSelf.searchAlert = nil;
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alertController animated:YES completion:nil];
-
-    UITextField *textField = alertController.textFields.firstObject;
-    if (self.webview.request == nil || self.webview.request.URL.absoluteString.length > 0) {
-        [textField becomeFirstResponder];
-    }
+    self.searchAlert = alertController;
+    self.searchAlertLastTextLength = 0;
+    [NSNotificationCenter.defaultCenter removeObserver:self name:UITextFieldTextDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(searchFieldDidChange:) name:UITextFieldTextDidChangeNotification object:nil];
+    [self presentViewController:alertController animated:YES completion:^{
+        [alertController.textFields.firstObject becomeFirstResponder];
+    }];
 }
 
 - (void)requestURLorSearchInput {
@@ -524,7 +600,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 - (void)showHintsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Bedienung"
-                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Schnellmenü. Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
+                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Suche (dann Siri-Taste halten und sprechen). Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     __weak typeof(self) weakSelf = self;
@@ -935,10 +1011,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)browserRemoteInputControllerHandlePlayPauseLongPress {
-    if (self.presentedViewController != nil) {
-        return;
-    }
-    [self requestURLorSearchInput];
+    // Direkt in die Suche, bereit fürs Diktat mit der Siri-Taste.
+    [self showInputURLorSearchGoogle];
 }
 
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress {

@@ -619,6 +619,10 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     return self.clickTargetTracker.pageFullscreen;
 }
 
+- (NSString *)reportedSiteName {
+    return self.clickTargetTracker.siteName;
+}
+
 - (NSString *)reportedPageTitle {
     return self.clickTargetTracker.pageTitle;
 }
