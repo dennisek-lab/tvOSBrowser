@@ -60,3 +60,12 @@ _Project/Availability.h
 ## Autoconsent-Download (tools/vendor-download)
 tools/vendor-download/
 build-ac/
+
+## whisper.cpp (tools/build_whisper.sh, tools/fetch_whisper_model.sh)
+## vendor/whisper.xcframework wird committet (≈17 MB), Quelle und Zwischenstände nicht.
+vendor/whisper.cpp/
+vendor/whisper-build/
+vendor/tools-venv/
+vendor/*.log
+_Project/Browser/WhisperModels/*.bin
+_Project/Browser/WhisperModels/*.part
