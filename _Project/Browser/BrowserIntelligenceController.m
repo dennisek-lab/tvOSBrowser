@@ -961,6 +961,11 @@ static const NSTimeInterval kAnswerDuration = 25.0;
         [self showNextAnswerPassage];
         return YES;
     }
+    if (self.summaryVisible) {
+        // Abgedunkelte Karte wie ein Dialog: Play/Pause schließt sie, statt ein Video dahinter zu steuern.
+        [self dismissSummary];
+        return YES;
+    }
     if (!self.translationHintVisible) {
         return NO;
     }

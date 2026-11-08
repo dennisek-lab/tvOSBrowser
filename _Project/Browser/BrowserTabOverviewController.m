@@ -213,6 +213,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 @property (nonatomic) UILabel *footerLabel;
 @property (nonatomic) UILabel *subtitleLabel;
 @property (nonatomic) NSInteger preferredFocusItemIndex;
+@property (nonatomic) CFTimeInterval lastAlternateActionTime;
 
 @end
 
@@ -396,6 +397,9 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
 - (void)handleAlternateAction {
     NSInteger focusedItemIndex = [self currentFocusedItemIndex];
+#if DEBUG
+    NSLog(@"[Tabs] Play/Pause: Fokus=%ld von %lu Tabs", (long)focusedItemIndex, (unsigned long)self.overviewController.viewModel.tabs.count);
+#endif
     if (focusedItemIndex == NSNotFound || focusedItemIndex >= self.overviewController.viewModel.tabs.count) {
         return;
     }
@@ -459,6 +463,13 @@ static CGFloat const kTabCardURLHeight = 64.0;
         return;
     }
     if (press != nil && press.type == UIPressTypePlayPause) {
+        // Play/Pause schließt den fokussierten Tab. Ein Doppeldruck (sonst „Seitenmenü“) schlösse auch den Tab,
+        // der danach den Fokus bekommt: zweiten Druck kurz danach verwerfen.
+        CFTimeInterval now = CACurrentMediaTime();
+        if (now - self.lastAlternateActionTime < 0.4) {
+            return;
+        }
+        self.lastAlternateActionTime = now;
         [self handleAlternateAction];
         return;
     }

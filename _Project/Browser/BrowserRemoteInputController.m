@@ -627,6 +627,11 @@ enum { kHistoryCount = 32 };
         [self.host browserRemoteInputControllerAddressPanelActive];
 }
 
+- (BOOL)overlayCardVisible {
+    return [self.host respondsToSelector:@selector(browserRemoteInputControllerOverlayCardVisible)] &&
+        [self.host browserRemoteInputControllerOverlayCardVisible];
+}
+
 - (BOOL)pointerOverlaysSuppressed {
     return !self.cursorModeEnabled ||
         [self.host browserRemoteInputControllerTabOverviewVisible] ||
@@ -1176,6 +1181,11 @@ enum { kHistoryCount = 32 };
         [self.host browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:self.cursorView.frame.origin];
         return;
     }
+    if ([self overlayCardVisible]) {
+        // Karte liegt abgedunkelt über der Seite: Klick schließt sie, statt die (verdeckte) Seite zu treffen.
+        [self.host browserRemoteInputControllerDismissOverlayCard];
+        return;
+    }
     if ([self revealCursorIfIdle]) {
         // Erster Druck nach einer Pause zeigt nur den Zeiger.
         return;
@@ -1349,6 +1359,19 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         return NO;
     }
 
+    if (presentedViewController == nil && [self overlayCardVisible]) {
+        // Pfeile würden die verdeckte Seite scrollen, zurückblättern oder die Adressleiste darunter öffnen.
+        switch (press.type) {
+            case UIPressTypeUpArrow:
+            case UIPressTypeDownArrow:
+            case UIPressTypeLeftArrow:
+            case UIPressTypeRightArrow:
+                return YES;
+            default:
+                break;
+        }
+    }
+
     if (presentedViewController == nil && [self addressPanelActive]) {
         // Aufklapp-Bereich der Adressleiste: Pfeile bewegen den Fokus zwischen Feld und Kacheln.
         switch (press.type) {
@@ -1456,6 +1479,10 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
     }
     if (!self.cursorModeEnabled) {
         return NO;
+    }
+    if ([self overlayCardVisible]) {
+        self.lastTouchLocation = CGPointMake(-1, -1);
+        return YES;
     }
 
     UITouch *touch = touches.anyObject;
@@ -1944,7 +1971,7 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
     }
     self.padLastSampleTime = now;
     BOOL blocked = [self.host browserRemoteInputControllerTopBarFocusActive] || !self.cursorModeEnabled ||
-        [self.host browserRemoteInputControllerPresentedViewController] != nil;
+        [self.host browserRemoteInputControllerPresentedViewController] != nil || [self overlayCardVisible];
     if (!self.padTouching) {
         self.padTouching = YES;
         self.padLastValue = value;
