@@ -2,10 +2,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Lehnt Cookie-/Einwilligungsbanner (CMPs) automatisch ab. Ein WKUserScript (document-end, alle Frames) erkennt
-/// bekannte CMPs und wählt „Ablehnen“ bzw. „Nur notwendige“; als Rückfall blendet es eindeutige CMP-Overlays aus.
-/// Abo-/Pur-Wände werden nie angeklickt. Das Skript steckt nur dann im Controller, wenn der Blocker an ist und
-/// für die Zielseite keine Ausnahme gilt; der Wechsel geschieht ohne Neuaufbau der WebView (Neuladen genügt).
+/// Lehnt Cookie-/Einwilligungsbanner (CMPs) automatisch ab, mit DuckDuckGos autoconsent (Ordner Autoconsent, fest auf „optOut“). Ein WKUserScript (document-start, alle Frames)
+/// bringt Bundle und Brücke in die Seitenwelt; die Bibliothek erkennt CMPs und wählt „Ablehnen“, nie „Zustimmen“. Die App erhält nur Meldungen fürs Log.
+/// Das Skript steckt nur dann im Controller, wenn der Blocker an ist und für die Zielseite keine Ausnahme gilt; der Wechsel geschieht ohne Neuaufbau der WebView (Neuladen genügt).
 @interface BrowserCookieConsentBlocker : NSObject
 
 + (instancetype)sharedBlocker;
