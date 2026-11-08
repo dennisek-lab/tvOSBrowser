@@ -23,14 +23,6 @@
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
 
-static UIColor *kTextColor(void) {
-    if (@available(tvOS 13, *)) {
-        return UIColor.labelColor;
-    } else {
-        return UIColor.blackColor;
-    }
-}
-
 @interface ViewController () <BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
 
 @property (nonatomic) BrowserDOMInteractionService *domInteractionService;
@@ -177,6 +169,32 @@ static UIColor *kTextColor(void) {
                     } else {
                         [self browserRemoteInputControllerNavigateForward];
                     }
+                    return;
+                }
+                if ([step hasPrefix:@"fill:"]) {
+                    UIAlertController *alert = [self.presentedViewController isKindOfClass:UIAlertController.class] ? (UIAlertController *)self.presentedViewController : nil;
+                    NSArray<NSString *> *values = [[step substringFromIndex:5] componentsSeparatedByString:@"|"];
+                    NSLog(@"[SelfTest] fill alert=%@ fields=%lu types=%@", alert.title, (unsigned long)alert.textFields.count, [alert.textFields valueForKey:@"textContentType"]);
+                    for (NSUInteger i = 0; i + 1 < values.count && i < alert.textFields.count; i++) {
+                        alert.textFields[i].text = values[i];
+                    }
+                    NSInteger actionIndex = values.lastObject.integerValue;
+                    if (alert != nil && actionIndex >= 0 && actionIndex < (NSInteger)alert.actions.count) {
+                        UIAlertAction *action = alert.actions[actionIndex];
+                        void (^handler)(UIAlertAction *) = [action valueForKey:@"handler"];
+                        NSLog(@"[SelfTest] tap %@", action.title);
+                        [alert dismissViewControllerAnimated:NO completion:^{
+                            if (handler != nil) {
+                                handler(action);
+                            }
+                        }];
+                    }
+                    return;
+                }
+                if ([step hasPrefix:@"js:"]) {
+                    [self.webview evaluateJavaScriptAsync:[step substringFromIndex:3] completion:^(id result) {
+                        NSLog(@"[SelfTest] js %@", result);
+                    }];
                     return;
                 }
                 if ([step isEqualToString:@"video"]) {
@@ -384,7 +402,6 @@ static UIColor *kTextColor(void) {
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeURL;
         textField.placeholder = @"z. B. computerbase.de oder Suchbegriff";
-        textField.textColor = kTextColor();
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
 
