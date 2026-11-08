@@ -48,6 +48,7 @@
 		B002B8721BAE420500C744AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B002B8711BAE420500C744AF /* Assets.xcassets */; };
 		B2B7BA7B43737BF473BE9A82 /* BrowserFeasibilityProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */; };
 		2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B44FC74AA71D336038E44239 /* SceneDelegate.m */; };
+		6921A70BFB3405E0FC80124C /* BrowserDNSProxy.m in Sources */ = {isa = PBXBuildFile; fileRef = 487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -116,6 +117,8 @@
 		EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFeasibilityProbe.m; sourceTree = "<group>"; };
 		C2E2A2A5D1EC23516C1DD3B6 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
 		B44FC74AA71D336038E44239 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
+		499A8FECFD5078729F745CFD /* BrowserDNSProxy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserDNSProxy.h; sourceTree = "<group>"; };
+		487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserDNSProxy.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -250,6 +253,8 @@
 				EAC52DB0B19580CAC0DB73FA /* BrowserFeasibilityProbe.m */,
 				C2E2A2A5D1EC23516C1DD3B6 /* SceneDelegate.h */,
 				B44FC74AA71D336038E44239 /* SceneDelegate.m */,
+				499A8FECFD5078729F745CFD /* BrowserDNSProxy.h */,
+				487C4A937B7A8A3D1CEA7664 /* BrowserDNSProxy.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -438,6 +443,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				6921A70BFB3405E0FC80124C /* BrowserDNSProxy.m in Sources */,
 				2B1C4FF1A612D127CE0F60DB /* SceneDelegate.m in Sources */,
 				B2B7BA7B43737BF473BE9A82 /* BrowserFeasibilityProbe.m in Sources */,
 				A1B49A612D6A1000001D58A1 /* BrowserWKWebViewProofOfConceptViewController.m in Sources */,

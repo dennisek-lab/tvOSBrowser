@@ -7,6 +7,7 @@
 //
 
 #import "AppDelegate.h"
+#import "BrowserDNSProxy.h"
 #import "BrowserFeasibilityProbe.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebView.h"
@@ -49,6 +50,7 @@
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"MobileMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
+    [[BrowserDNSProxy sharedProxy] startAndWaitWithTimeout:1.0];
     [self restoreCookiesFromDefaults];
     [BrowserFeasibilityProbe runIfRequested];
 	return YES;

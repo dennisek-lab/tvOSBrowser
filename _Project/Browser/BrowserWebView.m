@@ -1,4 +1,5 @@
 #import "BrowserWebView.h"
+#import "BrowserDNSProxy.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -536,6 +537,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     }
     BrowserConfigurePrivateMediaPreferences(configuration);
     BrowserInstallYouTubeCaptureUserScript(configuration);
+    [[BrowserDNSProxy sharedProxy] applyToWebsiteDataStore:[BrowserWebView defaultWebsiteDataStore]];
 
     id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
     SEL initializer = NSSelectorFromString(@"initWithFrame:configuration:");
@@ -883,9 +885,11 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
         }
     }
 
-    SEL pageZoomSelector = NSSelectorFromString(@"setPageZoom:");
-    if ([self.runtimeWebView respondsToSelector:pageZoomSelector]) {
-        ((void (*)(id, SEL, double))objc_msgSend)(self.runtimeWebView, pageZoomSelector, zoomValue);
+    // _setViewScale: verkleinert die Layout-Breite und skaliert die Ansicht, wie der Zoom in Safari auf dem Mac.
+    // Auf dem Gerät getestet: setPageZoom: und CSS-Zoom verschieben unter tvOS 27 Teile der Seite aus dem Bild.
+    SEL viewScaleSelector = NSSelectorFromString(@"_setViewScale:");
+    if ([self.runtimeWebView respondsToSelector:viewScaleSelector]) {
+        ((void (*)(id, SEL, CGFloat))objc_msgSend)(self.runtimeWebView, viewScaleSelector, zoomValue);
         return;
     }
 

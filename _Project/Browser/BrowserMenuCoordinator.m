@@ -1,5 +1,6 @@
 #import "BrowserMenuCoordinator.h"
 #import "BrowserPreferencesStore.h"
+#import "BrowserDNSProxy.h"
 #import "BrowserWebView.h"
 
 static UIColor *MenuTextColor(void) {
@@ -980,6 +981,20 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)cloudflareDNSMenuItem {
+    BOOL enabled = BrowserDNSProxy.isEnabled;
+    NSString *title = enabled ? @"DNS über Cloudflare ausschalten" : @"DNS über Cloudflare einschalten";
+    return [self advancedMenuItemWithTitle:title
+                                     style:UIAlertActionStyleDefault
+                                   handler:^{
+        BrowserDNSProxy.enabled = !enabled;
+        BrowserDNSProxy *proxy = [BrowserDNSProxy sharedProxy];
+        [proxy startAndWaitWithTimeout:1.0];
+        [proxy applyToWebsiteDataStore:[BrowserWebView defaultWebsiteDataStore]];
+        [[self.host browserWebView] reload];
+    }];
+}
+
 /// Schaltet den Grundzoom reihum durch feste Stufen und merkt ihn sich für alle Tabs.
 - (BrowserAdvancedMenuItem *)pageZoomMenuItem {
     NSArray<NSNumber *> *steps = @[@1.0, @1.25, @1.5, @1.75, @2.0, @2.5];
@@ -1096,6 +1111,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Compatibility"
                                                items:@[
             [self userAgentModeMenuItem],
+            [self cloudflareDNSMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Diagnostics"
                                                items:@[

@@ -38,6 +38,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setUserAgent:(NSString * _Nullable)userAgent;
 - (void)pauseAllMediaPlayback;
 
+/// Gemeinsamer WKWebsiteDataStore aller Tabs (per Laufzeit angesprochen).
++ (nullable id)defaultWebsiteDataStore;
 + (nullable NSData *)cookieDataRepresentation;
 + (NSArray<NSHTTPCookie *> * _Nonnull)allCookies;
 + (void)restoreCookiesFromData:(NSData * _Nullable)cookieData;
