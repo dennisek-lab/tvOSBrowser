@@ -143,9 +143,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 /// Ein Punkt "click" löst einen Klick aus. Vorher werden offene Hinweise geschlossen.
 - (void)runPointerSelfTestIfRequested {
     NSString *spec = NSProcessInfo.processInfo.environment[@"POINTER_SELFTEST"];
-    if (spec.length == 0) {
+    static BOOL started = NO;
+    if (spec.length == 0 || started) {
         return;
     }
+    started = YES; // viewDidAppear kommt nach jedem geschlossenen Dialog erneut
     NSArray<NSString *> *steps = [spec componentsSeparatedByString:@";"];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self dismissViewControllerAnimated:NO completion:nil];
@@ -427,6 +429,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         case BrowserTopBarActionMenu:
             [self showAdvancedMenu];
             break;
+        case BrowserTopBarActionFavorite:
+            [self toggleFavoriteForCurrentPage];
+            break;
     }
 }
 
@@ -581,6 +586,27 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 /// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
+/// Stern in der Leiste: aktuelle Seite zu den Favoriten hinzufügen oder entfernen.
+- (void)toggleFavoriteForCurrentPage {
+    NSURL *url = self.webview.request.URL;
+    NSString *scheme = url.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) {
+        return;
+    }
+    BrowserHistoryStore *store = BrowserHistoryStore.sharedStore;
+    if ([store isFavoriteURL:url]) {
+        [store removeFavoriteWithURL:url];
+    } else {
+        [store addFavoriteWithURL:url title:[self currentSiteDisplayName]];
+    }
+    [self updateFavoriteButton];
+}
+
+- (void)updateFavoriteButton {
+    NSURL *url = self.webview.request.URL;
+    self.topMenuView.favorite = url != nil && [BrowserHistoryStore.sharedStore isFavoriteURL:url];
+}
+
 - (NSString *)currentSiteDisplayName {
     NSString *name = self.webview.reportedSiteName;
     if (name.length == 0) {
@@ -627,8 +653,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                                                           handler:^(__unused UIAlertAction *action) {
             if (isFavorite) {
                 [BrowserHistoryStore.sharedStore removeFavoriteWithURL:currentURL];
+                [weakSelf updateFavoriteButton];
             } else {
                 [BrowserHistoryStore.sharedStore addFavoriteWithURL:currentURL title:[weakSelf currentSiteDisplayName]];
+                [weakSelf updateFavoriteButton];
             }
         }]];
     }
@@ -884,6 +912,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 - (void)applyPageColorOfWebView:(BrowserWebView *)webView {
     [self.tabCoordinator refreshActiveTabUI];
     [self.topMenuView attachToScrollView:webView.scrollView];
+    [self updateFavoriteButton];
     UIColor *color = webView.pageBackgroundColor ?: UIColor.blackColor;
     if ([self.view.backgroundColor isEqual:color]) {
         return;

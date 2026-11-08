@@ -10,7 +10,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
     BrowserTopBarActionTabs,
     BrowserTopBarActionURL,
     BrowserTopBarActionFullscreen,
-    BrowserTopBarActionMenu
+    BrowserTopBarActionMenu,
+    BrowserTopBarActionFavorite
 };
 
 @class BrowserTopBarView;
@@ -39,6 +40,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 /// Knöpfe für den magnetischen Zeiger: Rechteck in Koordinaten der Leiste und zugehörige Aktion.
 /// Farbe der Seite hinter der Leiste: passt Symbole, Schrift und Glas an (hell/dunkel).
 - (void)setPageBackgroundColor:(nullable UIColor *)color;
+/// Stern-Knopf: gefüllt und gelb, wenn die aktuelle Seite ein Favorit ist.
+@property (nonatomic, getter=isFavorite) BOOL favorite;
 /// Seitenname, dahinter dezent die Domain (nil = keine). Bei verschlüsselter Verbindung (HTTPS) ist der Name grün.
 - (void)setDisplayTitle:(nullable NSString *)title domain:(nullable NSString *)domain secure:(BOOL)secure;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;

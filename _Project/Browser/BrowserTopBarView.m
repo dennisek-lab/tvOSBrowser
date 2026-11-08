@@ -45,7 +45,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic) UIImageView *backImageView;
 @property (nonatomic) UIImageView *refreshImageView;
 @property (nonatomic) UIImageView *forwardImageView;
-@property (nonatomic) UIImageView *homeImageView;
+@property (nonatomic) UIImageView *homeImageView; // zeigt den Favoriten-Stern
 @property (nonatomic) UIImageView *tabsImageView;
 @property (nonatomic) UIImageView *fullscreenImageView;
 @property (nonatomic) UIImageView *menuImageView;
@@ -66,6 +66,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
 @property (nonatomic, getter=isFocusModeActive) BOOL focusModeActive;
 @property (nonatomic, readwrite, getter=isCompact) BOOL compact;
 @property (nonatomic) BOOL lightPage;
+@property (nonatomic, nullable) UIColor *pageForegroundColor;
 @property (nonatomic, strong, nullable) id scrollEdgeInteraction;
 @property (nonatomic) UIView *glassDimmingView;
 @property (nonatomic, copy, nullable) NSString *displayTitle;
@@ -145,7 +146,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _backImageView = [self newIconViewWithSymbol:@"chevron.backward" fallbackImageNamed:@"go-back-left-arrow"];
     _refreshImageView = [self newIconViewWithSymbol:@"arrow.clockwise" fallbackImageNamed:@"refresh-button"];
     _forwardImageView = [self newIconViewWithSymbol:@"chevron.forward" fallbackImageNamed:@"right-arrow-forward"];
-    _homeImageView = [self newIconViewWithSymbol:@"house" fallbackImageNamed:@"house-outline"];
+    // Statt „Startseite“ (bleibt in der Seitenleiste) sitzt hier der Favoriten-Stern.
+    _homeImageView = [self newIconViewWithSymbol:@"star" fallbackImageNamed:@"house-outline"];
     _tabsImageView = [self newIconViewWithSymbol:@"square.on.square" fallbackImageNamed:@"multi-tab"];
     _fullscreenImageView = [self newIconViewWithSymbol:@"arrow.up.left.and.arrow.down.right" fallbackImageNamed:@"resize-arrows"];
     _menuImageView = [self newIconViewWithSymbol:@"ellipsis.circle" fallbackImageNamed:@"menu-2"];
@@ -181,7 +183,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     _backFocusButton = [self newFocusButtonForAction:BrowserTopBarActionBack accessibilityLabel:@"Back"];
     _refreshFocusButton = [self newFocusButtonForAction:BrowserTopBarActionRefresh accessibilityLabel:@"Reload"];
     _forwardFocusButton = [self newFocusButtonForAction:BrowserTopBarActionForward accessibilityLabel:@"Forward"];
-    _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionHome accessibilityLabel:@"Home"];
+    _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFavorite accessibilityLabel:@"Favorit"];
     _tabsFocusButton = [self newFocusButtonForAction:BrowserTopBarActionTabs accessibilityLabel:@"Tabs"];
     _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Enter URL or Search"];
     _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Top Navigation Visibility"];
@@ -232,6 +234,8 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
                                      self.tabsImageView, self.fullscreenImageView, self.menuImageView]) {
         imageView.tintColor = foreground;
     }
+    self.pageForegroundColor = foreground;
+    [self applyFavoriteStyle];
     self.loadingSpinner.color = foreground;
     self.chromeEffectView.overrideUserInterfaceStyle = light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
     self.lightPage = light;
@@ -282,6 +286,23 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
     self.chromeEffectView.layer.borderColor = (light ? [UIColor colorWithWhite:0.0 alpha:0.14]
                                                      : [UIColor colorWithWhite:1.0 alpha:0.16]).CGColor;
     self.glassDimmingView.backgroundColor = light ? [UIColor colorWithWhite:1.0 alpha:0.42] : [UIColor colorWithWhite:0.0 alpha:0.35];
+}
+
+- (void)setFavorite:(BOOL)favorite {
+    if (_favorite == favorite) {
+        return;
+    }
+    _favorite = favorite;
+    [self applyFavoriteStyle];
+}
+
+- (void)applyFavoriteStyle {
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *star = [UIImage systemImageNamed:self.favorite ? @"star.fill" : @"star" withConfiguration:configuration];
+    if (star != nil) {
+        self.homeImageView.image = [star imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
+    self.homeImageView.tintColor = self.favorite ? UIColor.systemYellowColor : (self.pageForegroundColor ?: UIColor.whiteColor);
 }
 
 - (void)setDisplayTitle:(NSString *)title domain:(NSString *)domain secure:(BOOL)secure {
@@ -475,7 +496,7 @@ static CGFloat const kTopBarCompactLabelScale = 0.8;
         @[self.backImageView, @(BrowserTopBarActionBack)],
         @[self.refreshImageView, @(BrowserTopBarActionRefresh)],
         @[self.forwardImageView, @(BrowserTopBarActionForward)],
-        @[self.homeImageView, @(BrowserTopBarActionHome)],
+        @[self.homeImageView, @(BrowserTopBarActionFavorite)],
         @[self.tabsImageView, @(BrowserTopBarActionTabs)],
         @[self.URLLabel, @(BrowserTopBarActionURL)],
         @[self.fullscreenImageView, @(BrowserTopBarActionFullscreen)],

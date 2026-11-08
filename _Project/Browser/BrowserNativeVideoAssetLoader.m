@@ -1,4 +1,5 @@
 #import "BrowserNativeVideoAssetLoader.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import <AVFoundation/AVFoundation.h>
 #import <objc/message.h>
@@ -280,12 +281,24 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
         contentType = @"application/vnd.apple.mpegurl";
     }
 
+    // AVFoundation erwartet hier einen UTI (public.mpeg-4), keinen MIME-Typ (video/mp4).
+    contentType = [[contentType componentsSeparatedByString:@";"].firstObject stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
     if (contentType.length > 0) {
-        contentInformationRequest.contentType = contentType;
+        UTType *type = [UTType typeWithMIMEType:contentType];
+        if (type == nil && requestURL.pathExtension.length > 0) {
+            type = [UTType typeWithFilenameExtension:requestURL.pathExtension];
+        }
+        contentInformationRequest.contentType = type.identifier ?: contentType;
     }
 
+    // Bei Teilantworten (206) steht die Gesamtlänge in Content-Range ("bytes 0-1/788493").
+    NSString *contentRange = [response valueForHTTPHeaderField:@"Content-Range"];
+    NSRange slash = [contentRange rangeOfString:@"/" options:NSBackwardsSearch];
+    long long totalLength = slash.location != NSNotFound ? [contentRange substringFromIndex:slash.location + 1].longLongValue : 0;
     long long expectedLength = response.expectedContentLength;
-    if (expectedLength > 0) {
+    if (totalLength > 0) {
+        contentInformationRequest.contentLength = totalLength;
+    } else if (expectedLength > 0) {
         contentInformationRequest.contentLength = expectedLength;
     } else if (data.length > 0) {
         contentInformationRequest.contentLength = (long long)data.length;

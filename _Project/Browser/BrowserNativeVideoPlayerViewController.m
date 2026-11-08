@@ -91,10 +91,18 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
         if (self.requestCookies.count > 0) {
             assetOptions[@"AVURLAssetHTTPCookiesKey"] = self.requestCookies;
         }
-        self.assetLoader = [[BrowserNativeVideoAssetLoader alloc] initWithRequestHeaders:self.requestHeaders cookies:self.requestCookies];
-        NSURL *assetURL = [self.assetLoader assetURLForPlaybackURL:self.videoURL];
-        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:assetURL options:assetOptions];
-        [self.assetLoader attachToAsset:asset];
+        // Eigener Loader nur für HLS-Playlists (Umschreiben der Segment-Adressen); Dateien wie mp4
+        // lädt AVFoundation direkt mit den Headern und Cookies der Seite.
+        BOOL playlist = [self.videoURL.absoluteString.lowercaseString containsString:@".m3u8"];
+        AVURLAsset *asset = nil;
+        if (playlist) {
+            self.assetLoader = [[BrowserNativeVideoAssetLoader alloc] initWithRequestHeaders:self.requestHeaders cookies:self.requestCookies];
+            NSURL *assetURL = [self.assetLoader assetURLForPlaybackURL:self.videoURL];
+            asset = [AVURLAsset URLAssetWithURL:assetURL options:assetOptions];
+            [self.assetLoader attachToAsset:asset];
+        } else {
+            asset = [AVURLAsset URLAssetWithURL:self.videoURL options:assetOptions];
+        }
         playerItem = [AVPlayerItem playerItemWithAsset:asset];
         [self log:@"using request headers %@ cookies=%lu", self.requestHeaders, (unsigned long)self.requestCookies.count];
     } else {
