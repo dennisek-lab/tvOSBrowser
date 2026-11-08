@@ -1,4 +1,5 @@
 #import "BrowserMenuCoordinator.h"
+#import "BrowserHistoryStore.h"
 #import "BrowserMotion.h"
 #import "BrowserShape.h"
 #import "BrowserPreferencesStore.h"
@@ -32,8 +33,8 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Seitenzoom": @"plus.magnifyingglass",
             @"Werbeblocker hier": @"hand.raised",
             @"Cookie-Banner hier ablehnen": @"checkmark.shield",
-            @"Diese Seite als Startseite": @"house.and.flag",
             @"Startseite öffnen": @"house",
+            @"Startseite festlegen": @"house.and.flag",
             @"Favoriten": @"star",
             @"Verlauf": @"clock.arrow.circlepath",
             @"Tabs anzeigen": @"square.on.square",
@@ -1065,15 +1066,130 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     return items;
 }
 
-- (BrowserAdvancedMenuItem *)setCurrentPageAsHomePageMenuItem {
-    return [self advancedMenuItemWithTitle:@"Diese Seite als Startseite"
-                                     style:UIAlertActionStyleDefault
+/// Startseite festlegen: Auswahl aus Google, Favoriten, aktueller Seite oder eingetippter Adresse.
+/// Der Wert rechts zeigt die aktuelle Startseite (Name des Favoriten, sonst die Domain).
+- (BrowserAdvancedMenuItem *)homePageSettingMenuItem {
+    return [self advancedMenuItemWithTitle:@"Startseite festlegen"
+                                    detail:[self homePageDisplayName]
                                    handler:^{
-        NSURLRequest *request = [[self.host browserWebView] request];
-        if (request != nil && [self stringHasVisibleContent:request.URL.absoluteString]) {
-            self.preferencesStore.homePageURLString = request.URL.absoluteString;
-        }
+        [self presentHomePageChooser];
     }];
+}
+
+/// Favoriten für die Startseiten-Auswahl: zuerst die mit dem Stern gesetzten (BrowserHistoryStore), dann die
+/// aus dem Menü „Favoriten“ (FAVORITES), ohne doppelte Adressen. Je Eintrag @[Adresse, Name].
+- (NSArray<NSArray<NSString *> *> *)homePageFavoriteCandidates {
+    NSMutableArray<NSArray<NSString *> *> *result = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    for (BrowserSiteEntry *entry in BrowserHistoryStore.sharedStore.favorites) {
+        if (entry.urlString.length > 0 && ![seen containsObject:entry.urlString]) {
+            [seen addObject:entry.urlString];
+            [result addObject:@[entry.urlString, entry.name.length > 0 ? entry.name : (entry.host ?: entry.urlString)]];
+        }
+    }
+    for (NSArray *entry in [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"]) {
+        if (![entry isKindOfClass:NSArray.class] || entry.count == 0 || ![entry[0] isKindOfClass:NSString.class]) {
+            continue;
+        }
+        NSString *URLString = entry[0];
+        NSString *title = entry.count > 1 && [entry[1] isKindOfClass:NSString.class] ? entry[1] : @"";
+        NSString *displayTitle = [self displayTitleForStoredTitle:title URLString:URLString includeURL:NO];
+        if (URLString.length > 0 && ![seen containsObject:URLString] && [self stringHasVisibleContent:displayTitle]) {
+            [seen addObject:URLString];
+            [result addObject:@[URLString, displayTitle]];
+        }
+    }
+    return result;
+}
+
+- (NSString *)homePageDisplayName {
+    NSString *current = self.preferencesStore.homePageURLString;
+    if (![self stringHasVisibleContent:current]) {
+        return @"Google";
+    }
+    for (NSArray<NSString *> *candidate in [self homePageFavoriteCandidates]) {
+        if ([candidate[0] isEqualToString:current]) {
+            return candidate[1];
+        }
+    }
+    NSString *host = [NSURL URLWithString:current].host ?: current;
+    return [host hasPrefix:@"www."] ? [host substringFromIndex:4] : host;
+}
+
+- (void)setHomePageURLStringAndRefresh:(NSString *)URLString {
+    self.preferencesStore.homePageURLString = URLString ?: @"";
+}
+
+- (void)presentHomePageChooser {
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Startseite"
+                                                                       message:[NSString stringWithFormat:@"Aktuell: %@", [self homePageDisplayName]]];
+    __weak typeof(self) weakSelf = self;
+
+    [alertController addAction:[self browserActionWithTitle:@"Google"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(__unused UIAlertAction *action) {
+        [weakSelf setHomePageURLStringAndRefresh:@""];
+    }]];
+
+    for (NSArray<NSString *> *candidate in [self homePageFavoriteCandidates]) {
+        NSString *URLString = candidate[0];
+        [alertController addAction:[self browserActionWithTitle:candidate[1]
+                                                          style:UIAlertActionStyleDefault
+                                                        handler:^(__unused UIAlertAction *action) {
+            [weakSelf setHomePageURLStringAndRefresh:URLString];
+        }]];
+    }
+
+    NSString *currentURL = [[self.host browserWebView] request].URL.absoluteString;
+    if ([self stringHasVisibleContent:currentURL] && [currentURL hasPrefix:@"http"]) {
+        NSString *host = [NSURL URLWithString:currentURL].host ?: currentURL;
+        [alertController addAction:[self browserActionWithTitle:[NSString stringWithFormat:@"Diese Seite (%@)", host]
+                                                          style:UIAlertActionStyleDefault
+                                                        handler:^(__unused UIAlertAction *action) {
+            [weakSelf setHomePageURLStringAndRefresh:currentURL];
+        }]];
+    }
+
+    [alertController addAction:[self browserActionWithTitle:@"Adresse eingeben …"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(__unused UIAlertAction *action) {
+        [weakSelf presentHomePageAddressPrompt];
+    }]];
+    [alertController addAction:[self browserCancelAction]];
+    [self.host browserPresentViewController:alertController];
+}
+
+- (void)presentHomePageAddressPrompt {
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Startseite" message:@"Adresse der Startseite"];
+    __weak typeof(self) weakSelf = self;
+    __weak UIAlertController *weakAlert = alertController;  // Aktion im Dialog: schwach, sonst Zyklus
+    NSString *current = self.preferencesStore.homePageURLString;
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.keyboardType = UIKeyboardTypeURL;
+        textField.placeholder = @"z. B. google.com";
+        textField.text = current;
+        textField.textColor = MenuTextColor();
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        [textField setReturnKeyType:UIReturnKeyDone];
+    }];
+    [alertController addAction:[self browserActionWithTitle:@"Sichern"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(__unused UIAlertAction *action) {
+        NSString *text = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (text.length == 0) {
+            [weakSelf setHomePageURLStringAndRefresh:@""];
+            return;
+        }
+        if ([text rangeOfString:@"://"].location == NSNotFound) {
+            text = [@"https://" stringByAppendingString:text];
+        }
+        if ([NSURL URLWithString:text].host.length > 0) {
+            [weakSelf setHomePageURLStringAndRefresh:text];
+        }
+    }]];
+    [alertController addAction:[self browserCancelAction]];
+    [self.host browserPresentViewController:alertController];
 }
 
 - (BrowserAdvancedMenuItem *)usageGuideMenuItem {
@@ -1448,11 +1564,11 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self pageZoomMenuItem],
             [self adBlockSiteMenuItem],
             [self cookieBannerSiteMenuItem],
-            [self setCurrentPageAsHomePageMenuItem],
         ]]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Navigation"
                                                items:@[
             [self homePageMenuItem],
+            [self homePageSettingMenuItem],
             [self favoritesMenuItem],
             [self historyMenuItem],
             [self showTabsMenuItem],

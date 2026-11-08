@@ -502,6 +502,14 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     [self showAdvancedMenu];
                     return;
                 }
+                if ([step isEqualToString:@"homechooser"]) {
+                    // Auswahl „Startseite festlegen“ direkt öffnen (sonst über die Seitenleiste).
+                    SEL chooser = NSSelectorFromString(@"presentHomePageChooser");
+                    if ([self.menuCoordinator respondsToSelector:chooser]) {
+                        ((void (*)(id, SEL))objc_msgSend)(self.menuCoordinator, chooser);
+                    }
+                    return;
+                }
                 if ([step isEqualToString:@"scrollend"]) {
                     // Scrollt die Liste im gezeigten Dialog ans Ende (für Screenshots langer Menüs).
                     UIViewController *top = self.view.window.rootViewController ?: self;
