@@ -70,7 +70,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)init NS_UNAVAILABLE;
 
-- (void)handleGlobalSelectPressEndedNotification;
+/// Auswahl-Druck aus UIApplication sendEvent: (timestamp = UIPress.timestamp, 0 = unbekannt). Kam derselbe Druck
+/// schon direkt an, passiert nichts.
+- (void)handleGlobalSelectPressEndedWithTimestamp:(NSTimeInterval)timestamp;
 - (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;

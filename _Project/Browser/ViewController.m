@@ -83,11 +83,13 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @interface BrowserSelfTestPress : UIPress
 @property (nonatomic) UIPressType selfTestType;
 @property (nonatomic) UIPressPhase selfTestPhase;
+@property (nonatomic) NSTimeInterval selfTestTimestamp;
 @end
 
 @implementation BrowserSelfTestPress
 - (UIPressType)type { return self.selfTestType; }
 - (UIPressPhase)phase { return self.selfTestPhase; }
+- (NSTimeInterval)timestamp { return self.selfTestTimestamp; }
 @end
 
 #import <mach/mach.h>
@@ -925,7 +927,8 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
 - (void)handleGlobalSelectPressEndedNotification:(NSNotification *)notification {
     (void)notification;
-    [self.remoteInputController handleGlobalSelectPressEndedNotification];
+    NSNumber *timestamp = [notification.userInfo[@"timestamp"] isKindOfClass:NSNumber.class] ? notification.userInfo[@"timestamp"] : nil;
+    [self.remoteInputController handleGlobalSelectPressEndedWithTimestamp:timestamp.doubleValue];
 }
 
 #pragma mark - Helpers

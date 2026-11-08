@@ -483,6 +483,8 @@ static CGFloat BrowserDistanceToRect(CGPoint point, CGRect rect) {
 @property (nonatomic) CFTimeInterval manualScrollLastTimestamp;
 @property (nonatomic) CFTimeInterval manualScrollLastMovementTimestamp;
 @property (nonatomic) CFTimeInterval lastDirectSelectPressTimestamp;
+/// UIPress.timestamp des zuletzt direkt verarbeiteten Auswahl-Drucks (Doppelzustellung über sendEvent: erkennen).
+@property (nonatomic) NSTimeInterval lastDirectSelectPressEventTime;
 @property (nonatomic) BOOL playPauseLongPressFired;
 @property (nonatomic) BOOL playPauseSinglePending;
 @property (nonatomic) CFTimeInterval lastUpPressTimestamp;
@@ -1195,8 +1197,20 @@ enum { kHistoryCount = 32 };
 
 #pragma mark - Klick
 
-- (void)handleGlobalSelectPressEndedNotification {
+- (void)handleGlobalSelectPressEndedWithTimestamp:(NSTimeInterval)timestamp {
     if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
+#if DEBUG
+        NSLog(@"[Keys] Auswahl über sendEvent bei offenem Dialog, ignoriert");
+#endif
+        return;
+    }
+    // Derselbe Druck wurde schon direkt verarbeitet. Nur über die Zeit seit dem Klick zu prüfen reichte nicht:
+    // Dauerte der Klick länger als 0,15 s (z. B. Leiste ausklappen mit Karte), kam er hier ein zweites Mal an
+    // und traf das gerade geöffnete Adressfeld.
+    if (timestamp > 0.0 && timestamp == self.lastDirectSelectPressEventTime) {
+#if DEBUG
+        NSLog(@"[Keys] Auswahl doppelt (sendEvent), verworfen");
+#endif
         return;
     }
     if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
@@ -1388,7 +1402,10 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
             return YES;
         }
         self.lastDirectSelectPressTimestamp = CACurrentMediaTime();
+        self.lastDirectSelectPressEventTime = press.timestamp;
         [self performSelectAction];
+        // Zeit erst nach dem Klick setzen: Die Kopie aus sendEvent: kommt direkt danach.
+        self.lastDirectSelectPressTimestamp = CACurrentMediaTime();
         return YES;
     }
 
