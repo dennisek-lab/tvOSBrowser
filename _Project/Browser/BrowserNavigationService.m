@@ -89,8 +89,12 @@ static NSUInteger const kMaximumHistoryCount = 100;
 }
 
 - (BOOL)shouldIgnoreLoadError:(NSError *)error {
-    NSInteger errorCode = error.code;
-    return errorCode == 999 || errorCode == 204;
+    // Abgebrochen (NSURLErrorCancelled, -999): eine neue Navigation (Zurück/Vor, neue Adresse, Weiterleitung per
+    // Skript) hat die laufende ersetzt. Das ist kein Fehler für den Nutzer. 204: Plug-in übernimmt das Laden (WebKit).
+    if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) {
+        return YES;
+    }
+    return error.code == 204;
 }
 
 - (NSURLRequest *)requestForURLString:(NSString *)URLString {

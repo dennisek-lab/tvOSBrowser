@@ -86,6 +86,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSString * _Nonnull)runtimeMediaPreferenceReport;
 - (void)setUserAgent:(NSString * _Nullable)userAgent;
 - (void)pauseAllMediaPlayback;
+/// Seite endgültig schließen (Tab zu): beendet Laden, offene Rückrufe und den Seitenprozess, auch wenn WebKit
+/// intern noch Verweise auf die WKWebView hält. Danach ist die WebView nicht mehr verwendbar.
+- (void)closePage;
 
 /// Gemeinsamer WKWebsiteDataStore aller Tabs (per Laufzeit angesprochen).
 + (nullable id)defaultWebsiteDataStore;

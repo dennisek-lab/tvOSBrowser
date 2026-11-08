@@ -13,6 +13,7 @@
 #import "BrowserGuideViewController.h"
 #import "BrowserPerf.h"
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import "BrowserHistoryStore.h"
 #import "BrowserIntelligence.h"
 #import "BrowserIntelligenceController.h"
@@ -88,6 +89,26 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 - (UIPressType)type { return self.selfTestType; }
 - (UIPressPhase)phase { return self.selfTestPhase; }
 @end
+
+#import <mach/mach.h>
+
+/// Eigener Speicher (phys_footprint wie `footprint`/Jetsam) in MB, -1 bei Fehler.
+static double BrowserSelfTestFootprintMB(void) {
+    task_vm_info_data_t info;
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) {
+        return -1.0;
+    }
+    return info.phys_footprint / (1024.0 * 1024.0);
+}
+
+/// Geschlossene WebViews (schwach gehalten): bleiben welche am Leben, ist irgendwo ein Zyklus.
+static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
+    static NSHashTable *table;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ table = [NSHashTable weakObjectsHashTable]; });
+    return table;
+}
 #endif
 
 @implementation ViewController
@@ -216,10 +237,23 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
     // Lange Testläufe ohne Eingabe: sonst startet der Bildschirmschoner und hält die App an.
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSArray<NSString *> *steps = [spec componentsSeparatedByString:@";"];
+    // Abstand der Schritte in Sekunden (Vorgabe 3), für Stresstests kürzer: POINTER_SELFTEST_INTERVAL=0.5
+    double interval = [NSProcessInfo.processInfo.environment[@"POINTER_SELFTEST_INTERVAL"] doubleValue];
+    if (interval <= 0.0) {
+        interval = 3.0;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self dismissViewControllerAnimated:NO completion:nil];
         [steps enumerateObjectsUsingBlock:^(NSString *step, NSUInteger index, __unused BOOL *stop) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((index * 3 + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((index * interval + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (index + 1 == steps.count) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(interval * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        NSLog(@"[SelfTest] fertig %lu Schritte", (unsigned long)steps.count);
+                    });
+                }
+                if ([self runStressSelfTestStep:step]) {
+                    return;
+                }
                 if ([self.intelligenceController runSelfTestStep:step]) {
                     return; // ai, summarize, translate, translate:hint, translate:reset
                 }
@@ -659,6 +693,143 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
             });
         }];
     });
+}
+
+/// Schritte für Stabilitätstests: mem, memwarn, wkprobe, procs, stop, newtab, closetab, back, forward.
+- (BOOL)runStressSelfTestStep:(NSString *)step {
+    if ([step isEqualToString:@"mem"]) {
+        NSHashTable *closed = BrowserSelfTestClosedWebViews();
+        id pool = [[[self.webview valueForKey:@"runtimeWebView"] valueForKey:@"configuration"] valueForKey:@"processPool"];
+        SEL countSelector = NSSelectorFromString(@"_webProcessCount");
+        SEL activeSelector = NSSelectorFromString(@"_webProcessCountIgnoringPrewarmedAndCached");
+        NSUInteger processes = [pool respondsToSelector:countSelector] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(pool, countSelector) : 0;
+        NSUInteger active = [pool respondsToSelector:activeSelector] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(pool, activeSelector) : 0;
+        NSMutableArray<NSString *> *alive = [NSMutableArray array];
+        for (id object in closed.allObjects) {
+            [alive addObject:NSStringFromClass([object class])];
+        }
+        // Sitzungen des DNS-Proxys leben auf dessen Warteschlange.
+        id proxy = [NSClassFromString(@"BrowserDNSProxy") valueForKey:@"sharedProxy"];
+        dispatch_queue_t proxyQueue = [proxy valueForKey:@"queue"];
+        __block NSUInteger proxySessionCount = 0;
+        if (proxyQueue != nil) {
+            dispatch_sync(proxyQueue, ^{ proxySessionCount = [[proxy valueForKey:@"sessions"] count]; });
+        }
+        NSLog(@"[SelfTest] mem footprint=%.1f MB tabs=%lu geschlossene WebViews lebend=%lu [%@] Proxy-Sitzungen=%lu Seitenprozesse=%lu (ohne vorgewärmte %lu) presented=%@ url=%@",
+              BrowserSelfTestFootprintMB(), (unsigned long)self.viewModel.tabs.count, (unsigned long)closed.allObjects.count,
+              [alive componentsJoinedByString:@","], (unsigned long)proxySessionCount,
+              (unsigned long)processes, (unsigned long)active,
+              NSStringFromClass(self.presentedViewController.class), self.webview.request.URL.host ?: @"-");
+        return YES;
+    }
+    if ([step isEqualToString:@"memwarn"]) {
+        // Wie „Simulate Memory Warning“ im Simulator: UIKit verschickt die Warnung an App, Controller und Caches.
+        SEL perform = NSSelectorFromString(@"_performMemoryWarning");
+        UIApplication *application = UIApplication.sharedApplication;
+        double before = BrowserSelfTestFootprintMB();
+        if ([application respondsToSelector:perform]) {
+            ((void (*)(id, SEL))objc_msgSend)(application, perform);
+        } else {
+            [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidReceiveMemoryWarningNotification object:application];
+        }
+        NSLog(@"[SelfTest] memwarn vorher=%.1f MB nachher=%.1f MB", before, BrowserSelfTestFootprintMB());
+        return YES;
+    }
+    if ([step isEqualToString:@"wkprobe"]) {
+        // Private Stellschrauben für Prozesse und Caches (nur Bestandsaufnahme).
+        for (NSString *className in @[@"WKProcessPool", @"_WKProcessPoolConfiguration", @"WKPreferences", @"WKWebViewConfiguration", @"WKWebsiteDataStore", @"_WKWebsiteDataStoreConfiguration"]) {
+            Class cls = NSClassFromString(className);
+            NSMutableArray<NSString *> *found = [NSMutableArray array];
+            for (int meta = 0; meta < 2 && cls != Nil; meta++) {
+                unsigned int count = 0;
+                Method *methods = class_copyMethodList(meta ? object_getClass(cls) : cls, &count);
+                for (unsigned int i = 0; i < count; i++) {
+                    NSString *name = NSStringFromSelector(method_getName(methods[i]));
+                    NSString *lower = name.lowercaseString;
+                    if ([lower containsString:@"cache"] || [lower containsString:@"prewarm"] || [lower containsString:@"swap"] ||
+                        [lower containsString:@"processcount"] || [lower containsString:@"suspend"] || [lower containsString:@"memory"]) {
+                        [found addObject:[(meta ? @"+" : @"-") stringByAppendingString:name]];
+                    }
+                }
+                free(methods);
+            }
+            NSLog(@"[SelfTest] wkprobe %@: %@", className, [found componentsJoinedByString:@" "]);
+        }
+        [self logSelfTestProcessPool];
+        return YES;
+    }
+    if ([step isEqualToString:@"procs"]) {
+        [self logSelfTestProcessPool];
+        return YES;
+    }
+    if ([step isEqualToString:@"stop"]) {
+        NSLog(@"[SelfTest] stop loading=%d url=%@", self.webview.loading, self.webview.request.URL.absoluteString ?: @"-");
+        id runtimeWebView = [self.webview valueForKey:@"runtimeWebView"];
+        if ([runtimeWebView respondsToSelector:@selector(stopLoading)]) {
+            ((void (*)(id, SEL))objc_msgSend)(runtimeWebView, @selector(stopLoading));
+        }
+        return YES;
+    }
+    if ([step isEqualToString:@"newtab"]) {
+        [self browserCommandNewTab];
+        NSLog(@"[SelfTest] newtab tabs=%lu", (unsigned long)self.viewModel.tabs.count);
+        return YES;
+    }
+    if ([step isEqualToString:@"closetab"]) {
+        BrowserWebView *closing = self.webview;
+        if (closing != nil) {
+            [BrowserSelfTestClosedWebViews() addObject:closing];
+            id runtimeWebView = [closing valueForKey:@"runtimeWebView"];
+            if (runtimeWebView != nil) {
+                [BrowserSelfTestClosedWebViews() addObject:runtimeWebView];
+            }
+        }
+        [self browserCommandCloseTab];
+        NSLog(@"[SelfTest] closetab tabs=%lu", (unsigned long)self.viewModel.tabs.count);
+        return YES;
+    }
+    if ([step isEqualToString:@"back"] || [step isEqualToString:@"forward"]) {
+        BOOL ok = [step isEqualToString:@"back"] ? [self browserCommandGoBack] : [self browserCommandGoForward];
+        NSLog(@"[SelfTest] %@ ok=%d", step, ok);
+        return YES;
+    }
+    return NO;
+}
+
+/// Zustand des gemeinsamen WKProcessPool: Seitenprozesse, zwischengespeicherte/ausgesetzte Seiten, Vorwärmen.
+- (void)logSelfTestProcessPool {
+    id runtimeWebView = [self.webview valueForKey:@"runtimeWebView"];
+    id configuration = [runtimeWebView valueForKey:@"configuration"];
+    id pool = [configuration valueForKey:@"processPool"];
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    for (NSString *key in @[@"_webProcessCount", @"_webPageContentProcessCount", @"_webProcessCountIgnoringPrewarmed",
+                            @"_webProcessCountIgnoringPrewarmedAndCached", @"_maximumSuspendedPageCount", @"_processCacheCapacity",
+                            @"_processCacheSize", @"_prewarmedProcessCountLimit", @"_hasPrewarmedWebProcess"]) {
+        SEL selector = NSSelectorFromString(key);
+        if ([pool respondsToSelector:selector]) {
+            NSMethodSignature *signature = [pool methodSignatureForSelector:selector];
+            NSUInteger value = 0;
+            if (signature.methodReturnLength <= sizeof(NSUInteger)) {
+                value = ((NSUInteger (*)(id, SEL))objc_msgSend)(pool, selector);
+                if (signature.methodReturnLength == 1) {
+                    value &= 0xFF;
+                }
+            }
+            [parts addObject:[NSString stringWithFormat:@"%@=%lu", [key substringFromIndex:1], (unsigned long)value]];
+        }
+    }
+    id poolConfiguration = [pool respondsToSelector:NSSelectorFromString(@"_configuration")] ? [pool valueForKey:@"_configuration"] : nil;
+    for (NSString *key in @[@"pageCacheEnabled", @"usesWebProcessCache", @"prewarmsProcessesAutomatically", @"processSwapsOnNavigation",
+                            @"suspendsWebProcessesAggressivelyOnMemoryPressure", @"maximumProcessCount"]) {
+        if ([poolConfiguration respondsToSelector:NSSelectorFromString(key)]) {
+            [parts addObject:[NSString stringWithFormat:@"%@=%@", key, [poolConfiguration valueForKey:key]]];
+        }
+    }
+    id preferences = [configuration valueForKey:@"preferences"];
+    if ([preferences respondsToSelector:NSSelectorFromString(@"_usesPageCache")]) {
+        [parts addObject:[NSString stringWithFormat:@"usesPageCache=%@", [preferences valueForKey:@"_usesPageCache"]]];
+    }
+    NSLog(@"[SelfTest] procs pool=%p %@", pool, [parts componentsJoinedByString:@" "]);
 }
 
 /// press:<taste>[@ms] – Taste über die Responder-Kette wie von der Fernbedienung: menu, playpause, playpause2
@@ -2364,6 +2535,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 }
 
 - (void)webView:(id)webView didFailLoadWithError:(NSError *)error {
+#if DEBUG
+    NSLog(@"[Load] Fehler %@ %ld %@ (%@)", error.domain, (long)error.code,
+          [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString] ?: @"-", error.localizedDescription);
+#endif
     BrowserTabViewModel *tab = [self.tabCoordinator tabForWebView:webView];
     if (tab == nil) {
         return;

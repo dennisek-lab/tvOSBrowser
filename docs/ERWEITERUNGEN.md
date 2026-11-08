@@ -142,6 +142,11 @@ Reihenfolge nach Wahrscheinlichkeit, dass etwas bricht. Geräteablauf siehe [Abs
 - **Prüfen am Gerät:** `xcrun devicectl device info files --device <UDID> --domain-type systemCrashLogs` listet `JetsamEvent-…ips` (Zeitstempel = Abbruch), kopieren mit `xcrun devicectl device copy from --device <UDID> --domain-type systemCrashLogs --source <Datei> --destination x.ips`; im JSON unter `processes` den Eintrag mit `reason` suchen. Jetsam-Berichte werden gedrosselt, nicht jeder Abbruch erzeugt eine Datei.
 - **Test:** `POINTER_SELFTEST="url:about:blank;clearall;wait;wait;url:https://www.bild.de;wait;js:document.readyState+' '+document.documentElement.scrollHeight;wait;wait;wait;wait"` – erwartet `payWallAccepted`, `[WebProcess] … -> neu laden`, danach `js interactive|complete … ` mit Höhe ~28.000 und sichtbarer Startseite.
 
+### 3.2 Seitenprozesse, Tab schließen, Dateilimit
+- **Mehrere WebContent-Prozesse bei einem Tab sind normal.** Jede `BrowserWebView` hat einen eigenen `WKProcessPool`. WebKit wechselt bei Navigation den Prozess (`processSwapsOnNavigation`), behält bis zu 2 ausgesetzte Seiten im Back-Forward-Cache (`_maximumSuspendedPageCount=2`, `pageCacheEnabled=1`) und wärmt 1 Prozess vor (`_prewarmedProcessCountLimit=1`, `usesWebProcessCache=0`). Ein Tab kommt so auf bis zu 4 Seitenprozesse. Eine Speicherwarnung der App gibt sie nicht frei. Stellschrauben, falls das am Gerät zu viel Speicher kostet (Zurück wird dann langsamer): `_WKProcessPoolConfiguration setPageCacheEnabled:`, `setPrewarmsProcessesAutomatically:`, `setSuspendsWebProcessesAggressivelyOnMemoryPressure:`, `WKPreferences _setUsesPageCache:`. Prüfen mit den Selbsttest-Schritten `procs` und `mem` (14.2).
+- **Tab schließen:** `BrowserTabCoordinator closeTabAtIndex:` und `recreateActiveWebViewPreservingCurrentURL` rufen `-[BrowserWebView closePage]` (privat `-[WKWebView _close]`). Ohne das blieb eine WKWebView, deren Tab während des Ladens geschlossen wurde, samt Seitenprozess am Leben. Test: `mem` nach `closetab` muss `geschlossene WebViews lebend=0` zeigen.
+- **Dateilimit:** Jede Verbindung über den DNS-Proxy kostet die App zwei Sockets. `BrowserDNSProxy raiseOpenFileLimit` hebt das Limit beim Start von 256 auf 4096 (Log `[DNSProxy] Limit offener Dateien 256 -> 4096`). Ohne das scheiterten nach einigen großen Seiten neue Verbindungen (Network-Fehler -24 = EMFILE, WebKit zeigt „bad URL“, -1000). Offene Dateien zählen: `lsof -p <PID> | wc -l`.
+
 **Aktualisieren.** Neue private Selektoren: in den WebKit-Headern der Xcode-SDK (`WKWebView+Private.h` ist nicht enthalten) oder per `class_copyMethodList` zur Laufzeit suchen; die Debug-Hilfe `runtimeMediaPreferenceReport` listet Preferences. Bitwerte der Rendering-Ereignisse (`_WKRenderingProgressEvents`) am WebKit-Quellcode der passenden Version prüfen.
 
 ---
@@ -936,7 +941,7 @@ Hinweise: Umgebungsvariablen müssen mit `DEVICECTL_CHILD_` beginnen, damit sie 
 Neue Quelldateien ins Xcode-Projekt eintragen: `tools/add_source.py Name.h Name.m` (Anker `BrowserWebView.m`); Ordner als Ressource: `tools/add_resource.py <Ordner>`.
 
 ### 14.2 Selbsttest-Format
-Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRequested`, aufgerufen aus `viewDidAppear:`). Die Umgebungsvariable `POINTER_SELFTEST` enthält Schritte, getrennt durch `;`. 5 s nach dem Erscheinen werden offene Dialoge geschlossen, dann läuft Schritt *i* nach `i·3 + 1` Sekunden. Danach `viewDidAppear` kommt nach jedem Dialog erneut, der Test startet aber nur einmal (`started`). Ausgabe immer mit Präfix `[SelfTest]`.
+Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRequested`, aufgerufen aus `viewDidAppear:`). Die Umgebungsvariable `POINTER_SELFTEST` enthält Schritte, getrennt durch `;`. 5 s nach dem Erscheinen werden offene Dialoge geschlossen, dann läuft Schritt *i* nach `i·3 + 1` Sekunden. `POINTER_SELFTEST_INTERVAL=<s>` ändert den Abstand (z. B. `1` für schnelle Stresstests, auch Bruchteile); nach dem letzten Schritt erscheint `[SelfTest] fertig N Schritte`. Danach `viewDidAppear` kommt nach jedem Dialog erneut, der Test startet aber nur einmal (`started`). Ausgabe immer mit Präfix `[SelfTest]`.
 
 | Schritt | Bedeutung | Logzeile / Wirkung |
 |:--|:--|:--|
@@ -987,6 +992,13 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `translate:hint` / `translate:reset` | Kapsel „Übersetzen?“ erzwingen (für Screenshots) / abgelehnte Hosts und Sitzungsliste leeren | `translate:hint <host>` / `translate:reset` |
 | `ask:<frage>` | „Frag die Seite“ (Abschnitt 19.2): Stelle suchen, markieren, Karte zeigen | `ask <frage>`, `[Reader] text -> …`, `[AI] Fundstelle #…`, `[AI] frag "…": N Treffer …`, `[AI] markieren: …`, `[AI] Antwort 1/N markiert=0\|1 …` |
 | `ask:next` | nächste Fundstelle (wie Play/Pause bei offener Karte) | `[AI] Antwort 2/N …` |
+| `mem` | Speicher und Lebenszeit: Footprint der App (`phys_footprint`), Tabs, wie viele WebViews geschlossener Tabs noch leben (schwache Liste, gefüllt von `closetab`), offene DNS-Proxy-Sitzungen, Seitenprozesse des Prozesspools (`_webProcessCount`, ohne vorgewärmte/zwischengespeicherte) | `mem footprint=… MB tabs=N geschlossene WebViews lebend=N [Klassen] Proxy-Sitzungen=N Seitenprozesse=N (ohne vorgewärmte N) presented=… url=…` |
+| `memwarn` | Speicherwarnung auslösen (`UIApplication _performMemoryWarning`, sonst nur die Notification) | `memwarn vorher=… MB nachher=… MB` |
+| `newtab` / `closetab` | neuen Tab öffnen / aktiven Tab schließen (wie Menü); `closetab` merkt sich die WebView für `mem` | `newtab tabs=N`, `closetab tabs=N` |
+| `back` / `forward` | Zurück / Vor über den Router | `back ok=0\|1`, `forward ok=0\|1` |
+| `stop` | Laden abbrechen (`stopLoading`) | `stop loading=0\|1 url=…` |
+| `procs` | Prozesspool: Zahl der Seitenprozesse und Einstellungen (Back-Forward-Cache, Vorwärmen, Prozesswechsel, `maximumProcessCount`) | `procs pool=<Adresse> webProcessCount=… maximumSuspendedPageCount=… prewarmedProcessCountLimit=… pageCacheEnabled=… usesWebProcessCache=… …` |
+| `wkprobe` | wie `procs`, dazu private Methoden der WebKit-Klassen zu Cache, Vorwärmen, Prozessen und Speicher (zum Suchen neuer Stellschrauben) | `wkprobe <Klasse>: <Selektoren>` |
 
 Zeichen `;` und `|` dürfen in `js:`/`url:`/`fill:` nicht vorkommen (Trenner).
 
@@ -1019,6 +1031,7 @@ POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:fra
 | Präfix | Quelle | Nur DEBUG? |
 |:--|:--|:--|
 | `[Load] commit/layout/paint/finish +N ms host` | `BrowserWebView logLoadPhase:` | ja |
+| `[Load] Fehler <Domäne> <Code> <URL> (<Text>)` | `ViewController webView:didFailLoadWithError:` (vor dem Filter, also auch abgebrochene Ladevorgänge -999) | ja |
 | `[DataStore] …` | `BrowserCreatePersistentWebsiteDataStore` | nein |
 | `[WebProcess] Seitenprozess beendet (Grund N) <host> -> …` | `BrowserWebView handleWebContentProcessTerminationWithReason:` (3.1) | nein |
 | `[AdBlock] …` | `BrowserContentBlocker` | nein |
@@ -1029,7 +1042,7 @@ POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;enter:fra
 | `[NativeVideoPlayer]`, `[NativeVideoAssetLoader]`, `[YouTubeExtractor]` | Videoteile | im Code nicht geprüft |
 | `[Subtitles]`, `[Subtitles][Tap]`, `[Subtitles][HLS]`, `[Subtitles][whisper]` | `BrowserSubtitle*` (Abschnitt 10.9) | nein |
 | `[NowPlaying]` | `BrowserNowPlayingController` | im Code nicht geprüft |
-| `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary nur DEBUG) | gemischt |
+| `[DNSProxy]` | `BrowserDNSProxy` (Verbindungs-Summary und `Limit offener Dateien … -> …` nur DEBUG) | gemischt |
 | `[TopBar]` | `BrowserTopBarView` | im Code nicht geprüft |
 | `[Reader] check/toggle/exit -> a|y|n|e:…`, `[Reader] text -> <Quelle> N Zeichen (Seite M)` | `BrowserReaderMode` | ja |
 | `[AI] zusammenfassen: …`, `[AI] Karte: …`, `[AI] Übersetzen-Hinweis <host>: <Grund> …`, `[AI] übersetzen …`, `[AI] Übersetzen abgelehnt für …`, `[AI] kontextuelles Embedding …`, `[AI] frag "…": N Treffer …`, `[AI] markieren: …`, `[AI] Antwort i/N markiert=…` | `BrowserIntelligence`, `BrowserIntelligenceController` | nein (nur `[AI] Satz #…` und `[AI] Fundstelle #…` sind DEBUG) |
