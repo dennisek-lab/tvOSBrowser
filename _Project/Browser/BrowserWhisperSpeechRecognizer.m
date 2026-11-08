@@ -229,6 +229,29 @@ static NSArray<NSString *> *BrowserWhisperCollapseRepeats(NSArray<NSString *> *w
     });
 }
 
+- (void)transcribeEngineSamples:(NSData *)samples startTime:(NSTimeInterval)startTime
+                     completion:(void (^)(NSArray<BrowserSubtitleCue *> *))completion {
+    NSUInteger generation = atomic_load(&_generation);
+    dispatch_async(_engineQueue, ^{
+        NSArray<BrowserSubtitleCue *> *result = nil;
+        if (generation == atomic_load(&self->_generation) && [self ensureEngineLoaded]) {
+            NSUInteger count = samples.length / sizeof(float);
+            CFTimeInterval begin = CACurrentMediaTime();
+            result = [self->_engine transcribeSamples:samples.bytes count:count startTime:startTime];
+            double compute = CACurrentMediaTime() - begin;
+            os_unfair_lock_lock(&self->_statsLock);
+            self->_totalCompute += compute;
+            self->_totalAudio += count / 16000.0;
+            os_unfair_lock_unlock(&self->_statsLock);
+            if (generation != atomic_load(&self->_generation)) {
+                result = nil;
+            }
+        }
+        completion(result);
+        [self scheduleIdleUnload];
+    });
+}
+
 - (void)reset {
     atomic_fetch_add(&_generation, 1);
     // Laufende Auswertung abbrechen; ihr Ergebnis verwirft der Controller ohnehin (generation).

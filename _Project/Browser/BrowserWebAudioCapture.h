@@ -39,6 +39,9 @@ typedef struct {
     /// Video-Rechteck in Koordinaten der BrowserWebView (Leisteneinschub und Scrollen berücksichtigt),
     /// CGRectNull, wenn unbekannt.
     CGRect videoRect;
+    /// video.getStartDate() in Sekunden seit 1970 (Live-HLS mit PROGRAM-DATE-TIME), 0 = unbekannt.
+    /// Datum der Position = startDate + mediaTime.
+    NSTimeInterval startDate;
 } BrowserWebAudioPlaybackState;
 
 /// Ein dekodierter Block: 16 kHz mono Float32, `mediaTime` = Medienzeit des ersten Werts.
@@ -67,6 +70,14 @@ typedef void (^BrowserWebAudioPlaybackHandler)(BrowserWebAudioPlaybackState stat
 @property (nonatomic, copy, nullable) BrowserWebAudioStatusHandler statusHandler;
 /// Läuft auf dem Hauptthread, etwa alle 250 ms, bei Pause/Spulen sofort, beim Scrollen mit neuem Rechteck.
 @property (nonatomic, copy, nullable) BrowserWebAudioPlaybackHandler playbackHandler;
+/// Läuft auf dem Hauptthread, wenn das Skript eine (neue) Medienadresse des beobachteten Videos meldet.
+@property (nonatomic, copy, nullable) void (^mediaSourceHandler)(NSString *source, NSString *pageURL, NSString *userAgent);
+
+/// Medienadresse des Videos (`currentSrc`, auch blob:…), Adresse seines Frames (für Referer) und User-Agent der
+/// Seite, wie zuletzt vom Skript gemeldet; nil vor der ersten Meldung.
+@property (nonatomic, readonly, copy, nullable) NSString *mediaSourceURL;
+@property (nonatomic, readonly, copy, nullable) NSString *mediaPageURL;
+@property (nonatomic, readonly, copy, nullable) NSString *mediaUserAgent;
 
 @property (nonatomic, readonly) dispatch_queue_t sampleQueue;
 @property (nonatomic, readonly, weak, nullable) BrowserWebView *webView;

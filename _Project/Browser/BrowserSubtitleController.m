@@ -423,7 +423,11 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 /// findet der Tap keine Audiospur, noch einmal die HLS-Quelle (HLS ohne .m3u8 in der Adresse).
 - (void)startNextSource {
     NSString *kind = nil;
-    if ([self playbackURLLooksLikeHLS] && ![self.triedSources containsObject:@"hls"]) {
+    // Test/Messung: nur Mithören (Audio-Tap), z. B. pref:SubtitlesForceTap=YES
+    BOOL forceTap = [NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesForceTap"];
+    if (forceTap && ![self.triedSources containsObject:@"tap"]) {
+        kind = @"tap";
+    } else if ([self playbackURLLooksLikeHLS] && ![self.triedSources containsObject:@"hls"]) {
         kind = @"hls";
     } else if (![self playbackURLLooksLikeHLS] && [BrowserSubtitleProgressiveAudioSource canHandleURL:self.playbackURL] &&
                ![self.triedSources containsObject:@"mp4"]) {
@@ -641,6 +645,13 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
 
 /// Sichtbar ist ein Untertitel ab seinem Sprechbeginn bis kurz nach seinem Ende; beginnt der nächste, löst dieser ab
 /// (außer der alte kam verspätet an und braucht noch Lesezeit). Höchstens zwei gleichzeitig.
+/// Mindestanzeigedauer einer Zeile: Lesezeit (≈ 20 Zeichen/s plus 1 s), 2–4 s.
+static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
+    return MIN(4.0, MAX(2.0, 1.0 + cue.text.length * 0.05));
+}
+
+/// Rollend wie Live-Untertitel: der neue Untertitel erscheint sofort (unten), der vorige bleibt darüber stehen, bis
+/// seine Mindestanzeigedauer um ist. Höchstens zwei, und nur, wenn zusammen ≤ 3 Zeilen (sonst nur der neue).
 - (void)updateOverlayAtTime:(NSTimeInterval)time {
     NSMutableArray<BrowserSubtitleCue *> *visible = [NSMutableArray array];
     BrowserSubtitleCue *following = nil;   // der nächstspätere schon begonnene Untertitel
@@ -653,11 +664,16 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
             break;
         }
         BOOL late = cue.visibleUntil > cue.end + 0.85;   // kam nach dem Sprechbeginn an
-        NSTimeInterval until = cue.visibleUntil;
+        NSTimeInterval shownSince = isnan(cue.shownAt) ? time : MAX(cue.start, cue.shownAt);
+        NSTimeInterval until = MAX(cue.visibleUntil, shownSince + BrowserSubtitleMinimumDisplay(cue));
         if (following != nil && !late) {
-            until = MIN(until, MAX(following.start, cue.start + 1.0));
+            // vom Nachfolger verdrängt, aber nicht vor der Mindestanzeigedauer
+            until = MIN(until, MAX(following.start, shownSince + BrowserSubtitleMinimumDisplay(cue)));
         }
         if (until > time) {
+            if (visible.count == 1 && cue.text.length + visible.firstObject.text.length > 120) {
+                break;   // zu viel Text für drei Zeilen: nur der neue
+            }
             [visible insertObject:cue atIndex:0];
         }
         following = cue;

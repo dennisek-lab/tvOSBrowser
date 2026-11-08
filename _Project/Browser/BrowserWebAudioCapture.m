@@ -45,6 +45,9 @@ static NSString *BrowserWebAudioScriptSource(void) {
 @property (nonatomic, readwrite, copy) NSString *statusDetail;
 @property (nonatomic, readwrite) BrowserWebAudioPlaybackState playbackState;
 @property (nonatomic, readwrite, getter=isActive) BOOL active;
+@property (nonatomic, readwrite, copy, nullable) NSString *mediaSourceURL;
+@property (nonatomic, readwrite, copy, nullable) NSString *mediaPageURL;
+@property (nonatomic, readwrite, copy, nullable) NSString *mediaUserAgent;
 @property (nonatomic, weak, nullable) UIScrollView *observedScrollView;
 @property (nonatomic) CGPoint contentOffsetAtReport;
 @property (nonatomic) CGRect cssRectAtReport;
@@ -187,6 +190,7 @@ static NSString *BrowserWebAudioScriptSource(void) {
     proxy.capture = self;
     self.webView = webView;
     self.active = YES;
+    self.mediaSourceURL = nil;
     [self resetSegment];
     [self observeScrollOfWebView:webView];
     [self updateStatus:BrowserWebAudioCaptureStatusStarting detail:@""];
@@ -228,9 +232,11 @@ static NSString *BrowserWebAudioScriptSource(void) {
     [webView evaluateJavaScriptAsync:@"window.__browserWebAudio && window.__browserWebAudio.stop()"];
     [self stopObservingScroll];
     [self resetSegment];
+    self.mediaSourceURL = nil;
     BrowserWebAudioPlaybackState state = self.playbackState;
     state.videoRect = CGRectNull;
     state.paused = YES;
+    state.startDate = 0.0;
     self.playbackState = state;
     [self updateStatus:BrowserWebAudioCaptureStatusStopped detail:@""];
 }
@@ -263,15 +269,18 @@ static NSString *BrowserWebAudioScriptSource(void) {
     }
     if ([type isEqualToString:@"time"]) {
         [self handleTime:message];
+        [self noteMediaInfo:message];
         return;
     }
     if ([type isEqualToString:@"state"]) {
+        [self noteMediaInfo:message];   // zuerst: der Controller entscheidet am Zustand, ob er den Ton selbst lädt
         [self handleState:message];
         return;
     }
     if ([type isEqualToString:@"ready"]) {
         // Neue Seite im Hauptframe: Abgriff dort erneut starten.
         [self resetSegment];
+        self.mediaSourceURL = nil;
         [self updateStatus:BrowserWebAudioCaptureStatusStarting detail:@"navigation"];
         [self sendStartCommandIncludingScript:NO];
     }
@@ -307,8 +316,24 @@ static NSString *BrowserWebAudioScriptSource(void) {
     NSLog(@"[WebAudio] Zustand %@%@ (Skript: %@%@, %@ Hz, ctx=%@%@%@)", state, reason.length ? [@" " stringByAppendingString:reason] : @"",
           message[@"mode"] ?: @"", [message[@"fallback"] length] ? [NSString stringWithFormat:@", Fallback %@", message[@"fallback"]] : @"",
           message[@"inRate"] ?: @0, message[@"ctx"] ?: @"", [message[@"frame"] integerValue] ? @", iframe" : @"",
-          message[@"src"] ? [NSString stringWithFormat:@", src=%@", message[@"src"]] : @"");
+          [message[@"src"] isKindOfClass:NSString.class] ? [NSString stringWithFormat:@", src=%@", [message[@"src"] substringToIndex:MIN((NSUInteger)120, [message[@"src"] length])]] : @"");
     [self updateStatus:status detail:reason];
+}
+
+/// Medienadresse aus 'state'/'time' übernehmen; bei Änderung `mediaSourceHandler`.
+- (void)noteMediaInfo:(NSDictionary *)message {
+    NSString *source = [message[@"src"] isKindOfClass:NSString.class] ? message[@"src"] : nil;
+    if (source.length == 0 || [source isEqualToString:self.mediaSourceURL]) {
+        return;
+    }
+    self.mediaSourceURL = source;
+    self.mediaPageURL = [message[@"page"] isKindOfClass:NSString.class] ? message[@"page"] : self.webView.committedURL.absoluteString;
+    self.mediaUserAgent = [message[@"ua"] isKindOfClass:NSString.class] ? message[@"ua"] : nil;
+    NSLog(@"[WebAudio] Medienadresse %@ (Frame %@)", source.length > 160 ? [[source substringToIndex:160] stringByAppendingString:@"…"] : source,
+          self.mediaPageURL ?: @"?");
+    if (self.mediaSourceHandler != nil) {
+        self.mediaSourceHandler(source, self.mediaPageURL ?: @"", self.mediaUserAgent ?: @"");
+    }
 }
 
 - (void)updateStatus:(BrowserWebAudioCaptureStatus)status detail:(NSString *)detail {
@@ -331,6 +356,7 @@ static NSString *BrowserWebAudioScriptSource(void) {
     state.paused = [message[@"paused"] boolValue];
     state.seeking = [message[@"seeking"] boolValue];
     state.fullscreen = [message[@"fs"] boolValue];
+    state.startDate = [message[@"sd"] doubleValue] > 0.0 ? [message[@"sd"] doubleValue] / 1000.0 : 0.0;
     NSArray *rect = [message[@"rect"] isKindOfClass:NSArray.class] ? message[@"rect"] : nil;
     self.cssViewportWidth = [message[@"w"] doubleValue];
     self.videoFixed = [message[@"fx"] boolValue];

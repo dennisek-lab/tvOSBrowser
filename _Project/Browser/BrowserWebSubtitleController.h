@@ -8,13 +8,18 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Verbindet Tonabgriff (BrowserWebAudioCapture), Erkennung (BrowserSpeechRecognizing) und Anzeige
+/// Verbindet Tonquelle, Erkennung (BrowserSpeechRecognizing, über BrowserSubtitlePipeline) und Anzeige
 /// (BrowserWebSubtitleOverlay) für Videos in der Webseite (Weg B).
 ///
-/// Ablauf: Das Seiten-Skript schickt Blöcke von 0,5 s. Sind `windowDuration − overlapDuration` Sekunden neu
-/// dazugekommen, wird der letzte Abschnitt von `windowDuration` Sekunden aus dem Ringpuffer an die Erkennung
-/// gegeben (nie zwei gleichzeitig; ist die Erkennung zu langsam, wird übersprungen statt gestaut). Die Cues
-/// ersetzen in der Anzeige alle bisherigen ab Abschnittsbeginn. Bei Spulen oder Pause beginnt ein neuer Abschnitt.
+/// Zwei Tonquellen:
+/// - Vorausquelle (bevorzugt): Meldet das Seiten-Skript eine ladbare Medienadresse (http/https, kein blob:),
+///   lädt die App den Ton selbst – MP4/MOV über BrowserSubtitleProgressiveAudioSource, HLS (auch live) über
+///   BrowserSubtitleHLSAudioSource, mit Cookies, Referer und User-Agent der Seite – gekoppelt an `currentTime`
+///   des Seitenvideos (Live-HLS mit Datum: `getStartDate()` + `currentTime`). Text liegt vor dem Sprechen bereit.
+///   Das geht auch, wenn Web Audio nichts liefert (natives HLS, fremde Herkunft ohne CORS, Seite nutzt Web Audio
+///   selbst, kein Web Audio); die Hinweise dazu entfallen dann. Nur Kopierschutz bleibt „nicht möglich“.
+/// - Mithören über Web Audio (Rückfall, z. B. MSE-Player mit blob:-Adresse): Blöcke von 0,5 s, die Pipeline
+///   rechnet jede Sekunde den offenen Satz neu (vorläufiger Text wird ersetzt), Text ≈ 1–1,5 s nach dem Sprechen.
 @interface BrowserWebSubtitleController : NSObject
 
 /// Standard: BrowserSpeechRecognizerStub. Hier später die whisper-Engine setzen (vor `startForWebView:`).
@@ -25,7 +30,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BrowserWebAudioCapture *capture;
 @property (nonatomic, readonly) BrowserWebSubtitleOverlay *overlay;
 
-/// Abschnittslänge und Überlappung in Sekunden. Standard: Vorgabe der Erkennung, sonst 3,0 und 0,5.
+/// Abschnittslänge und Überlappung der Erkennung (Vorgabe von BrowserSpeechRecognizing). Nur noch zur Auskunft;
+/// den Takt bestimmt BrowserSubtitlePipeline (Mithören: Schritt 1 s, Vorausquelle: 12-s-Abschnitte).
 @property (nonatomic) NSTimeInterval windowDuration;
 @property (nonatomic) NSTimeInterval overlapDuration;
 

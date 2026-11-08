@@ -25,6 +25,8 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
 @property (nonatomic, strong, nullable) CADisplayLink *displayLink;
 @property (nonatomic, weak, nullable) UIView *hostWebView;
 @property (nonatomic) BOOL hostedInWindow;
+/// Medienzeit, zu der ein Untertitel zuerst sichtbar war (Mindestanzeigedauer beim Rollen).
+@property (nonatomic, strong) NSMapTable<BrowserWebSubtitleCue *, NSNumber *> *shownAt;
 - (void)tick;
 @end
 
@@ -187,20 +189,50 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
     [self tick];
 }
 
-- (BrowserWebSubtitleCue *)cueAtTime:(NSTimeInterval)time {
-    BrowserWebSubtitleCue *covering = nil;
-    BrowserWebSubtitleCue *recent = nil;
-    for (BrowserWebSubtitleCue *cue in self.cues) {
-        if (cue.start > time + 0.05) {
+/// Mindestanzeigedauer einer Zeile: Lesezeit (≈ 20 Zeichen/s plus 1 s), 2–4 s.
+static NSTimeInterval BrowserWebSubtitleMinimumDisplay(BrowserWebSubtitleCue *cue) {
+    return MIN(4.0, MAX(2.0, 1.0 + cue.text.length * 0.05));
+}
+
+/// Rollend wie Live-Untertitel (wie im nativen Player): der neueste begonnene Untertitel unten, der vorige bleibt
+/// darüber, bis seine Mindestanzeigedauer um ist; höchstens zwei und zusammen ≤ 120 Zeichen (drei Zeilen).
+- (NSArray<BrowserWebSubtitleCue *> *)visibleCuesAtTime:(NSTimeInterval)time {
+    if (self.shownAt == nil) {
+        self.shownAt = [NSMapTable weakToStrongObjectsMapTable];
+    }
+    NSMutableArray<BrowserWebSubtitleCue *> *visible = [NSMutableArray array];
+    BrowserWebSubtitleCue *following = nil;
+    for (BrowserWebSubtitleCue *cue in self.cues.reverseObjectEnumerator) {
+        if (visible.count >= 2 || cue.start < time - 30.0) {
             break;
         }
-        if (time < cue.end) {
-            covering = cue; // bei Überlappung gewinnt der spätere Beginn
-        } else if (time - cue.end < self.holdDuration) {
-            recent = cue;
+        if (cue.start > time + 0.05) {
+            continue;
+        }
+        NSNumber *shown = [self.shownAt objectForKey:cue];
+        NSTimeInterval since = shown != nil ? MAX(cue.start, shown.doubleValue) : time;
+        if (since > time + 0.5) {
+            since = time;   // zurückgespult
+        }
+        NSTimeInterval minimum = since + BrowserWebSubtitleMinimumDisplay(cue);
+        NSTimeInterval until = MAX(cue.end + self.holdDuration, minimum);
+        if (following != nil) {
+            until = MIN(until, MAX(following.start, minimum));
+        }
+        if (until > time) {
+            if (visible.count == 1 && cue.text.length + visible.firstObject.text.length > 120) {
+                break;
+            }
+            [visible insertObject:cue atIndex:0];
+        }
+        following = cue;
+    }
+    for (BrowserWebSubtitleCue *cue in visible) {
+        if ([self.shownAt objectForKey:cue] == nil) {
+            [self.shownAt setObject:@(time) forKey:cue];
         }
     }
-    return covering ?: recent;
+    return visible;
 }
 
 #pragma mark - Anzeige
@@ -210,7 +242,8 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
         return;
     }
     NSTimeInterval now = self.currentMediaTime;
-    BrowserWebSubtitleCue *cue = CGRectIsNull(self.state.videoRect) && !self.state.fullscreen ? nil : [self cueAtTime:now];
+    NSArray<BrowserWebSubtitleCue *> *visible = CGRectIsNull(self.state.videoRect) && !self.state.fullscreen ? @[] : [self visibleCuesAtTime:now];
+    BrowserWebSubtitleCue *cue = visible.lastObject;
     // Bei Pause bleibt der zuletzt gezeigte Untertitel stehen (wie beim Fernsehen), solange er zur Stelle passt.
     if (cue == nil && self.state.paused && self.displayedCue != nil && [self.cues containsObject:self.displayedCue] &&
         now >= self.displayedCue.start - 0.05 && now - self.displayedCue.end < 3.0) {
@@ -222,7 +255,7 @@ static NSUInteger const kBrowserWebSubtitleMaxCues = 400;
             self.cueDidAppear(cue, now);
         }
     }
-    NSString *text = cue.text;
+    NSString *text = visible.count > 1 && cue == visible.lastObject ? [[visible valueForKey:@"text"] componentsJoinedByString:@"\n"] : cue.text;
     BOOL hint = NO;
     if (text.length == 0 && self.hintText.length > 0 && CACurrentMediaTime() < self.hintUntil) {
         text = self.hintText;
