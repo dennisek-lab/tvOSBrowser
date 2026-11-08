@@ -6,6 +6,7 @@
 #import "BrowserScriptletInjector.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebAudioCapture.h"
+#import "BrowserPerf.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -598,7 +599,13 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 }
 
 - (void)commonInitWithUserAgent:(NSString *)userAgent allowsInlineMediaPlayback:(BOOL)allowsInlineMediaPlayback {
+#if DEBUG
+    CFTimeInterval perfStart = CACurrentMediaTime();
+#endif
     BrowserEnsureWebKitRuntimeLoaded();
+#if DEBUG
+    CFTimeInterval perfWebKit = CACurrentMediaTime();
+#endif
 
     self.backgroundColor = UIColor.blackColor;
     self.userAgent = userAgent;
@@ -679,6 +686,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     [self setUserAgent:userAgent];
     self.clickTargetTracker.scrollView = [self scrollView];
     [self observeScrollOffset];
+    BrowserPerfLog(@"WebView angelegt: %.0f ms (WebKit laden %.0f ms)", (CACurrentMediaTime() - perfStart) * 1000.0, (perfWebKit - perfStart) * 1000.0);
 }
 
 - (void)observeScrollOffset {
@@ -710,6 +718,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 }
 
 - (void)dealloc {
+    BrowserPerfLog(@"BrowserWebView freigegeben");
     [_observedScrollView removeObserver:self forKeyPath:@"contentOffset" context:BrowserWebViewScrollOffsetContext];
     if (_observingProgress) {
         [_runtimeWebView removeObserver:self forKeyPath:@"estimatedProgress" context:BrowserWebViewProgressContext];
@@ -917,6 +926,13 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
         return;
     }
     self.lastRequest = request;
+#if DEBUG
+    static BOOL perfFirstLoadLogged = NO;
+    if (!perfFirstLoadLogged) {
+        perfFirstLoadLogged = YES;
+        BrowserPerfLog(@"erste Seite loadRequest %@", request.URL.host ?: @"");
+    }
+#endif
     SEL selector = NSSelectorFromString(@"loadRequest:");
     if ([self.runtimeWebView respondsToSelector:selector]) {
         ((id (*)(id, SEL, id))objc_msgSend)(self.runtimeWebView, selector, request);
@@ -957,12 +973,23 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     __block id evaluationResult = nil;
     __block NSError *evaluationError = nil;
     __block BOOL finished = NO;
+#if DEBUG
+    CFTimeInterval perfStart = CACurrentMediaTime();
+#endif
     ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, ^(id result, NSError *error) {
         evaluationResult = result;
         evaluationError = error;
         finished = YES;
     });
     BrowserPumpRunLoopUntil(&finished);
+#if DEBUG
+    // Leistung: Der Aufrufer wartet hier auf den Seitenprozess (der Run-Loop läuft weiter). Ab 20 ms loggen.
+    CFTimeInterval perfWait = (CACurrentMediaTime() - perfStart) * 1000.0;
+    if (perfWait >= 20.0) {
+        NSString *perfScript = [[script substringToIndex:MIN((NSUInteger)48, script.length)] stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+        BrowserPerfLog(@"JS synchron %.0f ms (%lu Zeichen): %@", perfWait, (unsigned long)script.length, perfScript);
+    }
+#endif
 
     if (evaluationError != nil) {
         return nil;
@@ -1233,6 +1260,14 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 #if DEBUG
     if (self.navigationStartTime > 0) {
         NSLog(@"[Load] %@ +%.0f ms %@", phase, (CACurrentMediaTime() - self.navigationStartTime) * 1000.0, self.request.URL.host ?: @"");
+        static NSMutableSet<NSString *> *firstPhases;
+        if (firstPhases == nil) {
+            firstPhases = [NSMutableSet set];
+        }
+        if (![firstPhases containsObject:phase]) {
+            [firstPhases addObject:phase];
+            BrowserPerfLog(@"erste Seite %@ %@", phase, self.request.URL.host ?: @"");
+        }
     }
 #endif
 }
@@ -1265,6 +1300,11 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
 
 - (void)webView:(id)webView didStartProvisionalNavigation:(id)navigation {
     [self.clickTargetTracker reset];
+#if DEBUG
+    if (self.navigationStartTime == 0) {
+        BrowserPerfLog(@"erste Seite didStartProvisionalNavigation");
+    }
+#endif
     self.navigationStartTime = CACurrentMediaTime();
     self.navigationCommitted = NO;
     [self beginPageTransition];
@@ -1567,15 +1607,13 @@ static id BrowserCreatePersistentWebsiteDataStore(void) {
         return;
     }
 
-    __block NSInteger remainingCount = cookies.count;
-    __block BOOL finished = cookies.count == 0;
+    // Nicht auf die Bestätigung warten: WebKit reiht die Cookies vor dem Start des Netzwerkprozesses ein
+    // (bzw. schickt sie ihm vor der ersten Seitenanfrage) und setzt sie vor dem ersten Laden. Das frühere Warten
+    // per BrowserPumpRunLoopUntil hielt beim App-Start didFinishLaunching bis zum Start des Netzwerkprozesses auf
+    // und verzögerte den Beginn der ersten Seite um rund 250 ms (Simulator, docs/ERWEITERUNGEN.md Abschnitt 21).
     for (NSHTTPCookie *cookie in cookies) {
-        ((void (*)(id, SEL, id, id))objc_msgSend)(cookieStore, selector, cookie, ^{
-            remainingCount -= 1;
-            finished = remainingCount == 0;
-        });
+        ((void (*)(id, SEL, id, id))objc_msgSend)(cookieStore, selector, cookie, ^{});
     }
-    BrowserPumpRunLoopUntil(&finished);
 }
 
 + (NSSet<NSString *> *)allWebsiteDataTypes {

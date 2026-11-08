@@ -1,5 +1,6 @@
 #import "BrowserContentBlocker.h"
 #import "BrowserPreferencesStore.h"
+#import "BrowserPerf.h"
 
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -316,6 +317,7 @@ static NSString *BrowserAdblockWallSource(void) {
 /// Arbeitet die Regelsätze nacheinander ab (Speicherbedarf beim Kompilieren), zuerst Nachschlagen im Store.
 - (void)processNextEntry {
     if (self.pendingEntries.count == 0) {
+        BrowserPerfLog(@"Werbeblocker: %lu von %lu Listen bereit", (unsigned long)self.readyLists.count, (unsigned long)self.totalListCount);
         [self removeStaleLists];
         return;
     }
