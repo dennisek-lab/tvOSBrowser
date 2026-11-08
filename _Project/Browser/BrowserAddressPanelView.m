@@ -6,6 +6,7 @@
 #import "BrowserTabCoordinator.h"
 #import "BrowserFaviconCache.h"
 #import "BrowserHistoryStore.h"
+#import "BrowserMotion.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -348,6 +349,12 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
 
 - (CGRect)cardFrameExpanded:(BOOL)expanded {
     CGRect bar = self.barFrame;
+    if (!expanded && BrowserMotion.liquidGlassEnabled) {
+        // Liquid Glass: Die Karte beginnt als schmale Kapsel in der unteren Hälfte der Leiste (dort verdeckt)
+        // und tropft aus ihr heraus. Nur die untere Hälfte, damit nichts quer durch das klare Glas der Leiste läuft.
+        CGFloat half = floor(CGRectGetHeight(bar) / 2.0);
+        return CGRectMake(CGRectGetMinX(bar) + half, CGRectGetMaxY(bar) - half, CGRectGetWidth(bar) - 2.0 * half, half);
+    }
     CGFloat top = CGRectGetMaxY(bar) + kPanelGapBelowBar;
     // Zusammengeklappt: flacher Streifen direkt unter der Leiste, aus dem die Karte herauswächst.
     CGFloat height = expanded ? [self cardHeight] : kPanelCornerRadius * 2.0;
@@ -406,29 +413,38 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
     }
     [UIView performWithoutAnimation:^{
         self.cardView.frame = [self cardFrameExpanded:NO];
+        self.cardView.layer.cornerRadius = [self cardCornerRadiusExpanded:NO];
         self.cardView.alpha = 0.0;
         [self setNeedsLayout];
         [self layoutIfNeeded];
     }];
     void (^expand)(void) = ^{
         self.dimView.alpha = 1.0;
-        self.cardView.alpha = 1.0;
-        self.cardView.effect = [self glassEffect];
         self.cardTintView.alpha = 1.0;
         self.cardView.frame = [self cardFrameExpanded:YES];
+        self.cardView.layer.cornerRadius = kPanelCornerRadius;
         [self layoutIfNeeded];
     };
     if (!animated) {
         expand();
+        self.cardView.alpha = 1.0;
+        self.cardView.effect = [self glassEffect];
         self.contentHostView.alpha = 1.0;
         return;
     }
-    [UIView animateWithDuration:0.42 delay:0.0 usingSpringWithDamping:0.86 initialSpringVelocity:0.0
-                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
-                     animations:expand completion:nil];
-    [UIView animateWithDuration:0.22 delay:0.12 options:UIViewAnimationOptionCurveEaseOut animations:^{
+    // Liquid Glass: Glas materialisiert (effect nil → Glas) und federt aus der Leiste; schlicht: Alpha und Höhe.
+    [BrowserMotion glassAppear:self.cardView effect:[self glassEffect] kind:BrowserMotionKindAppear alongside:expand completion:nil];
+    [BrowserMotion animateKind:BrowserMotionKindFade delay:0.12 options:0 animations:^{
         self.contentHostView.alpha = 1.0;
     } completion:nil];
+}
+
+/// Zusammengeklappt in Liquid Glass: Kapselform der Leiste, damit die Karte nahtlos aus ihr herauswächst.
+- (CGFloat)cardCornerRadiusExpanded:(BOOL)expanded {
+    if (!expanded && BrowserMotion.liquidGlassEnabled) {
+        return floor(CGRectGetHeight(self.barFrame) / 2.0) / 2.0;
+    }
+    return kPanelCornerRadius;
 }
 
 - (void)dismissAnimated:(BOOL)animated completion:(void (^)(void))completion {
@@ -446,16 +462,15 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
         finish();
         return;
     }
-    [UIView animateWithDuration:0.12 animations:^{
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.contentHostView.alpha = 0.0;
-    }];
-    [UIView animateWithDuration:0.28 delay:0.04 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseIn
-                     animations:^{
+    } completion:nil];
+    // Liquid Glass: zurück in die Leiste, Glas dematerialisiert; schlicht: ausblenden und einklappen.
+    [BrowserMotion glassDisappear:self.cardView kind:BrowserMotionKindDisappear alongside:^{
         self.dimView.alpha = 0.0;
-        self.cardView.effect = nil;
         self.cardTintView.alpha = 0.0;
-        self.cardView.alpha = 0.0;
         self.cardView.frame = [self cardFrameExpanded:NO];
+        self.cardView.layer.cornerRadius = [self cardCornerRadiusExpanded:NO];
         [self layoutIfNeeded];
     } completion:^(__unused BOOL finished) {
         finish();

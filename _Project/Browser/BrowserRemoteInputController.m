@@ -1,5 +1,6 @@
 #import <GameController/GameController.h>
 #import "BrowserRemoteInputController.h"
+#import "BrowserMotion.h"
 #import "BrowserPreferencesStore.h"
 
 static UIImage *BrowserDefaultCursor(void) {
@@ -582,11 +583,11 @@ static CGFloat const kGlowMargin = 60.0;
         highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
     };
     if (animated && highlight.alpha > 0.0) {
-        [UIView animateWithDuration:0.12
-                              delay:0
-                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut
-                         animations:apply
-                         completion:nil];
+        // Liquid Glass: kurze Feder mit leichtem Nachschwingen; schlicht: 0,12 s easeOut (BrowserMotion).
+        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0
+                           options:UIViewAnimationOptionBeginFromCurrentState
+                        animations:apply
+                        completion:nil];
     } else {
         [UIView performWithoutAnimation:^{
             highlight.frame = frame;

@@ -26,6 +26,7 @@ Menübeschriftungen ändern sich. Deshalb wird hier auf Methoden verwiesen (`ext
 14. [Selbsttest und Gerätezyklus](#14-selbsttest-und-gerätezyklus)
 15. [Alle Logpräfixe](#15-logpräfixe)
 16. [Offen/unklar](#16-offenunklar)
+17. [Animationen (Liquid Glass / schlicht)](#17-animationen-browsermotion)
 
 ---
 
@@ -52,6 +53,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | Tab-Übersicht, Sitzung | `BrowserTabOverviewController.m`, `BrowserTabCoordinator.m`, `BrowserSessionStore.m` | niedrig |
 | Systemklassen-Hacks | `WebCoreNSURLSessionTaskTransactionMetrics+AddPrivacyStance.m` (aktiv), `AVPlayerViewController+BrowserFullscreenBlock.m` und `WebAVPlayerViewController+FullscreenSubviewHack.m` (beide per Schalter aus) | hoch |
 | Machbarkeitstest | `BrowserFeasibilityProbe.m` | niedrig |
+| Animationen (Liquid Glass / schlicht) | `BrowserMotion.m/.h`, Aufrufer in Leiste, Aufklapp-Karte, Seitenleiste, Dialogen, Hervorhebung | niedrig bis mittel (`UIGlassEffect`-Materialisieren) |
 | Selbsttest | `ViewController.m` (`runPointerSelfTestIfRequested`, nur DEBUG) | niedrig |
 
 ---
@@ -504,7 +506,7 @@ Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Pla
 
 Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 
-- **Adresse bearbeiten mit Aufklapp-Bereich** (`BrowserAddressPanelView.m`, ersetzt die Vollbild-Startansicht): Auslöser zweimal oben, Klick auf Adresse oder Kapsel (`beginAddressEditing` in `ViewController.m`). Die Leiste klappt aus und wird zum Diktierfeld (Abschnitt 9); darunter wächst eine Glas-Karte (`UIGlassEffect` klar, Abdunkelung 0,38) in Leistenbreite 14 pt unterhalb aus der Leiste heraus (Federanimation 0,42 s: Höhe, Effekt nil → Glas, Inhalt blendet verzögert ein); die Seite bleibt mit 50 % Schwarz gedimmt sichtbar. Drei Spalten „Favoriten“ (Stern, Icons 136 pt, ohne Namen), „Oft besucht“ und „Zuletzt“ (Icons 96 pt mit Namen darunter), je 2 × 2 Kacheln; leere Plätze als dezente Flächen. „Zuletzt“ meidet Seiten, die schon unter „Oft besucht“ stehen, füllt bei wenig Verlauf aber auf. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet; die Hervorhebung ist die normale Magnetic-Button-Hervorhebung (Glas, Glow Standardblau). Die Karte ist rein optisch (`userInteractionEnabled = NO`); Ziele liefert `pointerTargetRectsInView:`, Klick `handleSelectionAtPoint:inView:`. Klick auf das Feld bzw. Play/Pause öffnet den Eingabedialog `showAddressDictationInput` (wie `showInputURLorSearchGoogle`, aber Standardtastatur statt Websuche, damit tvOS das Diktat über die Siri-Taste anbietet); Eingabe lädt wie bisher und schließt den Zustand. Menü oder Klick neben die Karte schließt. Logpräfix `[Address]`.
+- **Adresse bearbeiten mit Aufklapp-Bereich** (`BrowserAddressPanelView.m`, ersetzt die Vollbild-Startansicht): Auslöser zweimal oben, Klick auf Adresse oder Kapsel (`beginAddressEditing` in `ViewController.m`). Die Leiste klappt aus und wird zum Diktierfeld (Abschnitt 9); darunter wächst eine Glas-Karte (`UIGlassEffect` klar, Abdunkelung 0,38) in Leistenbreite 14 pt unterhalb aus der Leiste heraus (über `BrowserMotion`, Abschnitt 17: mit Liquid Glass als Kapsel aus der unteren Hälfte der Leiste, Glas materialisiert, Feder mit leichtem Bounce; schlicht Alpha und Höhe; Inhalt blendet verzögert ein); die Seite bleibt mit 50 % Schwarz gedimmt sichtbar. Drei Spalten „Favoriten“ (Stern, Icons 136 pt, ohne Namen), „Oft besucht“ und „Zuletzt“ (Icons 96 pt mit Namen darunter), je 2 × 2 Kacheln; leere Plätze als dezente Flächen. „Zuletzt“ meidet Seiten, die schon unter „Oft besucht“ stehen, füllt bei wenig Verlauf aber auf. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet; die Hervorhebung ist die normale Magnetic-Button-Hervorhebung (Glas, Glow Standardblau). Die Karte ist rein optisch (`userInteractionEnabled = NO`); Ziele liefert `pointerTargetRectsInView:`, Klick `handleSelectionAtPoint:inView:`. Klick auf das Feld bzw. Play/Pause öffnet den Eingabedialog `showAddressDictationInput` (wie `showInputURLorSearchGoogle`, aber Standardtastatur statt Websuche, damit tvOS das Diktat über die Siri-Taste anbietet); Eingabe lädt wie bisher und schließt den Zustand. Menü oder Klick neben die Karte schließt. Logpräfix `[Address]`.
 - **Favicons** (`BrowserFaviconCache.m`): Reihenfolge `https://<host>/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/favicon.ico`, dann `https://www.google.com/s2/favicons?domain=<host>&sz=128`. Erstes Bild ab 48 px gewinnt, kleinere werden nur genommen, wenn nichts Besseres kommt. Speicher (`NSCache`) und Platte (`Library/Caches/Favicons/<host>.img`, Fehlschlag als `.none`, nach 24 h neuer Versuch). Ab 96 px füllt das Icon die Kachel, kleinere sitzen auf hellem Grund; ohne Icon Anfangsbuchstabe auf farbiger Kachel (Farbe aus dem Host). Logpräfix `[Favicon]` (DEBUG).
 - **Alte Start-/Verlaufsansicht** (`BrowserStartViewController.m`, nicht mehr eingebunden, `showStartView` bleibt als Rückfall): Suchfeld, „Zuletzt besucht“, „Meistbesucht“, Favoriten; öffnet über `openURLHandler`. Daten aus `BrowserHistoryStore` (`recordVisitWithURL:title:`, `recentEntries:`, `topEntries:`, `favorites`, `addFavoriteWithURL:…`, `isFavoriteURL:`; je Host zusammengefasst, in `NSUserDefaults`; Benachrichtigung `BrowserHistoryStoreDidChangeNotification`). Früher Aufruf über Klick auf die Adresse.
 - **Bedienungsdialog** (`BrowserGuideViewController.m`): Glas-Karte mit kurzer Bedienungshilfe, Schalter für den Start-Hinweis (`dontShowHintsOnLaunch`, `toggleHandler`). Aufruf `showHintsAlert` in `ViewController` (beim Start einmal, per Selbsttest `guide`). Der Text sollte mit Abschnitt 8.2 übereinstimmen; bei geänderter Belegung hier und in `README.mdown` nachziehen.
@@ -622,3 +624,36 @@ POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wik
 - Test `https://1.1.1.1/help` und Langzeittests des DNS-Proxys nach Hintergrund sind laut PLAN.md offen.
 - Ob `[InputTrace]`, `[NowPlaying]`, `[TopBar]` und die Video-Logzeilen nur in DEBUG erscheinen, wurde nicht für jede Zeile geprüft.
 - Genaue Pfade des gebauten `.app` (DerivedData) hängen vom gewählten `-derivedDataPath` ab.
+
+---
+
+## 17. Animationen (`BrowserMotion`)
+
+**Zweck.** Eine Stelle für alle Oberflächen-Animationen. Zwei Stile, umschaltbar unter •••, „Ansicht & Wiedergabe“, „Liquid-Glass-Animationen“ (`liquidGlassAnimationsMenuItem`, Einstellung `BrowserPreferencesStore.liquidGlassAnimationsEnabled`, Schlüssel `LiquidGlassAnimationsEnabled`, Standard an). Bei der Systemeinstellung „Bewegung reduzieren“ (`UIAccessibilityIsReduceMotionEnabled`) gilt immer der schlichte Stil.
+
+**Dateien.** `_Project/Browser/BrowserMotion.h/.m`.
+
+**Arten und Werte** (`BrowserMotionKind`, abstimmbar in `BrowserMotionLiquidParameters`/`BrowserMotionPlainParameters`):
+
+| Art | Liquid Glass (Feder: Dauer/Bounce, Einschwingzeit) | Schlicht |
+|:--|:--|:--|
+| `Standard` (Leiste kompakt ↔ voll, Bearbeiten) | 0,42 s / 0,14 (0,61 s) | 0,25 s easeInOut |
+| `Appear` (Karte, Seitenleiste, Dialog) | 0,48 s / 0,18 (0,73 s) | 0,22 s easeOut |
+| `Disappear` | 0,32 s / 0 (0,50 s) | 0,20 s easeIn |
+| `Snap` (Einrast-Hervorhebung, Reader-Hervorhebung) | 0,20 s / 0,10 (0,28 s) | 0,12 s easeOut |
+| `Fade` (Ladelinie, Inhalte) | 0,30 s / 0 (0,50 s) | 0,20 s easeInOut |
+
+**Bausteine.**
+- `animateKind:delay:options:animations:completion:` – Liquid Glass über `+[UIView animateWithSpringDuration:bounce:initialSpringVelocity:…]` (tvOS 17+), schlicht über `animateWithDuration:` mit Kurve. Kurvenbits des Aufrufers werden verworfen.
+- `animateShadowPathOfLayer:fromPath:kind:` – Schattenumriss mit derselben Feder (`CASpringAnimation initWithPerceptualDuration:bounce:`, `duration = settlingDuration`) bzw. Kurve. Startet bei laufender Animation vom sichtbaren Umriss (Präsentationsebene). Mit `MOTION_LOG` geprüft: Position, Größe, Eckenradius und Schattenumriss laufen mit identischer Feder (Masse 1, Steife 223,8, Dämpfung 25,7, 0,614 s).
+- `glassAppear:` / `glassDisappear:` – Liquid Glass: `effect` nil → Glas bzw. Glas → nil im Animationsblock (Materialisieren/Dematerialisieren, Apple: „effect statt alpha“); schlicht: Alpha.
+- `presentCard:glassEffect:` / `dismissCard:` – Dialogkarten (in `viewWillAppear:`/`viewWillDisappear:`, parallel zur Überblendung): Liquid Glass materialisiert und federt aus 0,94; schlicht nichts zusätzlich. Der Effekt wird beim Ausblenden gemerkt (assoziiertes Objekt) und beim erneuten Erscheinen wieder gesetzt.
+
+**Aufrufer.** Leiste (`BrowserTopBarView`: `animateChromeLayoutAlongside:` für `setCompact:animated:` und `setAddressEditing:animated:` inklusive Schattenumriss; Ladelinie; Reader-Knopf und blaue Hervorhebung, die mit Liquid Glass aus 0,82 auffedert; `URLLabel.contentMode = Center`, damit der Seitenname beim Breitenwechsel nicht abgeschnitten oder gestreckt wird), Aufklapp-Karte (`BrowserAddressPanelView present…/dismiss…`), Seitenleiste (`BrowserAdvancedMenuViewController viewDidAppear:`/`dismissMenuWithCompletion:`), Bedienungsdialog (`BrowserGuideViewController`), Tab-Übersicht (`BrowserTabOverviewViewController`), Einrast-Hervorhebung (`BrowserRemoteInputController showHighlightForTarget:animated:`, nur die Bewegung). Bewusst nicht umgestellt: Seitenscrollen (`scrollPageReturningDeltaByFraction:`, Bounce wäre beim Lesen störend), Zeigerbewegung und -alpha, Überblendung alte/neue Seite (`BrowserWebView endPageTransitionAnimated:`), Seitenfarbe, Favicon-Überblendung, Fokus-Animationen (laufen über den `UIFocusAnimationCoordinator` des Systems), `BrowserGlowView`.
+
+**Was tvOS 26/27 bietet (SDK 27.2 geprüft).** `UIGlassEffect` (`interactive`, `tintColor`, Stil regular/clear) und `UIGlassContainerEffect` (`spacing`) sind `API_AVAILABLE(ios(26.0))` ohne tvOS-Ausschluss, also ab tvOS 26 vorhanden. Ebenfalls ab tvOS 26: `UIScrollEdgeEffect`/`topEdgeEffect`, `UIScrollEdgeElementContainerInteraction` (nutzt die Leiste schon), `UIBackgroundExtensionView`, `UICornerConfiguration`, `UIViewAnimationOptionFlushUpdates`, Glas-Knopfkonfigurationen (`glassButtonConfiguration` u. a.). Federn mit Dauer/Bounce (`animateWithSpringDuration:bounce:…`, `UISpringTimingParameters initWithDuration:bounce:`, `CASpringAnimation initWithPerceptualDuration:bounce:`) ab tvOS 17. `UIFocusEffect`/`UIFocusHaloEffect` sind auf tvOS **nicht** verfügbar. Quellen: WWDC25 „Meet Liquid Glass“ (219), „Build a UIKit app with the new design“ (284), WWDC23 „Animate with springs“ (10158), HIG Materials und Motion.
+
+**Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Der Regenbogen-Glow (`BrowserGlowView`) ändert seine Form beim Einrasten sofort, die Fläche federt; bei sehr unterschiedlichen Zielgrößen sieht man das kurz.
+
+**Test.** Simulator, eigenes Gerät: `defaults write io.github.tvosbrowser.app LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
+
