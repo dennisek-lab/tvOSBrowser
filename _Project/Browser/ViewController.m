@@ -25,6 +25,7 @@
 #import "BrowserNavigationService.h"
 #import "BrowserNowPlayingController.h"
 #import "BrowserPageActionCoordinator.h"
+#import "BrowserPopupNotice.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserReaderMode.h"
 #import "BrowserRemoteInputController.h"
@@ -76,6 +77,10 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @property (nonatomic, nullable) BrowserWebSubtitleController *webSubtitleController;
 /// Hinweis, falls die Web-Untertitel nur mit dem Platzhalter laufen (kein whisper/Modell), sonst nil.
 @property (nonatomic, copy, nullable) NSString *webSubtitleRecognizerHint;
+/// Einblendung unten rechts für Pop-ups und Links, die im Hintergrund-Tab aufgegangen sind.
+@property (nonatomic) BrowserPopupNotice *popupNotice;
+/// Prüft regelmäßig, ob sich unbenutzte Hintergrund-Tabs schließen sollen.
+@property (nonatomic, nullable) NSTimer *unusedTabTimer;
 
 @end
 
@@ -176,6 +181,12 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                                                                    navigationService:self.navigationService
                                                             videoPlaybackCoordinator:self.videoPlaybackCoordinator];
 
+    self.popupNotice = [[BrowserPopupNotice alloc] initWithContainerView:self.view];
+    __weak typeof(self) weakPopupSelf = self;
+    self.popupNotice.visibilityHandler = ^(__unused BOOL visible) {
+        [weakPopupSelf.remoteInputController pointerTargetsDidChange];
+    };
+
     self.topMenuView.delegate = self;
     self.topMenuView.loadingSpinner.hidesWhenStopped = YES;
     self.remoteInputController.cursorView.hidden = NO;
@@ -193,6 +204,10 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                                                  name:UIApplicationWillTerminateNotification
                                                object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleApplicationDidBecomeActive:)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handleGlobalSelectPressEndedNotification:)
                                                  name:kBrowserGlobalSelectPressEndedNotification
                                                object:nil];
@@ -203,6 +218,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
     BrowserPerfLog(@"viewDidLoad Dienste angelegt");
     [self.tabCoordinator restoreInitialStateOrCreateFirstTab];
+    [self startUnusedTabTimer];
     BrowserPerfLog(@"viewDidLoad Ende (Tab angelegt)");
 }
 
@@ -404,6 +420,69 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                           (long)[self.remoteInputController debugRunGestureWithDeltas:circle(1.0, -1, 60)],
                           (long)[self.remoteInputController debugRunGestureWithDeltas:line],
                           (long)[self.remoteInputController debugRunGestureWithDeltas:circle(0.25, 1, 200)]);
+                    return;
+                }
+                if ([step isEqualToString:@"rightpress"] || [step isEqualToString:@"rightright"] || [step hasPrefix:@"rightright:"]) {
+                    // Druck rechts über dieselbe Logik wie die Taste (rightright[:ms]: zweimal im Abstand ms, Vorgabe 150).
+                    CGPoint before = self.remoteInputController.cursorView.center;
+                    [self.remoteInputController debugPressRight];
+                    NSLog(@"[SelfTest] %@ erster Druck: Zeiger %@ -> %@", step, NSStringFromCGPoint(before), NSStringFromCGPoint(self.remoteInputController.cursorView.center));
+                    if ([step hasPrefix:@"rightright"]) {
+                        double gap = [step hasPrefix:@"rightright:"] ? [step substringFromIndex:11].doubleValue / 1000.0 : 0.15;
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(gap * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            CGPoint middle = self.remoteInputController.cursorView.center;
+                            [self.remoteInputController debugPressRight];
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                                NSLog(@"[SelfTest] %@ zweiter Druck: Zeiger %@ -> %@ (vorher %@) presented=%@", step, NSStringFromCGPoint(middle),
+                                      NSStringFromCGPoint(self.remoteInputController.cursorView.center), NSStringFromCGPoint(before),
+                                      NSStringFromClass(self.presentedViewController.class));
+                            });
+                        });
+                    } else {
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            NSLog(@"[SelfTest] %@ danach Zeiger %@ presented=%@", step, NSStringFromCGPoint(self.remoteInputController.cursorView.center),
+                                  NSStringFromClass(self.presentedViewController.class));
+                        });
+                    }
+                    return;
+                }
+                if ([step isEqualToString:@"tabinfo"]) {
+                    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+                    NSLog(@"[SelfTest] tabinfo %lu Tabs, aktiv %ld, Ablauf %.0f s, Einblendung %@ „%@“", (unsigned long)self.viewModel.tabs.count,
+                          (long)self.viewModel.activeTabIndex, self.preferencesStore.unusedTabExpiryInterval,
+                          self.popupNotice.visible ? NSStringFromCGRect(self.popupNotice.frameInContainer) : @"aus", self.popupNotice.text ?: @"");
+                    [self.viewModel.tabs enumerateObjectsUsingBlock:^(BrowserTabViewModel *tab, NSUInteger index, __unused BOOL *stopTabs) {
+                        NSLog(@"[SelfTest] tab %lu%@ benutzt=%d alter=%.0f s titel=%@ url=%@", (unsigned long)index,
+                              (NSInteger)index == self.viewModel.activeTabIndex ? @" (aktiv)" : @"", tab.userInteracted,
+                              now - tab.openedAt, tab.title, tab.URLString.length > 0 ? tab.URLString : tab.requestURL);
+                    }];
+                    return;
+                }
+                if ([step hasPrefix:@"tab:"]) {
+                    NSInteger index = [step substringFromIndex:4].integerValue;
+                    NSLog(@"[SelfTest] wechsle zu Tab %ld", (long)index);
+                    BrowserWebView *previous = self.webview;
+                    [self.tabCoordinator switchToTabAtIndex:index];
+                    [self activeWebViewChangedFrom:previous];
+                    return;
+                }
+                if ([step isEqualToString:@"tabexpire"]) {
+                    NSLog(@"[SelfTest] tabexpire");
+                    [self closeExpiredUnusedTabs];
+                    return;
+                }
+                if ([step isEqualToString:@"popupjump"]) {
+                    NSLog(@"[SelfTest] popupjump sichtbar=%d", self.popupNotice.visible);
+                    [self jumpToPopupTab];
+                    return;
+                }
+                if ([step isEqualToString:@"popuppoint"]) {
+                    // Zeiger auf die Einblendung setzen (einrasten), danach mit click klicken.
+                    CGRect frame = self.popupNotice.frameInContainer;
+                    NSLog(@"[SelfTest] popuppoint %@", NSStringFromCGRect(frame));
+                    if (!CGRectIsNull(frame)) {
+                        [self.remoteInputController movePointerToPoint:CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame))];
+                    }
                     return;
                 }
                 if ([step isEqualToString:@"next"] || [step isEqualToString:@"prev"]) {
@@ -872,7 +951,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     NSDictionary<NSString *, NSNumber *> *types = @{
         @"menu": @(UIPressTypeMenu), @"playpause": @(UIPressTypePlayPause), @"playpause2": @(UIPressTypePlayPause),
         @"select": @(UIPressTypeSelect), @"up": @(UIPressTypeUpArrow), @"down": @(UIPressTypeDownArrow),
-        @"left": @(UIPressTypeLeftArrow), @"right": @(UIPressTypeRightArrow),
+        @"left": @(UIPressTypeLeftArrow), @"right": @(UIPressTypeRightArrow), @"right2": @(UIPressTypeRightArrow),
     };
     NSNumber *type = types[name];
     if (type == nil) {
@@ -886,7 +965,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         top = top.presentedViewController;
     }
     UIResponder *target = [focused isKindOfClass:UIResponder.class] ? focused : top;
-    NSInteger count = [name isEqualToString:@"playpause2"] ? 2 : 1;
+    NSInteger count = ([name isEqualToString:@"playpause2"] || [name isEqualToString:@"right2"]) ? 2 : 1;
     NSLog(@"[SelfTest] press %@ an %@ (oben %@)", spec, NSStringFromClass(target.class), NSStringFromClass(top.class));
     for (NSInteger i = 0; i < count; i++) {
         NSTimeInterval start = i * (hold + 0.12);
@@ -923,6 +1002,114 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 - (void)handleApplicationWillResignActive:(NSNotification *)notification {
     (void)notification;
     [self.tabCoordinator persistSession];
+}
+
+- (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
+    (void)notification;
+    // Zurück im Vordergrund (auch beim Start): Hintergrund-Tabs, die inzwischen abgelaufen sind, gleich schließen.
+    [self closeExpiredUnusedTabs];
+}
+
+#pragma mark - Hintergrund-Tabs (Pop-ups) und automatisches Schließen
+
+- (void)startUnusedTabTimer {
+    [self.unusedTabTimer invalidate];
+    // Jede Minute; mit kurzer Test-Ablaufzeit (TAB_EXPIRY_SECONDS) entsprechend öfter.
+    NSTimeInterval expiry = self.preferencesStore.unusedTabExpiryInterval;
+    NSTimeInterval interval = expiry > 0.0 ? MIN(60.0, MAX(2.0, expiry / 4.0)) : 60.0;
+    __weak typeof(self) weakSelf = self;
+    self.unusedTabTimer = [NSTimer scheduledTimerWithTimeInterval:interval repeats:YES block:^(__unused NSTimer *timer) {
+        [weakSelf closeExpiredUnusedTabs];
+    }];
+    self.unusedTabTimer.tolerance = interval / 4.0;
+}
+
+- (void)closeExpiredUnusedTabs {
+    NSTimeInterval expiry = self.preferencesStore.unusedTabExpiryInterval;
+    if (expiry <= 0.0 || self.tabCoordinator == nil) {
+        return;
+    }
+    // Während die Tab-Übersicht offen ist, keine Karten wegnehmen; der nächste Durchlauf holt es nach.
+    if (self.tabOverviewController.visible) {
+        return;
+    }
+    NSString *noticeTab = self.popupNotice.targetTabIdentifier;
+    NSUInteger closed = [self.tabCoordinator closeUnusedTabsOlderThan:expiry];
+    if (closed > 0 && noticeTab != nil && [self tabIndexForIdentifier:noticeTab] == NSNotFound) {
+        [self.popupNotice dismiss];
+    }
+}
+
+- (NSInteger)tabIndexForIdentifier:(NSString *)identifier {
+    for (NSUInteger index = 0; index < self.viewModel.tabs.count; index++) {
+        BrowserTabViewModel *tab = self.viewModel.tabs[index];
+        if ([tab.identifier isEqualToString:identifier]) {
+            return (NSInteger)index;
+        }
+    }
+    return NSNotFound;
+}
+
+/// Website-Schlüssel für „dieselbe Website“: Host ohne www., die letzten zwei Teile (bei co.uk usw. drei).
+static NSString *BrowserSiteKeyForHost(NSString *host) {
+    NSArray<NSString *> *parts = [host.lowercaseString componentsSeparatedByString:@"."];
+    if (parts.count < 2) {
+        return host.lowercaseString ?: @"";
+    }
+    NSUInteger keep = (parts[parts.count - 2].length <= 3 && parts.count >= 3) ? 3 : 2;
+    return [[parts subarrayWithRange:NSMakeRange(parts.count - keep, keep)] componentsJoinedByString:@"."];
+}
+
+static NSString *BrowserDisplayHost(NSString *host) {
+    return [host hasPrefix:@"www."] ? [host substringFromIndex:4] : (host ?: @"");
+}
+
+/// Pop-up (window.open, createWebView) bzw. Link mit target=_blank: immer als Hintergrund-Tab, der aktuelle Tab bleibt
+/// vorn. Einblendung unten rechts; bei fünf offenen Tabs nur eine kurze Rückmeldung, kein Dialog.
+/// Rückgabe NO nur, wenn die Adresse nicht taugt (dann darf der Aufrufer normal weitermachen).
+- (BOOL)openBackgroundTabWithRequest:(NSURLRequest *)request popup:(BOOL)popup {
+    NSURL *url = request.URL;
+    NSString *scheme = url.scheme.lowercaseString;
+    if (url == nil || !([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])) {
+        NSLog(@"[Popup] ignoriert (Adresse %@)", url.absoluteString ?: @"-");
+        return NO;
+    }
+    BrowserTabViewModel *tab = [self.tabCoordinator createBackgroundTabWithRequest:request];
+    if (tab == nil) {
+        NSLog(@"[Popup] nicht geöffnet, schon %lu Tabs: %@", (unsigned long)self.viewModel.tabs.count, url.absoluteString);
+        [self.commandRouter showFeedback:popup ? @"Pop-up nicht geöffnet: höchstens fünf Tabs" : @"Nicht geöffnet: höchstens fünf Tabs"
+                              symbolName:@"square.on.square"
+                                 success:NO];
+        return YES;
+    }
+    NSString *currentHost = self.webview.committedURL.host ?: self.webview.request.URL.host ?: @"";
+    BOOL sameSite = currentHost.length > 0 && [BrowserSiteKeyForHost(currentHost) isEqualToString:BrowserSiteKeyForHost(url.host ?: @"")];
+    NSLog(@"[Popup] %@ im Hintergrund-Tab %lu geöffnet: %@ (gleiche Website %d)", popup ? @"Pop-up" : @"Link",
+          (unsigned long)[self.viewModel.tabs indexOfObject:tab], url.absoluteString, sameSite);
+    [self.popupNotice noteTabWithIdentifier:tab.identifier sameSite:sameSite popup:popup displayName:BrowserDisplayHost(url.host)];
+    return YES;
+}
+
+/// Klick auf die Einblendung oder Play/Pause: zum zuletzt im Hintergrund geöffneten Tab wechseln.
+- (BOOL)jumpToPopupTab {
+    NSString *identifier = self.popupNotice.targetTabIdentifier;
+    if (identifier == nil) {
+        return NO;
+    }
+    NSInteger index = [self tabIndexForIdentifier:identifier];
+    [self.popupNotice dismiss];
+    if (index == NSNotFound) {
+        return NO;
+    }
+    NSLog(@"[Popup] Sprung zum Hintergrund-Tab %ld", (long)index);
+    BrowserWebView *previous = self.webview;
+    [self.tabCoordinator switchToTabAtIndex:index];
+    [self activeWebViewChangedFrom:previous];
+    return YES;
+}
+
+- (BOOL)pointIsOnPopupNotice:(CGPoint)point {
+    return self.popupNotice.visible && CGRectContainsPoint(CGRectInset(self.popupNotice.frameInContainer, -6.0, -6.0), point);
 }
 
 - (void)handleApplicationDidEnterBackground:(NSNotification *)notification {
@@ -1668,6 +1855,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         return;
     }
 
+    if ([self pointIsOnPopupNotice:self.remoteInputController.cursorView.frame.origin]) {
+        [self jumpToPopupTab];
+        return;
+    }
+
     if ([self performTopBarActionAtPoint:self.remoteInputController.cursorView.frame.origin]) {
         return;
     }
@@ -2209,11 +2401,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [self browserPresentViewController:viewController];
 }
 
+/// Vom Nutzer geklickter Link mit target=_blank: ebenfalls nur im Hintergrund (ausdrücklicher Wunsch), mit Einblendung.
 - (BOOL)browserPageActionCoordinatorCreateNewTabWithRequest:(NSURLRequest *)request {
-    BrowserWebView *previous = self.webview;
-    BOOL created = [self.tabCoordinator createNewTabWithRequest:request];
-    [self activeWebViewChangedFrom:previous];
-    return created;
+    return [self openBackgroundTabWithRequest:request popup:NO];
 }
 
 #pragma mark - BrowserRemoteInputControllerHost
@@ -2320,6 +2510,12 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 - (void)browserRemoteInputControllerHandlePlayPausePress {
+    // Einblendung „Pop-up geöffnet“ sichtbar und kein Video läuft: Play/Pause springt zum Pop-up-Tab
+    // (Ersatz für die Siri-Taste, die Apps nicht bekommen). Vor dem Hinweis „Übersetzen?“, weil sie nur 6 s steht.
+    if (self.presentedViewController == nil && self.addressPanel == nil && self.popupNotice.visible && !self.webview.videoPlaying) {
+        [self jumpToPopupTab];
+        return;
+    }
     // Hinweis „Übersetzen?“ sichtbar: Play/Pause nimmt ihn an.
     if (self.presentedViewController == nil && self.addressPanel == nil && [self.intelligenceController handlePlayPausePress]) {
         return;
@@ -2385,6 +2581,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 - (BOOL)browserRemoteInputControllerLensAllowedForTarget:(CGRect)target {
+    if (self.popupNotice.visible && CGRectIntersectsRect(self.popupNotice.frameInContainer, target)) {
+        return NO; // Einblendung liegt über der Seite, die Linse zeigte die Seite darunter.
+    }
     // Ziele in der oberen Leiste: Die Linse würde die Webseite darunter zeigen und Titel bzw. Symbole verdecken.
     if (self.topMenuView != nil && !self.topMenuView.hidden) {
         CGRect chrome = [self.view convertRect:self.topMenuView.chromeFrame fromView:self.topMenuView];
@@ -2400,6 +2599,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 }
 
 - (CGFloat)browserRemoteInputControllerCornerRadiusForTarget:(CGRect)target {
+    if (self.popupNotice.visible && CGRectEqualToRect(CGRectIntegral(self.popupNotice.frameInContainer), CGRectIntegral(target))) {
+        return self.popupNotice.cornerRadius;
+    }
     if (self.addressPanel == nil) {
         return -1.0;
     }
@@ -2413,6 +2615,9 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 - (UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target {
     if (self.addressPanel != nil) {
         return nil; // Standardblau wie die Magnetic Buttons
+    }
+    if (self.popupNotice.visible && CGRectIntersectsRect(self.popupNotice.frameInContainer, target)) {
+        return nil;
     }
     BrowserWebView *webView = self.webview;
     if (webView == nil || webView.window == nil) {
@@ -2471,6 +2676,16 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
         [self.topMenuView enumeratePointerTargetsUsingBlock:^(CGRect frame, __unused BrowserTopBarAction action) {
             [targets addObject:[NSValue valueWithCGRect:[self.topMenuView convertRect:frame toView:self.view]]];
         }];
+    }
+    if (self.popupNotice.visible) {
+        // Einblendung „Pop-up geöffnet“: Seitenziele darunter verdeckt sie, sie selbst ist ein Ziel.
+        CGRect notice = self.popupNotice.frameInContainer;
+        NSIndexSet *covered = [targets indexesOfObjectsPassingTest:^BOOL(NSValue *value, __unused NSUInteger index, __unused BOOL *stop) {
+            CGRect rect = value.CGRectValue;
+            return CGRectContainsPoint(notice, CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect)));
+        }];
+        [targets removeObjectsAtIndexes:covered];
+        [targets addObject:[NSValue valueWithCGRect:notice]];
     }
     return targets;
 }
@@ -2531,6 +2746,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
     [self beginAddressEditing];
 }
 
+/// Zweimal rechts öffnet die Seitenleiste, außer rechts spult gerade ein laufendes Video (dann zweimal = 20 s vor).
+- (BOOL)browserRemoteInputControllerRightDoublePressOpensMenu {
+    return !([self pointerIsOverVideo] && self.webview.videoPlaying);
+}
+
 /// Clickpad rechts: über einem laufenden Video 10 s vor, sonst zum nächsten Element.
 - (void)browserRemoteInputControllerNavigateForward {
     if ([self pointerIsOverVideo] && self.webview.videoPlaying) {
@@ -2550,10 +2770,12 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
 #pragma mark - BrowserWebViewDelegate
 
+/// WKUIDelegate createWebViewWithConfiguration… (window.open, target=_blank ohne unseren Klick-Abfang): Hintergrund-Tab.
+/// navigationType 0 = WKNavigationTypeLinkActivated (Link), sonst Pop-up per Skript.
 - (BOOL)webView:(id)webView shouldCreateNewTabWithRequest:(NSURLRequest *)request navigationType:(NSInteger)navigationType {
     (void)webView;
-    (void)navigationType;
-    return [self browserPageActionCoordinatorCreateNewTabWithRequest:request];
+    [self openBackgroundTabWithRequest:request popup:navigationType != 0];
+    return YES; // nie im aktuellen Tab laden
 }
 
 - (BOOL)webView:(id)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(NSInteger)navigationType {
@@ -2577,6 +2799,16 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 
 - (void)webViewDidFinishLoad:(id)webView {
     [self.tabCoordinator webViewDidFinishLoad:webView];
+    if (self.popupNotice.visible && webView != self.webview && [webView isKindOfClass:BrowserWebView.class]) {
+        BrowserTabViewModel *popupTab = [self.tabCoordinator tabForWebView:webView];
+        BrowserWebView *popupWebView = webView;
+        NSString *host = BrowserDisplayHost(popupWebView.committedURL.host ?: popupWebView.request.URL.host);
+        NSString *title = popupWebView.reportedPageTitle.length > 0 ? popupWebView.reportedPageTitle : popupTab.title;
+        NSString *name = BrowserShortSiteName(popupWebView.reportedSiteName, title, host);
+        if (popupTab != nil && name.length > 0 && ![name isEqualToString:@"Neuer Tab"]) {
+            [self.popupNotice updateDisplayName:name forTabWithIdentifier:popupTab.identifier];
+        }
+    }
     if (webView == self.webview) {
         [self scheduleReaderAvailabilityChecks];
         [self.intelligenceController pageDidFinishLoadInWebView:webView];

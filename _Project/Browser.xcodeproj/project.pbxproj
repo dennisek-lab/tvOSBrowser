@@ -37,6 +37,7 @@
 		A1B49A742D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A732D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m */; };
 		A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A832D6D2000001D58A1 /* BrowserDOMInteractionService.m */; };
 		A1B49A872D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A862D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m */; };
+		5B0A9C1E2F60000000A0B1C3 /* BrowserPopupNotice.m in Sources */ = {isa = PBXBuildFile; fileRef = 5B0A9C1E2F60000000A0B1C2 /* BrowserPopupNotice.m */; };
 		A1B49A892D700000001D58A1 /* BrowserPreferencesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */; };
 		A1B49A8C2D700010001D58A1 /* BrowserTabCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A8B2D700010001D58A1 /* BrowserTabCoordinator.m */; };
 		A1B49A8F2D700020001D58A1 /* BrowserTabOverviewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A8E2D700020001D58A1 /* BrowserTabOverviewController.m */; };
@@ -135,6 +136,8 @@
 		A1B49A832D6D2000001D58A1 /* BrowserDOMInteractionService.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserDOMInteractionService.m; sourceTree = "<group>"; };
 		A1B49A852D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserVideoPlaybackCoordinator.h; sourceTree = "<group>"; };
 		A1B49A862D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserVideoPlaybackCoordinator.m; sourceTree = "<group>"; };
+		5B0A9C1E2F60000000A0B1C1 /* BrowserPopupNotice.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserPopupNotice.h; sourceTree = "<group>"; };
+		5B0A9C1E2F60000000A0B1C2 /* BrowserPopupNotice.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPopupNotice.m; sourceTree = "<group>"; };
 		A1B49A872D700000001D58A1 /* BrowserPreferencesStore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserPreferencesStore.h; sourceTree = "<group>"; };
 		A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPreferencesStore.m; sourceTree = "<group>"; };
 		A1B49A8A2D700010001D58A1 /* BrowserTabCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserTabCoordinator.h; sourceTree = "<group>"; };
@@ -327,6 +330,8 @@
 				A1B49A832D6D2000001D58A1 /* BrowserDOMInteractionService.m */,
 				A1B49A4C2D680900001D58A1 /* BrowserNavigationService.h */,
 				A1B49A4D2D680900001D58A1 /* BrowserNavigationService.m */,
+				5B0A9C1E2F60000000A0B1C1 /* BrowserPopupNotice.h */,
+				5B0A9C1E2F60000000A0B1C2 /* BrowserPopupNotice.m */,
 				A1B49A872D700000001D58A1 /* BrowserPreferencesStore.h */,
 				A1B49ABF2D710000001D58A1 /* BrowserCursorRenderer.h */,
 				A1B49AC02D710000001D58A1 /* BrowserCursorRenderer.m */,
@@ -645,6 +650,7 @@
 				A1B49A872D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m in Sources */,
 				A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */,
 				A1B49A4E2D680900001D58A1 /* BrowserNavigationService.m in Sources */,
+				5B0A9C1E2F60000000A0B1C3 /* BrowserPopupNotice.m in Sources */,
 				A1B49A892D700000001D58A1 /* BrowserPreferencesStore.m in Sources */,
 				A1B49AC12D710000001D58A1 /* BrowserCursorRenderer.m in Sources */,
 				A1B49A582D6828D4001D58A1 /* BrowserSessionStore.m in Sources */,
