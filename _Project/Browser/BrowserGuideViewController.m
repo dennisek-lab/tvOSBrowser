@@ -304,14 +304,18 @@
 }
 
 - (UIButton *)buttonWithTitle:(NSString *)title prominent:(BOOL)prominent action:(SEL)action {
+    // Beide Knöpfe gleich: Unter tvOS zeigt nur der Fokus (hell, angehoben), welcher Knopf gewählt ist.
+    // Die hervorgehobene Variante (prominent) ist schon ohne Fokus hell und war vom gewählten Knopf kaum
+    // zu unterscheiden. Der Hauptknopf bekommt stattdessen den ersten Fokus (preferredFocusEnvironments).
+    (void)prominent;
     UIButtonConfiguration *config = nil;
 #if __has_include(<UIKit/UIGlassEffect.h>)
     if (@available(tvOS 26.0, *)) {
-        config = prominent ? [UIButtonConfiguration prominentGlassButtonConfiguration] : [UIButtonConfiguration glassButtonConfiguration];
+        config = [UIButtonConfiguration glassButtonConfiguration];
     }
 #endif
     if (config == nil) {
-        config = prominent ? [UIButtonConfiguration filledButtonConfiguration] : [UIButtonConfiguration grayButtonConfiguration];
+        config = [UIButtonConfiguration grayButtonConfiguration];
     }
     config.title = title;
     config.contentInsets = NSDirectionalEdgeInsetsMake(20.0, 36.0, 20.0, 36.0);
