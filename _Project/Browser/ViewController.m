@@ -748,6 +748,17 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     }];
                     return;
                 }
+                if ([step hasPrefix:@"hid:"]) {
+                    // hid:down,select,… – echte Tastenereignisse über sendEvent: und das Fokussystem, 0,7 s Abstand (nur DEBUG).
+                    NSArray<NSString *> *keys = [[step substringFromIndex:4] componentsSeparatedByString:@","];
+                    [keys enumerateObjectsUsingBlock:^(NSString *key, NSUInteger keyIndex, __unused BOOL *keyStop) {
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(keyIndex * 0.7 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            NSLog(@"[SelfTest] hid %@", key);
+                            ((BOOL (*)(id, SEL, NSString *))objc_msgSend)(UIApplication.class, NSSelectorFromString(@"browser_selfTestSendHIDKey:"), key);
+                        });
+                    }];
+                    return;
+                }
                 // Nativer Player: öffnen (wie Menü „Im Player öffnen“), Zustand, an Position springen, schließen.
                 if ([step isEqualToString:@"native"]) {
                     NSLog(@"[SelfTest] native hasVideo=%d", [self.videoPlaybackCoordinator pageHasVideo]);

@@ -7,6 +7,7 @@
 #import "BrowserContentBlocker.h"
 #import "BrowserFilterListUpdater.h"
 #import "BrowserCookieConsentBlocker.h"
+#import "BrowserSubtitleEngine.h"
 #import "BrowserWebView.h"
 
 static UIColor *MenuTextColor(void) {
@@ -48,6 +49,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Bezahlschranken zustimmen": @"eurosign.circle",
             @"Native Player automatisch": @"play.rectangle",
             @"Automatische Untertitel": @"captions.bubble",
+            @"Untertitelsprache": @"character.bubble",
             @"Untertitel (Webseite)": @"text.bubble",
             @"Cloudflare-DNS": @"network",
             @"Obere Leiste": @"rectangle.topthird.inset.filled",
@@ -1504,6 +1506,23 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+/// Sprache der automatischen Untertitel durchschalten: Automatisch → Deutsch → Englisch → … (gilt für den nativen
+/// Player und die Webseite). Ohne mehrsprachiges Modell geht nur Englisch.
+- (BrowserAdvancedMenuItem *)autoSubtitlesLanguageMenuItem {
+    NSString *current = self.preferencesStore.autoSubtitlesLanguage;
+    if (![BrowserSubtitleEngine hasMultilingualModel]) {
+        return [self advancedMenuItemWithTitle:@"Untertitelsprache" detail:@"Nur Englisch (Modell)" handler:^{}];
+    }
+    NSArray<NSString *> *languages = [BrowserSubtitleEngine selectableLanguages];
+    NSUInteger index = [languages indexOfObject:current];
+    NSString *next = languages[index == NSNotFound ? 0 : (index + 1) % languages.count];
+    return [self advancedMenuItemWithTitle:@"Untertitelsprache"
+                                    detail:[BrowserSubtitleEngine displayNameForLanguage:current]
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesLanguage = next;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)webSubtitlesMenuItem {
     BOOL enabled = self.preferencesStore.webSubtitlesEnabled;
     return [self advancedMenuItemWithTitle:@"Untertitel (Webseite)"
@@ -1572,6 +1591,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],
         [self autoSubtitlesMenuItem],
+        [self autoSubtitlesLanguageMenuItem],
         [self webSubtitlesMenuItem],
         [self cloudflareDNSMenuItem],
     ];

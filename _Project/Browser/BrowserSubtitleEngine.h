@@ -18,10 +18,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// YES, wenn die App mit whisper.xcframework gebaut wurde (vendor/whisper.xcframework vorhanden).
 + (BOOL)isCompiledWithWhisper;
-/// Pfad des Modells im App-Paket (Ordner WhisperModels) für „en“ oder „auto“, nil wenn keins da ist.
+/// Pfad des Modells im App-Paket (Ordner WhisperModels) für eine Sprache („auto“, „de“, „en“ …), nil wenn keins da ist.
+/// „en“ nimmt bevorzugt ein .en-Modell, alles andere ein mehrsprachiges (notfalls das englische).
 + (nullable NSString *)modelPathForLanguage:(NSString *)language;
-/// YES, wenn ein mehrsprachiges Modell im Paket liegt (dann ist „Sprache automatisch“ möglich).
+/// YES, wenn ein mehrsprachiges Modell im Paket liegt (dann sind „Automatisch“ und andere Sprachen möglich).
 + (BOOL)hasMultilingualModel;
+/// Wählbare Sprachen für Menüs: „auto“ zuerst, dann gängige Sprachen (ISO 639-1, wie whisper sie kennt).
++ (NSArray<NSString *> *)selectableLanguages;
+/// Deutscher Name: „auto“ → „Automatisch“, „de“ → „Deutsch“, unbekannt → Code.
++ (NSString *)displayNameForLanguage:(NSString *)language;
 /// Speicherbedarf der App (phys_footprint) in MB, für Logs.
 + (double)currentMemoryFootprintMB;
 
@@ -45,6 +50,15 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) double averageRealTimeFactor;
 /// Zuletzt erkannte Sprache (bei „auto“), sonst die eingestellte.
 @property (nonatomic, copy, readonly) NSString *detectedLanguage;
+
+/// Bei „auto“: die Sprache, auf die sich die Erkennung festgelegt hat (sonst nil). Festgelegt wird einmal, sobald
+/// zwei Abschnitte mit Sprache dieselbe Sprache ergeben (spätestens nach sechs: die häufigste); danach rechnet
+/// whisper fest in dieser Sprache, damit sie nicht je Abschnitt springt. Threadsicher lesbar.
+@property (atomic, copy, readonly, nullable) NSString *lockedLanguage;
+/// Festlegung von außen übernehmen (z. B. aus einem früheren Lauf für dasselbe Video). Nur bei „auto“ wirksam.
+- (void)lockLanguage:(NSString *)language;
+/// Einmal beim Festlegen gerufen, auf der Queue der Auswertung (nicht beim Übernehmen per `lockLanguage:`).
+@property (nonatomic, copy, nullable) void (^languageLockHandler)(NSString *language, NSUInteger speechWindows);
 
 @end
 

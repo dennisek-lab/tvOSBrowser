@@ -33,7 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL cookieBannerAcceptPayWalls;
 /// Automatische Untertitel (whisper.cpp) im nativen Player. Standard: aus.
 @property (nonatomic) BOOL autoSubtitlesEnabled;
-/// Sprache der automatischen Untertitel: „en“ (Standard, Modell base.en) oder „auto“ (mehrsprachiges Modell, erkennt die Sprache selbst).
+/// Sprache der automatischen Untertitel (nativer Player und Webseite): „auto“ (Standard, erkennt die Sprache einmal
+/// je Video, mehrsprachiges Modell) oder fest „de“, „en“, „fr“ … (BrowserSubtitleEngine +selectableLanguages).
+/// Ein gespeichertes „en“ des alten Standards wird einmalig zu „auto“ (Begründung im .m).
 @property (nonatomic, copy) NSString *autoSubtitlesLanguage;
 /// Einrasten des Zeigers: umlaufender Regenbogen-Glow (Standard) statt einfarbigem Leuchten.
 @property (nonatomic) BOOL rainbowGlowEnabled;
