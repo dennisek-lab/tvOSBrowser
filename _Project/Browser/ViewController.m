@@ -278,6 +278,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     [self showHintsAlert];
                     return;
                 }
+                if ([step isEqualToString:@"clearall"]) {
+                    // Alle Website-Daten (Cookies, Speicher, Cache) löschen: Seiten wie beim ersten Besuch.
+                    [BrowserWebView resetWebsiteDataWithCompletion:^{ NSLog(@"[SelfTest] clearall fertig"); }];
+                    return;
+                }
                 if ([step hasPrefix:@"clearsite:"]) {
                     // Nur die Website-Daten eines Hosts löschen (z. B. gespeicherte Einwilligung), Logins anderswo bleiben.
                     NSString *host = [step substringFromIndex:10];
