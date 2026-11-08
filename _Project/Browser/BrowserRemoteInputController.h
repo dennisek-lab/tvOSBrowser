@@ -81,6 +81,11 @@ NS_ASSUME_NONNULL_BEGIN
 #if DEBUG
 /// Testet die Kreiserkennung mit künstlichen Bewegungen. Rückgabe: Anzahl der Proben im Kreismodus (0 = kein Kreis).
 - (NSInteger)debugRunGestureWithDeltas:(NSArray<NSValue *> *)deltas;
+/// Synthetisches Wischen auf dem Clickpad (Strecke in Clickpad-Einheiten, ganze Breite = 2) über dieselbe Pipeline
+/// wie die echte Fernbedienung (artifacts: Achsen einzeln beim Aufsetzen/Loslassen, Ausreißer am Ende); loggt Messwerte der sichtbaren Zeigerbewegung als „[PointerTest] …“.
+- (void)debugRunSwipeWithPadDelta:(CGVector)padDelta duration:(NSTimeInterval)duration flick:(BOOL)flick artifacts:(BOOL)artifacts;
+/// Ring-Test: Finger kreist im Uhrzeigersinn auf dem Radius (Clickpad-Einheiten); loggt die Zahl der Elementsprünge.
+- (void)debugRunRingWithRadius:(CGFloat)radius degrees:(CGFloat)degrees duration:(NSTimeInterval)duration;
 #endif
 - (void)setCursorModeEnabled:(BOOL)cursorModeEnabled;
 - (void)refreshInteractionState;

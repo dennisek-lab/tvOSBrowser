@@ -182,6 +182,28 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     }
                     return;
                 }
+                if ([step hasPrefix:@"ring:"]) {
+                    // ring:radius,grad,ms – Kreis im Uhrzeigersinn auf dem Clickpad (Radius in Einheiten, Rand = 1).
+                    NSArray<NSString *> *args = [[step substringFromIndex:5] componentsSeparatedByString:@","];
+                    if (args.count >= 3) {
+                        [self.remoteInputController debugRunRingWithRadius:args[0].doubleValue degrees:args[1].doubleValue
+                                                                  duration:args[2].doubleValue / 1000.0];
+                    }
+                    return;
+                }
+                if ([step hasPrefix:@"swipe:"]) {
+                    // swipe:dx,dy,ms[,flick|clean|flickclean] – Strecke in Clickpad-Einheiten (ganze Breite = 2),
+                    // Dauer in ms; flick: Loslassen in voller Fahrt, clean: ohne nachgebildete Hardware-Eigenheiten.
+                    NSArray<NSString *> *args = [[step substringFromIndex:6] componentsSeparatedByString:@","];
+                    if (args.count >= 3) {
+                        NSString *flags = args.count >= 4 ? args[3] : @"";
+                        [self.remoteInputController debugRunSwipeWithPadDelta:CGVectorMake(args[0].doubleValue, args[1].doubleValue)
+                                                                     duration:args[2].doubleValue / 1000.0
+                                                                        flick:[flags containsString:@"flick"]
+                                                                    artifacts:![flags containsString:@"clean"]];
+                    }
+                    return;
+                }
                 if ([step isEqualToString:@"playpause"]) {
                     NSLog(@"[SelfTest] playpause overVideo=%d playing=%d", [self pointerIsOverVideo], self.webview.videoPlaying);
                     [self browserRemoteInputControllerHandlePlayPausePress];
