@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserCommandSummarize;
 /// Seite über translate.goog öffnen. NO, wenn nicht möglich (Rückmeldung kommt vom Controller).
 - (BOOL)browserCommandTranslate;
+/// Übersetzung beenden: Originalseite statt translate.goog laden.
+- (BOOL)browserCommandShowOriginal;
 /// „Frag die Seite“: passendste Stelle suchen und hervorheben; Antwort-Karte bzw. Hinweis kommt vom Controller.
 - (void)browserCommandAskPage:(NSString *)question;
 

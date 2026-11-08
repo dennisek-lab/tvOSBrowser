@@ -216,6 +216,14 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             ok = NO;
             feedback = @"Befehl nicht verfügbar";
         }
+    } else if ([key isEqualToString:@"original"]) {
+        // Rückmeldung kommt vom BrowserIntelligenceController.
+        if ([host respondsToSelector:@selector(browserCommandShowOriginal)]) {
+            ok = [host browserCommandShowOriginal];
+        } else {
+            ok = NO;
+            feedback = @"Befehl nicht verfügbar";
+        }
     } else if ([key isEqualToString:@"ask"]) {
         // Rückmeldung (Antwort-Karte oder „Keine passende Stelle“) kommt vom BrowserIntelligenceController.
         if (argument.length == 0) {

@@ -29,6 +29,9 @@ static CGFloat const kThumbnailMaximumWidth = 600.0;
 @property (nonatomic) NSMutableDictionary<NSString *, BrowserWebView *> *webViewsByTabIdentifier;
 @property (nonatomic) UIView *thumbnailStagingView;
 @property (nonatomic, readwrite, nullable) BrowserWebView *activeWebView;
+/// Beim Start wurde eine Sitzung wiederhergestellt: Beim ersten Erscheinen die Startseite zeigen (Einstellung
+/// „Startseite festlegen“), die übrigen Tabs bleiben im Hintergrund.
+@property (nonatomic) BOOL launchHomePagePending;
 
 @end
 
@@ -368,17 +371,75 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
         [self createNewTabLoadingHomePage:NO];
         return;
     }
+    self.launchHomePagePending = YES;
     [self initWebView];
     [self refreshActiveTabUI];
 }
 
 - (void)webViewDidAppear {
     NSURLRequest *savedReopenRequest = [self.sessionStore consumeSavedURLToReopenRequestWithNavigationService:self.navigationService];
+    BOOL showHome = self.launchHomePagePending;
+    self.launchHomePagePending = NO;
     if (savedReopenRequest != nil) {
         [self.activeWebView loadRequest:savedReopenRequest];
+    } else if (showHome && [self showHomePageAfterLaunch]) {
+        return;
     } else if (self.activeWebView.request == nil) {
         [self loadStoredContentForTab:self.activeTab webView:self.activeWebView fallbackToHomePage:YES];
     }
+}
+
+static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
+    NSURL *url = urlString.length > 0 ? [NSURL URLWithString:urlString] : nil;
+    if (url.host.length == 0 || home.host.length == 0) {
+        return NO;
+    }
+    NSString *(^host)(NSURL *) = ^NSString *(NSURL *u) {
+        NSString *h = u.host.lowercaseString;
+        return [h hasPrefix:@"www."] ? [h substringFromIndex:4] : h;
+    };
+    NSString *(^path)(NSURL *) = ^NSString *(NSURL *u) {
+        NSString *p = u.path.length > 0 ? u.path : @"/";
+        return [p hasSuffix:@"/"] && p.length > 1 ? [p substringToIndex:p.length - 1] : p;
+    };
+    return [host(url) isEqualToString:host(home)] && [path(url) isEqualToString:path(home)];
+}
+
+/// Start nach wiederhergestellter Sitzung: Tab mit der Startseite nach vorn holen, sonst die Startseite in einem neuen
+/// Tab öffnen (leerer aktiver Tab: dort). Sind alle Tabs belegt, lädt der aktive Tab die Startseite (Zurück führt zur
+/// vorigen Seite). NO: keine Startseite eingestellt, dann wie bisher den letzten Tab laden.
+- (BOOL)showHomePageAfterLaunch {
+    NSURLRequest *home = [self.navigationService homePageRequest];
+    if (home.URL == nil) {
+        return NO;
+    }
+    NSArray<BrowserTabViewModel *> *tabs = [self.viewModel.tabs copy];
+    for (NSUInteger index = 0; index < tabs.count; index++) {
+        BrowserTabViewModel *tab = tabs[index];
+        if (BrowserTabShowsHomePage(tab.URLString, home.URL) || BrowserTabShowsHomePage(tab.requestURL, home.URL)) {
+            NSLog(@"[Tabs] Start: Startseite steht schon in Tab %lu", (unsigned long)index);
+            if ((NSInteger)index != self.viewModel.activeTabIndex) {
+                [self switchToTabAtIndex:(NSInteger)index];
+                [self refreshActiveTabUI];
+            } else if (self.activeWebView.request == nil) {
+                [self loadStoredContentForTab:self.activeTab webView:self.activeWebView fallbackToHomePage:YES];
+            }
+            return YES;
+        }
+    }
+    BrowserTabViewModel *active = self.activeTab;
+    if (active.URLString.length == 0 && active.requestURL.length == 0) {
+        NSLog(@"[Tabs] Start: Startseite im leeren aktiven Tab");
+        [self.activeWebView loadRequest:home];
+        return YES;
+    }
+    if (tabs.count >= 5 || ![self createNewTabWithRequest:home]) {
+        NSLog(@"[Tabs] Start: alle Tabs belegt, Startseite im aktiven Tab");
+        [self.activeWebView loadRequest:home];
+        return YES;
+    }
+    NSLog(@"[Tabs] Start: Startseite in neuem Tab %ld, %lu Tabs im Hintergrund", (long)self.viewModel.activeTabIndex, (unsigned long)tabs.count);
+    return YES;
 }
 
 - (void)loadHomePage {

@@ -123,6 +123,8 @@ typedef NS_ENUM(NSInteger, BrowserIntelligenceError) {
 + (nullable NSURL *)translationProxyURLForURL:(NSURL *)url targetLanguage:(NSString *)targetLanguage;
 /// Läuft die Adresse schon über translate.goog?
 + (BOOL)isTranslationProxyURL:(nullable NSURL *)url;
+/// Umkehrung von translationProxyURLForURL: Originaladresse einer translate.goog-Adresse (ohne _x_tr_-Parameter), sonst nil.
++ (nullable NSURL *)originalURLForTranslationProxyURL:(nullable NSURL *)url;
 /// Host ohne "www." (Schlüssel für „nicht mehr fragen“).
 + (nullable NSString *)normalizedHostForURL:(nullable NSURL *)url;
 

@@ -229,7 +229,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     BrowserPerfLog(@"viewDidAppear");
+    BrowserWebView *webViewBefore = self.webview;
     [self.tabCoordinator webViewDidAppear];
+    if (webViewBefore != nil && self.webview != webViewBefore) {
+        [self activeWebViewChangedFrom:webViewBefore]; // Start: Tab mit der Startseite nach vorn geholt
+    }
     if (!self.displayedHintsOnLaunch) {
         // Neue Fassung: einmal „Was ist neu“, sonst wie gewohnt die Bedienungshilfe (abschaltbar).
         NSString *seen = [NSUserDefaults.standardUserDefaults stringForKey:@"WhatsNewSeenVersion"];
@@ -1999,6 +2003,10 @@ static NSString *BrowserDisplayHost(NSString *host) {
     return [self.intelligenceController translateCurrentPage];
 }
 
+- (BOOL)browserCommandShowOriginal {
+    return [self.intelligenceController showOriginalOfCurrentPage];
+}
+
 - (void)browserCommandAskPage:(NSString *)question {
     [self.intelligenceController askCurrentPage:question];
 }
@@ -2009,6 +2017,14 @@ static NSString *BrowserDisplayHost(NSString *host) {
 
 - (void)browserTranslatePage {
     [self.intelligenceController translateCurrentPage];
+}
+
+- (BOOL)browserCurrentPageIsTranslated {
+    return [self.intelligenceController currentPageIsTranslated];
+}
+
+- (void)browserShowOriginalPage {
+    [self.intelligenceController showOriginalOfCurrentPage];
 }
 
 - (void)browserCommandBeginAddressEditing {
@@ -2719,16 +2735,16 @@ static NSString *BrowserDisplayHost(NSString *host) {
     return [webView glowColorAtPoint:center];
 }
 
-- (BOOL)browserRemoteInputControllerTargetIsText:(CGRect)target {
+- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
     BrowserWebView *webView = self.webview;
     if (self.addressPanel != nil || webView == nil || webView.window == nil) {
         return NO;
     }
     CGPoint center = [webView convertPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) fromView:self.view];
     if (!CGRectContainsPoint(webView.bounds, center) || ![self browserRemoteInputControllerLensAllowedForTarget:target]) {
-        return NO; // Knöpfe der oberen Leiste
+        return NO; // Knöpfe der oberen Leiste: eigene Form, Vorgabe-Rundung
     }
-    return [webView isTextTargetAtPoint:center];
+    return [webView clickTargetShapeForRect:[webView convertRect:target fromView:self.view] cornerRadius:cornerRadius surface:surface text:text];
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
