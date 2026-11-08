@@ -212,6 +212,15 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
     if ([text rangeOfCharacterFromSet:meaningful].location == NSNotFound) {
         return YES;
     }
+    // Erfundene Zeichenketten bei Musik/Rauschen: dasselbe Zeichen 8-mal oder öfter hintereinander („Sssssssss…“).
+    NSUInteger run = 1;
+    for (NSUInteger i = 1; i < text.length; i++) {
+        unichar c = [text characterAtIndex:i];
+        run = (c == [text characterAtIndex:i - 1] && [meaningful characterIsMember:c]) ? run + 1 : 1;
+        if (run >= 8) {
+            return YES;
+        }
+    }
     return NO;
 }
 
@@ -253,6 +262,9 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
     int audioContext = (int)ceil((seconds + 1.0) / 30.0 * 1500.0);
     audioContext = ((audioContext + 63) / 64) * 64;
     params.audio_ctx = MIN(1500, MAX(384, audioContext));
+    // Token-Grenze je Durchlauf: Sprache braucht < 8 Tokens/s (inkl. Zeitmarken). Ohne Grenze schreibt whisper bei
+    // Musik teils erfundenen Text bis zur Kontextgrenze aus („Sssss…“, ≈ 220 Tokens, am A15 2 s statt 0,1 s).
+    params.max_tokens = (int)MAX(32.0, ceil(seconds * 12.0));
     params.abort_callback = BrowserWhisperAbort;
     params.abort_callback_user_data = &_abortFlag;
 
@@ -280,6 +292,11 @@ static BOOL BrowserSubtitleIsNoiseText(NSString *text) {
         NSString *text = rawText != NULL ? [[NSString stringWithUTF8String:rawText] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : @"";
         float noSpeech = whisper_full_get_segment_no_speech_prob(_context, i);
         if (BrowserSubtitleIsNoiseText(text) || noSpeech > 0.8f) {
+            // Verworfene Segmente sichtbar machen: lange Rechenzeiten bei „0 Segmente“ kommen von erfundenem Text
+            // (Musik), den whisper bis zur Token-Grenze ausschreibt.
+            NSString *shown = text.length > 60 ? [[text substringToIndex:60] stringByAppendingString:@"…"] : text;
+            NSLog(@"%@ Segment verworfen (no_speech %.2f, %d Tokens): %@", kSubtitleLogPrefix, noSpeech,
+                  whisper_full_n_tokens(_context, i), shown);
             continue;
         }
         NSTimeInterval t0 = startTime + whisper_full_get_segment_t0(_context, i) / 100.0;

@@ -447,6 +447,50 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
                     NSLog(@"[SelfTest] state presented=%@ windowRoot=%@ fs=%d keyWindowPresented=%@", NSStringFromClass(self.presentedViewController.class), NSStringFromClass(self.view.window.rootViewController.class), self.webview.pageFullscreen, NSStringFromClass(self.view.window.rootViewController.presentedViewController.class));
                     return;
                 }
+                if ([step hasPrefix:@"pref:"]) {
+                    // pref:Schlüssel=Wert – Einstellung setzen (am Gerät gibt es kein simctl defaults).
+                    // YES/NO → Bool, Zahl → Zahl, sonst Zeichenkette; leerer Wert löscht den Schlüssel.
+                    NSString *assignment = [step substringFromIndex:5];
+                    NSRange equals = [assignment rangeOfString:@"="];
+                    if (equals.location == NSNotFound || equals.location == 0) {
+                        NSLog(@"[SelfTest] pref ungültig: %@", assignment);
+                        return;
+                    }
+                    NSString *key = [assignment substringToIndex:equals.location];
+                    NSString *raw = [assignment substringFromIndex:NSMaxRange(equals)];
+                    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+                    id value = nil;
+                    NSString *upper = raw.uppercaseString;
+                    if ([upper isEqualToString:@"YES"] || [upper isEqualToString:@"NO"]) {
+                        value = @([upper isEqualToString:@"YES"]);
+                    } else if (raw.length > 0) {
+                        NSScanner *scanner = [NSScanner scannerWithString:raw];
+                        scanner.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+                        double number = 0;
+                        value = ([scanner scanDouble:&number] && scanner.isAtEnd) ? @(number) : raw;
+                    }
+                    if (value != nil) {
+                        [defaults setObject:value forKey:key];
+                    } else {
+                        [defaults removeObjectForKey:key];
+                    }
+                    NSLog(@"[SelfTest] pref %@ = %@ (%@)", key, value ?: @"(gelöscht)", value != nil ? NSStringFromClass([value class]) : @"–");
+                    return;
+                }
+                if ([step isEqualToString:@"speech"]) {
+                    // SpeechTranscriber (tvOS 26) prüfen, Swift-Klasse ohne Bridging-Header (BrowserSpeechProbe.swift).
+                    Class probe = NSClassFromString(@"BrowserSpeechProbe");
+                    SEL run = NSSelectorFromString(@"runWithCompletion:");
+                    if (probe == Nil || ![probe respondsToSelector:run]) {
+                        NSLog(@"[SelfTest] speech: BrowserSpeechProbe fehlt");
+                        return;
+                    }
+                    void (^completion)(NSString *) = ^(NSString *line) {
+                        NSLog(@"[SelfTest] speech %@", line);
+                    };
+                    ((void (*)(id, SEL, id))objc_msgSend)(probe, run, completion);
+                    return;
+                }
                 if ([step hasPrefix:@"js:"]) {
                     // Fehler mitloggen: „js (null)“ allein verrät nicht, ob der Ausdruck scheitert (Syntax, z. B. ein
                     // „return“ außerhalb einer Funktion → Code 4) oder der Seitenprozess weg ist (Code 5 „unsupported

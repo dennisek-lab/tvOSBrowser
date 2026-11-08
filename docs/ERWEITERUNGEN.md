@@ -649,7 +649,7 @@ url:https://example.org/;wait;js:(window.f=document.createElement('iframe'),f.sr
 ```
 
 ### 10.9 Automatische Untertitel (whisper.cpp)
-**Zweck.** Untertitel für Videos ohne eigene Untertitelspur, lokal auf dem Apple TV erzeugt (Apples Spracherkennung gibt es unter tvOS nicht). Weg A: nur im nativen Player.
+**Zweck.** Untertitel für Videos ohne eigene Untertitelspur, lokal auf dem Apple TV erzeugt (`SFSpeechRecognizer` gibt es unter tvOS nicht; Apples neuer `SpeechTranscriber` ist ab tvOS 26 verfügbar, am Gerät geprüft, aber noch nicht als Erkennung angebunden, siehe unten „SpeechTranscriber“). Weg A: nur im nativen Player.
 
 **Dateien.**
 | Datei | Aufgabe |
@@ -683,7 +683,7 @@ tools/fetch_whisper_model.sh      # Pflicht: lädt ggml-base.en-q5_1.bin (57 MB)
 1. `attach`: Ebene in `subtitleOverlayView` (sonst `contentOverlayView`), Menü „Automatische Untertitel“ (An/Aus, bei mehrsprachigem Modell zusätzlich Englisch/Sprache automatisch) in `transportBarCustomMenuItems` (vorhandene Einträge wie „Untertitel der Seite“ bleiben; der Player setzt sein Menü teils neu, deshalb prüft der Controller alle 2 s und hängt sich wieder an), `addPeriodicTimeObserverForInterval` 0,1 s. Ist `autoSubtitlesEnabled` an: Modell auf der whisper-Queue laden, dann Tonquelle starten.
 2. Tonquelle: Adresse mit `.m3u8` → HLS-Quelle, sonst Audio-Tap. Findet der Tap keine Audiospur (HLS ohne `.m3u8` in der Adresse), wird einmal die HLS-Quelle versucht.
 3. Abschnitte (`processingQueue`): Tap 5 s mit 1 s Überlappung (wenig Verzug), HLS 12 s mit 1,5 s Überlappung. Jeder Abschnitt nimmt nur Segmente, deren Mitte in `[Anfang, Ende − Überlappung/2)` liegt; eine Abdeckung im 0,1-s-Raster (`NSMutableIndexSet`) verhindert Doppelungen und überspringt nach dem Zurückspulen schon erkannte Stellen (HLS lädt solche Segmente gar nicht erst). Echtzeitquelle und whisper zu langsam: alte Abschnitte werden verworfen. Pause: angefangener Abschnitt wird sofort ausgewertet.
-4. whisper (`engineQueue`): greedy, `no_context`, `temperature_inc = 0`, `audio_ctx` passend zur Abschnittslänge (5 s → 384, 12 s → 704), Stille (RMS < 0,004) wird übersprungen, Texte in Klammern/ohne Buchstaben und `no_speech_prob > 0,8` verworfen, gleicher Text innerhalb 15 s ebenfalls.
+4. whisper (`engineQueue`): greedy, `no_context`, `temperature_inc = 0`, `audio_ctx` passend zur Abschnittslänge (5 s → 384, 12 s → 704), Stille (RMS < 0,004) wird übersprungen, Texte in Klammern/ohne Buchstaben, mit 8 gleichen Zeichen in Folge („Sssss…“) und `no_speech_prob > 0,8` verworfen (Log `Segment verworfen (no_speech …, N Tokens): …`), gleicher Text innerhalb 15 s ebenfalls. `max_tokens` = max(32, 12 × Abschnittslänge) je Durchlauf: Bei Musik schrieb whisper am Gerät sonst teils erfundenen Text bis zur Kontextgrenze aus (≈ 220 Tokens, 2,1 s für einen 3-s-Abschnitt statt 0,1 s); mit der Grenze 37 Tokens, 0,39 s. Sprache braucht weniger als 8 Tokens/s, Erkennung unverändert (am Gerät mit Weg A und B verglichen).
 5. Anzeige: Untertitel mit Start ≤ t und `visibleUntil` > t, höchstens zwei Zeilen. Kommt ein Untertitel zu spät (Tap), bleibt er ab Ankunft noch 1,5–4 s stehen. Pause und Spulen ergeben sich aus dem Zeitbeobachter, Untertitel bleiben gespeichert.
 
 **HLS-Quelle.** Master: AAC-Varianten bevorzugt, kleinste Bandbreite; hat sie eine `AUDIO`-Gruppe mit `URI`, wird die Rendition genommen (Sprache der Einstellung, sonst `DEFAULT=YES`), sonst der gemuxte Ton der Variante (auch reine Audio-Varianten). Segmente: MPEG-TS (eigener Demuxer PAT → PMT → PES, Stream-Typ 0x0F AAC/ADTS, 0x03/0x04 MP3, 0x81 AC-3) → `ExtAudioFile`; gepacktes Audio (`.aac` mit ID3) → `ExtAudioFile`; fMP4 (`#EXT-X-MAP`, Init + Segment als Datei) → `AVAssetReader` mit 16 kHz mono. `#EXT-X-BYTERANGE` und AES-128 (CommonCrypto, IV aus Playlist oder Sequenznummer) gehen. Zeiten = Summe der `#EXTINF` (passt zur `currentTime` von AVPlayer bei VOD). Lädt bis 60 s voraus, höchstens 25 s unausgewerteter Ton im Stau. Header und Cookies der Seite werden mitgeschickt.
@@ -714,9 +714,29 @@ Der Player liest die Einstellung beim Öffnen; im Player selbst schaltet das Men
 - `Abschnitt 5.0 s @ 23.9 s: 1 Segmente in 0.31 s (RTF 0.06, Schnitt 0.06), ctx 384, …, Speicher 233 MB – <Text>` – je Abschnitt Echtzeitfaktor (Rechenzeit/Audiodauer) und Speicher.
 - `Stand t=…: N Untertitel, N Abschnitte, N verworfen, N wartend, RTF Schnitt …, Speicher … MB` – alle 30 s.
 - `[Subtitles][Tap] prepare rate=44100 ch=2 …`, `[Subtitles][HLS] Audio-Rendition …`, `Audio-Playlist …: N Segmente, … fMP4=…, AES=…`, `Segment @ … s: … KB → … s Ton in … s`.
+- `Segment verworfen (no_speech 0.51, 4 Tokens): ♪` – vom Rausch-/Musikfilter verworfene Segmente (Text gekürzt; `(null)` = an der Token-Grenze abgeschnittenes UTF-8).
 - `Modell freigegeben, Speicher … MB` beim Schließen.
 
-**Messwerte Simulator** (Mac mit Apple Silicon, CPU, 4 Threads, base.en-q5_1): Tap 5-s-Abschnitte 0,30–0,41 s (RTF ≈ 0,06), HLS 12-s-Abschnitte 0,55–1,5 s (RTF 0,05–0,13). Modell laden 0,1–0,2 s (+≈14 s Metal-Übersetzung beim allerersten Laden, wenn Metal genutzt wird). Speicher der App 38 MB → 164 MB nach dem Laden, 230–265 MB während der Erkennung, nach dem Schließen ≈ 73 MB. Gerät: noch nicht gemessen.
+**Messwerte Simulator** (Mac mit Apple Silicon, CPU, 4 Threads, base.en-q5_1): Tap 5-s-Abschnitte 0,30–0,41 s (RTF ≈ 0,06), HLS 12-s-Abschnitte 0,55–1,5 s (RTF 0,05–0,13). Modell laden 0,1–0,2 s (+≈14 s Metal-Übersetzung beim allerersten Laden, wenn Metal genutzt wird). Speicher der App 38 MB → 164 MB nach dem Laden, 230–265 MB während der Erkennung, nach dem Schließen ≈ 73 MB.
+
+**Messwerte Gerät (Apple TV 4K 3. Gen., A15, tvOS 27.2, Debug-Build, `base.en-q5_1`, Tears of Steel 720p .mov über den Audio-Tap, je ≈ 100–135 s Wiedergabe, Stand 2026-11-08):**
+
+| | Metal (Standard) | nur CPU (`AutoSubtitlesCPUOnly`) |
+|:--|:--|:--|
+| Beleg | `use gpu = 1`, `GPU name: MTL0 (Apple A15 GPU)`, `GPU family: MTLGPUFamilyApple8`, `using MTL0 backend` | `use gpu = 0` (ggml legt das Metal-Gerät trotzdem an, rechnet aber auf der CPU) |
+| Metal-Kernel | `ggml_metal_library_init: loading '…/Browser.app/default.metallib'` – `loaded in 0.003 sec`, auch direkt nach Neuinstallation: keine Übersetzung zur Laufzeit | – |
+| Modell laden | 0,30 s | 0,18 s |
+| Speicher der App (vor → nach Laden) | 72 → 178 MB | 76 → 179 MB |
+| Speicher während der Erkennung | 146–150 MB | 158–162 MB |
+| Nach dem Schließen (Modell freigegeben) | 44 MB | 40 MB |
+| Rechenzeit je 5-s-Abschnitt | 0,12–0,57 s (Ø 0,20 s; 33 Abschnitte); erster Abschnitt im ersten Lauf nach der Installation 0,57 s (Pipelines anlegen), sonst ≤ 0,36 s | 0,14–0,24 s (Ø 0,17 s; 25 Abschnitte) |
+| RTF | 0,02–0,11, Schnitt 0,04 | 0,03–0,05, Schnitt 0,03–0,04 |
+| Abschnitte mit Sprache | 0,30–0,36 s | 0,23–0,24 s |
+| Verworfen / wartend | 0 / 0 | 0 / 0 |
+
+Befund: Weg A läuft am Gerät klar in Echtzeit (RTF ≤ 0,11, weit unter 0,8), ohne Jetsam oder Speicherwarnung; Text erscheint wie im Simulator (z. B. „Look Celia, we have to follow our passions.“, „and I just want to be awesome in space.“, „Robots memory, synced, and...“; Musikstellen: „directional“ mehrfach). Bei 5-s-Abschnitten mit `audio_ctx` 384 ist die CPU (4 Threads, NEON/Accelerate) sogar etwas schneller als Metal (kleine Graphen, Decoder-Schritte mit vielen kleinen Kernels); Metal bleibt Standard: es braucht etwa 10 MB weniger Speicher und hält vermutlich die CPU für Video und WebKit frei (CPU-Last am Gerät nicht gemessen). Beide Wege sind ausreichend schnell; `tiny.en` ist nicht nötig. Screenshot mit Untertitel: Untertitel unten im Bild, zweizeilig, halbtransparenter Hintergrund (lokal erstellt, nicht im Repo).
+
+**SpeechTranscriber (Apple, tvOS 26).** Alternative zu whisper, noch nicht angebunden. Gerätetest (2026-11-08, Selbsttest `speech`, `BrowserSpeechProbe.swift`): kompiliert für tvOS (im SDK nur watchOS gesperrt, `DictationTranscriber` ist auf tvOS gesperrt), `SpeechTranscriber.isAvailable = true` auf dem A15, 45 unterstützte Sprachen, keine installiert; `en-US` → `en_US` und `de-DE` → `de_DE` mit `AssetInventory.status` = `supported` (Sprachpaket ladbar, aber nicht vorhanden). Nächster Schritt: Paket per `AssetInventory.assetInstallationRequest(supporting:)` laden und mit `SpeechAnalyzer` am Audio-Tap gegen whisper vergleichen (Qualität, Verzug, Speicher, Deutsch ohne eigenes Modell).
 
 **Test.**
 ```bash
@@ -724,7 +744,12 @@ xcrun simctl spawn <SIM> defaults write io.github.tvosbrowser.app AutoSubtitlesE
 SIMCTL_CHILD_POINTER_SELFTEST='url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;state' \
   xcrun simctl launch --console --terminate-running-process <SIM> io.github.tvosbrowser.app | grep Subtitles
 ```
-Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8` (TS, Ton gemuxt; Selbsttest mit `;wait;…;nplayer`), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü oder Seitenmenü.
+Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8` (TS, Ton gemuxt; Selbsttest mit `;wait;…;nplayer`), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü, Seitenmenü oder Selbsttest-Schritt `pref:` (14.2), z. B.
+```bash
+DEVICECTL_CHILD_POINTER_SELFTEST='pref:AutoSubtitlesEnabled=YES;pref:AutoSubtitlesCPUOnly=NO;url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;wait;nplayer;wait;…;nplayer;nclose' \
+  xcrun devicectl device process launch --device <UDID> --terminate-existing --console io.github.tvosbrowser.app
+```
+(ein `wait` = 3 s; für ≈ 100 s Wiedergabe gut 30 Schritte).
 
 **Kaputt?** Keine `[Subtitles]`-Zeilen: Einhängepunkt fehlt. `whisper=0`: Framework nicht gefunden (Suchpfad). `Modell –`: `tools/fetch_whisper_model.sh` nicht ausgeführt bzw. Ordner nicht im Paket. Tap ohne `prepare`: Audio-Mix nicht angenommen (z. B. HLS, dann sollte die HLS-Quelle übernehmen). RTF > 0,8 auf dem Gerät: `tiny.en-q5_1` nehmen oder Metal prüfen (`[Subtitles][whisper]`-Zeilen beim Laden).
 
@@ -776,7 +801,7 @@ Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tea
 **Fragil/Grenzen.**
 - Fremde Herkunft ohne CORS, DRM und natives HLS liefern nur Nullen (im Simulator für CORS und HLS nachgewiesen). Vorab abgefangen; greift die Prüfung nicht (z. B. Umleitung auf einen anderen Server), ist das Video stumm, bis die Seite neu geladen wird (Hinweis erscheint).
 - Seiten, die ihr Video selbst an Web Audio hängen: `createMediaElementSource` wirft, Zustand `Error source:…`.
-- Lippensynchronität: Der Ton läuft durch den Web-Audio-Graphen (Simulator: `baseLatency` 2,7 ms); auf dem Gerät nicht gemessen.
+- Lippensynchronität: Der Ton läuft durch den Web-Audio-Graphen (Simulator: `baseLatency` 2,7 ms; Gerät: `baseLatency` 2,7 ms, `outputLatency` 80 ms über HDMI); mit Auge/Ohr noch nicht geprüft.
 - Ist „Native Player automatisch“ an, übernimmt bei MP4/HLS der native Player (Weg A); Weg B betrifft dann nur Videos, die in der Seite bleiben.
 - Im tvOS-Simulator (27.2) gibt es weder `MediaSource` noch `ManagedMediaSource` (die dash.js-Beispielseite lädt nicht). MSE-Seiten (Mediatheken, DASH) sind also nur auf dem Gerät testbar. `blob:`-Quellen werden wie gleiche Herkunft behandelt.
 - Zeitzuordnung: In der ersten Sekunde nach dem Anhängen weichen Blockzeiten um bis zu 0,3 s ab (gepufferter Ton), danach stabil (Abstand 0,50 s).
@@ -802,7 +827,17 @@ url:http://127.0.0.1:8765/;wait;js:(document.querySelector('video').currentTime=
 ```
 Messwerte im Simulator (Mac, tvOS 27.2, Stub): Weg Skript → App 0,7–1,6 ms je Block, Base64 im Skript 0,05–0,09 ms, Dekodieren in der App 0,2 ms, Verzug im Graphen 0–9 ms. Anzeige-Verzug = Abschnittslänge + Rechenzeit (Stub 1 s: Ø 0,9–1,1 s; 3 s + 1,2 s Rechenzeit: rund 4,3 s nach Abschnittsbeginn). CPU (ps): App etwa +0,7, WebContent etwa +1,1 Prozentpunkte gegenüber Wiedergabe ohne Abgriff.
 
-Messwerte mit whisper (Simulator auf Mac mit Apple Silicon, tvOS 27.2, CPU, 4 Threads, `base.en-q5_1`, Tears of Steel 720p als MP4 gleicher Herkunft über lokalen Server, Stand 2026-11-08): Modell laden 0,15 s (nach Neuinstallation einmalig ≈16 s Metal-Übersetzung, siehe 10.9), Speicher der App 32 → 192 MB nach dem Laden, 176–184 MB während der Erkennung, 61 MB nach dem Freigeben. Rechenzeit je 3-s-Abschnitt 0,27–0,42 s (RTF ≈ 0,1–0,13), nichts übersprungen. Text sichtbar Ø 2,6–3,5 s nach Beginn des Abschnitts (Spanne 0,7–3,6 s; Abschnitt 3 s + Rechenzeit + Blocktakt 0,5 s). CPU der App (kumulierte CPU-Zeit): whisper ≈ 17 % eines Kerns, Platzhalter ≈ 1,5 %. Erkannt z. B. „You're a jerk tongue.“ (gesprochen: „You're a jerk, Thom“), „Look, Celia, we have to follow our passions.“, „just admit that you're freaked out by my...“, „I'm having nightmares that I'm being chased by these guys.“, „Robots memory?“/„synced, and locked.“. Gerät: noch nicht gemessen.
+Messwerte mit whisper (Simulator auf Mac mit Apple Silicon, tvOS 27.2, CPU, 4 Threads, `base.en-q5_1`, Tears of Steel 720p als MP4 gleicher Herkunft über lokalen Server, Stand 2026-11-08): Modell laden 0,15 s (nach Neuinstallation einmalig ≈16 s Metal-Übersetzung, siehe 10.9), Speicher der App 32 → 192 MB nach dem Laden, 176–184 MB während der Erkennung, 61 MB nach dem Freigeben. Rechenzeit je 3-s-Abschnitt 0,27–0,42 s (RTF ≈ 0,1–0,13), nichts übersprungen. Text sichtbar Ø 2,6–3,5 s nach Beginn des Abschnitts (Spanne 0,7–3,6 s; Abschnitt 3 s + Rechenzeit + Blocktakt 0,5 s). CPU der App (kumulierte CPU-Zeit): whisper ≈ 17 % eines Kerns, Platzhalter ≈ 1,5 %. Erkannt z. B. „You're a jerk tongue.“ (gesprochen: „You're a jerk, Thom“), „Look, Celia, we have to follow our passions.“, „just admit that you're freaked out by my...“, „I'm having nightmares that I'm being chased by these guys.“, „Robots memory?“/„synced, and locked.“.
+
+Messwerte Gerät (Apple TV 4K 3. Gen., A15, tvOS 27.2, Debug, Metal, `base.en-q5_1`, Stand 2026-11-08): Testseite ist die .mov selbst als Video-Dokument (gleiche Herkunft, kein Server nötig), „Native Player automatisch“ per `pref:AutoOpenVideosInNativePlayer=NO` aus:
+```
+pref:AutoOpenVideosInNativePlayer=NO;url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;wait;wait;js:(window.v=document.querySelector('video'),v.currentTime=18,v.play(),1);websubs;wait;…;websubs:status;websubs:off;pref:AutoOpenVideosInNativePlayer=
+```
+- Web Audio: `suspended gesture` → `running` nach 26 ms ohne Klick (wie im Simulator), AudioWorklet, 48 kHz, `baseLatency` 2,7 ms, `outputLatency` 80 ms. Blöcke ohne Nullen, Weg Skript → App 1,0–1,3 ms, Dekodieren 0,6–0,7 ms.
+- Modell laden 0,20 s, Speicher der App 31 → 136 MB, während der Erkennung 135–145 MB (WebContent-Prozess nicht gemessen). Kein Jetsam, kein Absturz des Seitenprozesses.
+- Rechenzeit je 3-s-Abschnitt 0,10–0,29 s (Ø 0,15–0,18 s, RTF ≈ 0,04–0,10), 33–35 Abschnitte je Lauf, nichts übersprungen. Vor der Token-Grenze (siehe 10.9, Ablauf 4) zwei Ausreißer bei Musik mit 2,1 s (RTF 0,7, „Sssss…“ bzw. verworfener Text), danach höchstens 0,39 s.
+- Text sichtbar Ø 2,4 s nach Abschnittsbeginn (Spanne 0,6–3,3 s), Overlay unten im Video (Screenshot geprüft). Erkannt wie im Simulator („Look, Celia, we have to follow...“, „and I just want to be awesome in space.“, „just admit that you're freaked out by my...“, „synced and locked.“); bei Musik „directional“ (Wiederholung innerhalb 15 s verworfen).
+- Offen: MSE-Seite (Mediathek, DASH), Lippensynchronität mit Auge/Ohr (Web-Audio-Ausgabe meldet 80 ms `outputLatency`; ob WebKit das Bild darauf abstimmt, ist ungeprüft).
 
 **Menüeintrag.** „Untertitel (Webseite)“ in `BrowserMenuCoordinator.m` (ruft `browserSetWebSubtitlesEnabled:`), Einstellung `webSubtitlesEnabled` bleibt gespeichert.
 
@@ -929,6 +964,8 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `state` | Dialog-/Fenster-/Vollbildzustand | `state presented=… windowRoot=… fs=… keyWindowPresented=…` |
 | `js:<Code>` | JavaScript ausführen, Ergebnis loggen. Ausdruck, kein `return` auf oberster Ebene (sonst Syntaxfehler); für Anweisungen `(function(){try{…}catch(e){return 'ERR '+e}})()`, Zeilenumbrüche statt `;` | `js <Ergebnis>` bzw. `js Fehler <Code>: <Text> <Ausnahme>` (4 Ausnahme/Syntax, 5 Ergebnis nicht übertragbar oder Seitenprozess weg, siehe 3.1) |
 | `websubs[:opt,…]` | Untertitel in der Webseite fürs aktuelle Video starten (whisper, Sprache aus `autoSubtitlesLanguage`; ohne Modell Platzhalter). Optionen: `en`/`auto` (Sprache für diesen Test), `stub` (Platzhalter-Erkennung), `sp` (ScriptProcessor statt AudioWorklet), `force` (ohne Herkunftsprüfung), `slow` (Stub mit 3 s Abschnitt, 0,5 s Überlappung, 1,2 s Rechenzeit), `status`, `off` | `websubs start …`, `websubs Zustand=… Blöcke=… Abschnitte=… Anzeige-Verzug=… skript={…}`, `websubs aus`; dazu `[WebAudio]`/`[WebSubs]` |
+| `pref:<Schlüssel>=<Wert>` | Einstellung in `NSUserDefaults.standardUserDefaults` schreiben (am Gerät gibt es kein `simctl … defaults write`). `YES`/`NO` → Bool, Zahl → Zahl, sonst Zeichenkette, leerer Wert löscht den Schlüssel. Beispiele: `pref:AutoSubtitlesEnabled=YES`, `pref:AutoSubtitlesCPUOnly=YES`, `pref:AutoOpenVideosInNativePlayer=NO`, `pref:AutoSubtitlesLanguage=en`. Wirkt ab dem nächsten Lesen der Einstellung (z. B. beim Öffnen des Players), bleibt nach dem Test gespeichert | `pref <Schlüssel> = <Wert> (<Klasse>)` |
+| `speech` | Apples `SpeechTranscriber` (Speech, tvOS 26) prüfen: Verfügbarkeit, Sprachen, Sprachpakete (`BrowserSpeechProbe.swift`, keine Erkennung) | `speech isAvailable=… supported=N installed=[…] en-US->… Paket=…` |
 | `wait` (jeder unbekannte Schritt) | nichts tun, 3 s warten | – |
 | `video` | Zustand des ersten `<video>` (Zeit, paused, readyState, networkState, Fehler) plus App-Sicht (Rechtecke, `playing`, `idleTimerDisabled`) | `video t=… paused=… … rects=… playing=… idle=…` |
 | `native` | Video der Seite im nativen Player öffnen (wie Menü „Im Player öffnen“, Zeigerposition zählt) | `native hasVideo=…`, danach `[NativeVideoPlayer]`-Zeilen |
