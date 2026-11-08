@@ -66,3 +66,6 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 NS_ASSUME_NONNULL_END
+
+/// Kurzer Name der Website wie in Safari (Metadaten, sonst der zum Host passende Teil des Titels).
+FOUNDATION_EXPORT NSString * _Nonnull BrowserShortSiteName(NSString * _Nullable siteName, NSString * _Nullable title, NSString * _Nonnull host);

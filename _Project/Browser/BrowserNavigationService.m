@@ -82,7 +82,7 @@ static NSUInteger const kMaximumHistoryCount = 100;
     
     NSString *safeTitle = pageTitle ?: @"";
     NSString *safeURLString = currentURLString ?: @"";
-    tab.title = safeTitle.length > 0 ? safeTitle : @"New Tab";
+    tab.title = safeTitle.length > 0 ? safeTitle : @"Neuer Tab";
     tab.URLString = safeURLString;
     
     [self persistHistoryItemWithURLString:safeURLString title:safeTitle];

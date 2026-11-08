@@ -1,15 +1,19 @@
 #import "BrowserSubtitleController.h"
 
+#import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserSubtitleAudioTapSource.h"
 #import "BrowserSubtitleEngine.h"
 #import "BrowserSubtitleHLSAudioSource.h"
 #import "BrowserSubtitleOverlayView.h"
 
+#import <objc/runtime.h>
+
 static NSString * const kSubtitleControllerLogPrefix = @"[Subtitles]";
 static NSString * const kSubtitleMenuIdentifier = @"io.github.tvosbrowser.app.autoSubtitles";
 static const double kSampleRate = 16000.0;
 static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
+static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssociationKey;
 
 /// Ein Auswertungsabschnitt.
 @interface BrowserSubtitleWindow : NSObject
@@ -36,6 +40,9 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
 @property (nonatomic, strong, nullable) id<BrowserSubtitleAudioSource> source;
 @property (nonatomic, strong, nullable) BrowserSubtitleEngine *engine;
 @property (nonatomic) BOOL triedHLSFallback;
+@property (nonatomic) BOOL suppressedByExistingSubtitles;
+@property (nonatomic) BOOL userForcedOn;  // im Player-Menü eingeschaltet: auch neben vorhandenen Untertiteln
+@property (nonatomic) BOOL streamingPlaylist;
 @property (nonatomic, readwrite, getter=isRunning) BOOL running;
 @property (nonatomic) BOOL detached;
 @property (nonatomic) NSTimeInterval lastSourceUpdate;
@@ -61,6 +68,33 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
 @end
 
 @implementation BrowserSubtitleController
+
+/// Hängt sich über den Einhängepunkt des nativen Players ein (BrowserNativeVideoPlayerViewController.h),
+/// der Player selbst muss dafür nicht geändert werden.
++ (void)load {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:BrowserNativePlayerDidCreatePlayerItemNotification object:nil
+                                                         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+            BrowserNativeVideoPlayerViewController *player = note.object;
+            if (![player isKindOfClass:BrowserNativeVideoPlayerViewController.class] ||
+                objc_getAssociatedObject(player, kSubtitleControllerAssociationKey) != nil) {
+                return;
+            }
+            BrowserSubtitleController *controller = [BrowserSubtitleController attachToPlayerViewController:player
+                                                                                               playbackURL:player.videoURL
+                                                                                            requestHeaders:player.requestHeaders
+                                                                                                   cookies:player.requestCookies];
+            objc_setAssociatedObject(player, kSubtitleControllerAssociationKey, controller, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }];
+        [NSNotificationCenter.defaultCenter addObserverForName:BrowserNativePlayerWillEndSessionNotification object:nil
+                                                         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+            BrowserSubtitleController *controller = objc_getAssociatedObject(note.object, kSubtitleControllerAssociationKey);
+            [controller detach];
+            objc_setAssociatedObject(note.object, kSubtitleControllerAssociationKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }];
+    });
+}
 
 + (NSString *)menuTitle {
     return @"Automatische Untertitel";
@@ -107,6 +141,11 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
 - (void)attach {
     AVPlayerViewController *playerViewController = self.playerViewController;
     UIView *container = playerViewController.contentOverlayView;
+    if ([playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class]) {
+        BrowserNativeVideoPlayerViewController *player = (BrowserNativeVideoPlayerViewController *)playerViewController;
+        container = player.subtitleOverlayView ?: container;  // gemeinsame Untertitelebene des Players
+        self.streamingPlaylist = player.isStreamingPlaylist;
+    }
     self.overlay = [[BrowserSubtitleOverlayView alloc] initWithFrame:container.bounds];
     [container addSubview:self.overlay];
     [self installMenu];
@@ -115,7 +154,29 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
           self.preferences.autoSubtitlesEnabled, self.preferences.autoSubtitlesLanguage,
           [BrowserSubtitleEngine isCompiledWithWhisper],
           [BrowserSubtitleEngine modelPathForLanguage:self.preferences.autoSubtitlesLanguage].lastPathComponent ?: @"–");
-    if (self.preferences.autoSubtitlesEnabled) {
+    if (self.preferences.autoSubtitlesEnabled && !self.existingSubtitlesShown) {
+        [self startRecognition];
+    }
+}
+
+/// Stream-Untertitel oder WebVTT der Seite aktiv: dann keine automatische Erkennung.
+- (BOOL)existingSubtitlesShown {
+    AVPlayerViewController *playerViewController = self.playerViewController;
+    if ([playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class]) {
+        return ((BrowserNativeVideoPlayerViewController *)playerViewController).isShowingExistingSubtitles;
+    }
+    return NO;
+}
+
+- (void)checkExistingSubtitles {
+    BOOL existing = self.existingSubtitlesShown;
+    if (existing && self.running && !self.userForcedOn) {
+        NSLog(@"%@ vorhandene Untertitel aktiv, Erkennung pausiert", kSubtitleControllerLogPrefix);
+        self.suppressedByExistingSubtitles = YES;
+        [self stopRecognitionClearing:NO];
+        [self.overlay showStatus:@"Untertitel vorhanden, automatische Erkennung pausiert" duration:4.0];
+    } else if (!existing && self.suppressedByExistingSubtitles && self.preferences.autoSubtitlesEnabled && !self.running) {
+        self.suppressedByExistingSubtitles = NO;
         [self startRecognition];
     }
 }
@@ -218,6 +279,7 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
 - (void)setEnabledFromMenu:(BOOL)enabled {
     NSLog(@"%@ Menü: %@", kSubtitleControllerLogPrefix, enabled ? @"an" : @"aus");
     self.preferences.autoSubtitlesEnabled = enabled;
+    self.userForcedOn = enabled;
     if (enabled) {
         [self startRecognition];
     } else {
@@ -285,7 +347,7 @@ static const NSTimeInterval kCoverageUnit = 0.1;   // Raster der Abdeckung (s)
 
 - (BOOL)playbackURLLooksLikeHLS {
     NSString *string = self.playbackURL.absoluteString.lowercaseString;
-    return [string containsString:@".m3u8"] || [string containsString:@"format=m3u8"] || [string containsString:@"/hls/"];
+    return self.streamingPlaylist || [string containsString:@".m3u8"] || [string containsString:@"format=m3u8"] || [string containsString:@"/hls/"];
 }
 
 - (void)startSourcePreferringHLS:(BOOL)hls {
@@ -616,6 +678,7 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
         if (!self.menuInstalled) {
             [self installMenu];  // falls der Player seine Einträge neu gesetzt hat
         }
+        [self checkExistingSubtitles];
     }
     if (self.running && wall - self.lastSummary > 30.0) {
         self.lastSummary = wall;

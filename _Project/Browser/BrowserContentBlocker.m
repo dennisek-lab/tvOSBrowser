@@ -2,11 +2,20 @@
 #import "BrowserPreferencesStore.h"
 
 #import <objc/message.h>
+#import <objc/runtime.h>
 
 static NSString * const kBlockerResourceDirectory = @"ContentBlocker";
 static NSString * const kBlockerIdentifierPrefix = @"adblock-";
 static NSString * const kStateExceptionKey = @"exception";
 static NSString * const kStateSignatureKey = @"signature";
+static NSString * const kWallMessageName = @"browserAdblockWall";
+
+@class BrowserContentBlocker;
+
+/// Empfängt {host, text, top} der Sperren-Erkennung (adblock-wall.js).
+@interface BrowserAdblockWallMessageProxy : NSObject
+@property (nonatomic, weak) BrowserContentBlocker *blocker;
+@end
 
 @interface BrowserContentBlocker ()
 
@@ -18,8 +27,21 @@ static NSString * const kStateSignatureKey = @"signature";
 @property (nonatomic) NSUInteger totalListCount;
 /// Controller (schwach) -> @{exception, signature} des zuletzt angewendeten Zustands
 @property (nonatomic, strong) NSMapTable<id, NSDictionary *> *controllerStates;
+/// Controller (schwach) -> @{active, script} der Sperren-Erkennung
+@property (nonatomic, strong) NSMapTable<id, NSDictionary *> *wallStates;
+@property (nonatomic, strong) NSMutableArray *wallProxies;
+/// Hosts, für die in diesem App-Lauf schon eine automatische Ausnahme samt Neuladen ausgelöst wurde (Schleifenschutz).
+@property (nonatomic, strong) NSMutableSet<NSString *> *wallHandledHosts;
+- (void)handleWallMessage:(id)message;
 @property (nonatomic, strong) dispatch_queue_t workQueue;
 
+@end
+
+@implementation BrowserAdblockWallMessageProxy
+- (void)userContentController:(id)controller didReceiveScriptMessage:(id)message {
+    (void)controller;
+    [self.blocker handleWallMessage:message];
+}
 @end
 
 @implementation BrowserContentBlocker
@@ -40,6 +62,9 @@ static NSString * const kStateSignatureKey = @"signature";
         _readyLists = [NSMutableArray array];
         _wantedIdentifiers = @[];
         _controllerStates = [NSMapTable weakToStrongObjectsMapTable];
+        _wallStates = [NSMapTable weakToStrongObjectsMapTable];
+        _wallProxies = [NSMutableArray array];
+        _wallHandledHosts = [NSMutableSet set];
         _workQueue = dispatch_queue_create("browser.contentblocker.compile", DISPATCH_QUEUE_SERIAL);
     }
     return self;
@@ -100,6 +125,153 @@ static BOOL BrowserHostMatchesException(NSString *host, NSString *entry) {
         }
     }
     store.adBlockExceptionHosts = hosts;
+    // Eine Entscheidung des Nutzers (Menü) ersetzt die automatische Ausnahme.
+    [self removeAutoExceptionForKey:key];
+}
+
+- (void)removeAutoExceptionForKey:(NSString *)key {
+    BrowserPreferencesStore *store = [BrowserPreferencesStore new];
+    NSMutableArray<NSString *> *autoHosts = [store.adBlockAutoExceptionHosts mutableCopy];
+    for (NSString *entry in [autoHosts copy]) {
+        if (BrowserHostMatchesException(key, entry)) {
+            [autoHosts removeObject:entry];
+        }
+    }
+    store.adBlockAutoExceptionHosts = autoHosts;
+}
+
+- (BOOL)isAutoExceptionForURL:(NSURL *)url {
+    NSString *key = [BrowserContentBlocker exceptionKeyForURL:url];
+    if (key == nil) {
+        return NO;
+    }
+    for (NSString *entry in [BrowserPreferencesStore new].adBlockAutoExceptionHosts) {
+        if (BrowserHostMatchesException(key, entry)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+#pragma mark Adblock-Sperre erkennen
+
+/// Skript aus dem Paket (ContentBlocker/adblock-wall.js), einmal gelesen.
+static NSString *BrowserAdblockWallSource(void) {
+    static NSString *source;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"adblock-wall" ofType:@"js" inDirectory:kBlockerResourceDirectory];
+        source = path ? [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL] : @"";
+#if DEBUG
+        if (source.length == 0) {
+            NSLog(@"[AdBlockWall] Ressource adblock-wall.js fehlt im App-Paket");
+        }
+#endif
+    });
+    return source;
+}
+
+- (id)makeWallUserScript {
+    Class scriptClass = NSClassFromString(@"WKUserScript");
+    SEL scriptInit = NSSelectorFromString(@"initWithSource:injectionTime:forMainFrameOnly:");
+    NSString *source = BrowserAdblockWallSource();
+    if (scriptClass == Nil || ![scriptClass instancesRespondToSelector:scriptInit] || source.length == 0) {
+        return nil;
+    }
+    id script = ((id (*)(id, SEL))objc_msgSend)((id)scriptClass, @selector(alloc));
+    // document-end (1), alle Frames: Sperren liegen auch in CMP-iframes
+    return ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(script, scriptInit, source, 1, NO);
+}
+
+/// Das Skript steckt nur im Controller, wenn Werbeblocker und Automatik an sind und die Seite noch keine Ausnahme hat.
+/// Ein-/Ausbau wie beim Cookie-Ablehner: userScripts ist eine Live-Ansicht, daher echte Kopie vor removeAllUserScripts.
+- (void)refreshWallController:(id)controller exception:(BOOL)exception force:(BOOL)force {
+    SEL addScript = NSSelectorFromString(@"addUserScript:");
+    SEL removeAll = NSSelectorFromString(@"removeAllUserScripts");
+    SEL scriptsGetter = NSSelectorFromString(@"userScripts");
+    if (![controller respondsToSelector:addScript] || ![controller respondsToSelector:removeAll] ||
+        ![controller respondsToSelector:scriptsGetter]) {
+        return;
+    }
+    BrowserPreferencesStore *store = [BrowserPreferencesStore new];
+    BOOL active = store.adBlockEnabled && store.adBlockAutoPauseOnWall && !exception;
+    NSDictionary *current = [self.wallStates objectForKey:controller];
+    if (!force && current != nil && [current[@"active"] boolValue] == active) {
+        return;
+    }
+    id oldScript = current[@"script"];
+    if (oldScript == NSNull.null) {
+        oldScript = nil;
+    }
+    id newScript = active ? [self makeWallUserScript] : nil;
+    if (oldScript != nil || newScript != nil) {
+        NSArray *scripts = [NSArray arrayWithArray:((NSArray *(*)(id, SEL))objc_msgSend)(controller, scriptsGetter)];
+        ((void (*)(id, SEL))objc_msgSend)(controller, removeAll);
+        for (id script in scripts) {
+            if (script != oldScript) {
+                ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, script);
+            }
+        }
+        if (newScript != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(controller, addScript, newScript);
+        }
+    }
+    [self.wallStates setObject:@{@"active": @(active), @"script": newScript ?: NSNull.null} forKey:controller];
+}
+
+- (void)installWallHandlerOnController:(id)controller {
+    SEL addHandler = NSSelectorFromString(@"addScriptMessageHandler:name:");
+    if ([self.wallStates objectForKey:controller] != nil || ![controller respondsToSelector:addHandler]) {
+        return;
+    }
+    Protocol *protocol = objc_getProtocol("WKScriptMessageHandler");
+    if (protocol != NULL && !class_conformsToProtocol(BrowserAdblockWallMessageProxy.class, protocol)) {
+        class_addProtocol(BrowserAdblockWallMessageProxy.class, protocol);
+    }
+    BrowserAdblockWallMessageProxy *proxy = [BrowserAdblockWallMessageProxy new];
+    proxy.blocker = self;
+    [self.wallProxies addObject:proxy];
+    ((void (*)(id, SEL, id, id))objc_msgSend)(controller, addHandler, proxy, kWallMessageName);
+}
+
+/// Treffer der Erkennung: für den Host der Hauptseite eine automatische Ausnahme setzen und einmal neu laden.
+- (void)handleWallMessage:(id)message {
+    SEL bodySel = NSSelectorFromString(@"body");
+    SEL webViewSel = NSSelectorFromString(@"webView");
+    id body = [message respondsToSelector:bodySel] ? ((id (*)(id, SEL))objc_msgSend)(message, bodySel) : nil;
+    if (![body isKindOfClass:NSDictionary.class]) {
+        return;
+    }
+    id webView = [message respondsToSelector:webViewSel] ? ((id (*)(id, SEL))objc_msgSend)(message, webViewSel) : nil;
+    // Hauptseite: bevorzugt die echte URL der WebView (auch bei Meldungen aus iframes), sonst der gemeldete Host
+    SEL urlSel = NSSelectorFromString(@"URL");
+    NSURL *pageURL = [webView respondsToSelector:urlSel] ? ((NSURL *(*)(id, SEL))objc_msgSend)(webView, urlSel) : nil;
+    NSString *key = [BrowserContentBlocker exceptionKeyForURL:pageURL];
+    if (key == nil && [body[@"host"] isKindOfClass:NSString.class]) {
+        key = [BrowserContentBlocker exceptionKeyForURL:[NSURL URLWithString:[@"https://" stringByAppendingString:body[@"host"]]]];
+        pageURL = key ? [NSURL URLWithString:[@"https://" stringByAppendingString:key]] : nil;
+    }
+    BrowserPreferencesStore *store = [BrowserPreferencesStore new];
+    if (key == nil || !store.adBlockEnabled || !store.adBlockAutoPauseOnWall || [self isExceptionForURL:pageURL]) {
+        return;
+    }
+    if ([self.wallHandledHosts containsObject:key]) {
+        return; // Schleifenschutz: pro Host einmal je App-Lauf
+    }
+    [self.wallHandledHosts addObject:key];
+#if DEBUG
+    NSLog(@"[AdBlockWall] host %@ erkannt → Ausnahme, neu laden (%@) Text: %@", key, [body[@"top"] boolValue] ? @"Hauptframe" : @"iframe", body[@"text"]);
+#endif
+    [self setException:YES forURL:pageURL];
+    NSMutableArray<NSString *> *autoHosts = [store.adBlockAutoExceptionHosts mutableCopy];
+    if (![autoHosts containsObject:key]) {
+        [autoHosts addObject:key];
+        store.adBlockAutoExceptionHosts = autoHosts;
+    }
+    SEL reload = NSSelectorFromString(@"reload");
+    if ([webView respondsToSelector:reload]) {
+        ((id (*)(id, SEL))objc_msgSend)(webView, reload);
+    }
 }
 
 #pragma mark Kompilieren
@@ -264,17 +436,26 @@ static BOOL BrowserHostMatchesException(NSString *host, NSString *entry) {
     [self prepare];
     // Neue Tabs starten ohne Zielseite; eine Ausnahme greift mit der ersten Navigation.
     [self refreshController:userContentController exception:NO force:YES];
+    [self installWallHandlerOnController:userContentController];
+    [self refreshWallController:userContentController exception:NO force:YES];
 }
 
 - (void)updateUserContentController:(id)userContentController forNavigationToURL:(NSURL *)url {
     if (userContentController == nil) {
         return;
     }
-    [self refreshController:userContentController exception:[self isExceptionForURL:url] force:NO];
+    BOOL exception = [self isExceptionForURL:url];
+    [self refreshController:userContentController exception:exception force:NO];
+    [self refreshWallController:userContentController exception:exception force:NO];
 }
 
 - (void)preferencesDidChange {
     [self refreshAllControllersForce:YES];
+    for (id controller in self.wallStates.keyEnumerator.allObjects) {
+        // Ausnahmezustand der Seite bleibt erhalten
+        BOOL exception = [[self.controllerStates objectForKey:controller][kStateExceptionKey] boolValue];
+        [self refreshWallController:controller exception:exception force:YES];
+    }
 }
 
 @end

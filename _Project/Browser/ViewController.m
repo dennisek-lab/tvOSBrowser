@@ -6,6 +6,7 @@
 //  Improved by Jip van Akker on 14/10/2015 through 10/01/2019
 //
 
+#import "BrowserAddressPanelView.h"
 #import "BrowserGuideViewController.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
@@ -15,17 +16,21 @@
 #import "BrowserNowPlayingController.h"
 #import "BrowserPageActionCoordinator.h"
 #import "BrowserPreferencesStore.h"
+#import "BrowserReaderMode.h"
 #import "BrowserRemoteInputController.h"
 #import "BrowserSessionStore.h"
 #import "BrowserStartViewController.h"
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
 #import "BrowserTabOverviewController.h"
+#import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "ViewController.h"
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
+/// Spike Siri-Steuerung: BrowserAppIntents.swift schickt Befehle über diese Notification (siehe docs/SIRI_STEUERUNG.md).
+static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNotification";
 
 @interface ViewController () <BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
 
@@ -49,6 +54,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
 @property (nonatomic) CGFloat lastPageScrollOffset;
 @property (nonatomic) CGFloat pageScrollTravel;
+@property (nonatomic) NSUInteger readerCheckGeneration;
+/// Adressleiste im Bearbeiten-Zustand: Aufklapp-Bereich mit Favoriten, Oft besucht, Zuletzt (nil = geschlossen).
+@property (nonatomic, nullable) BrowserAddressPanelView *addressPanel;
 
 @end
 
@@ -124,6 +132,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                                              selector:@selector(handleGlobalSelectPressEndedNotification:)
                                                  name:kBrowserGlobalSelectPressEndedNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleSiriCommandNotification:)
+                                                 name:kBrowserSiriCommandNotification
+                                               object:nil];
 
     [self.tabCoordinator restoreInitialStateOrCreateFirstTab];
 }
@@ -150,6 +162,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         return;
     }
     started = YES; // viewDidAppear kommt nach jedem geschlossenen Dialog erneut
+    // Lange Testläufe ohne Eingabe: sonst startet der Bildschirmschoner und hält die App an.
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSArray<NSString *> *steps = [spec componentsSeparatedByString:@";"];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self dismissViewControllerAnimated:NO completion:nil];
@@ -203,6 +217,17 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                             }
                         }];
                     }
+                    return;
+                }
+                if ([step hasPrefix:@"siri:"]) {
+                    // Befehl wie aus einem App Intent: siri:<befehl> oder siri:<befehl>|<argument>
+                    NSArray<NSString *> *parts = [[step substringFromIndex:5] componentsSeparatedByString:@"|"];
+                    NSMutableDictionary *info = [@{@"command": parts.firstObject ?: @"", @"source": @"selftest"} mutableCopy];
+                    if (parts.count > 1) {
+                        info[@"argument"] = parts[1];
+                    }
+                    NSLog(@"[SelfTest] siri %@", info[@"command"]);
+                    [NSNotificationCenter.defaultCenter postNotificationName:kBrowserSiriCommandNotification object:nil userInfo:info];
                     return;
                 }
                 if ([step hasPrefix:@"dictate:"]) {
@@ -274,6 +299,36 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     NSLog(@"[SelfTest] menu handled=%d", handled);
                     return;
                 }
+                if ([step isEqualToString:@"reader"]) {
+                    NSLog(@"[SelfTest] reader vorher verfügbar=%d aktiv=%d", self.topMenuView.readerAvailable, self.topMenuView.readerActive);
+                    [self performTopBarAction:BrowserTopBarActionReader];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        NSLog(@"[SelfTest] reader nachher verfügbar=%d aktiv=%d", self.topMenuView.readerAvailable, self.topMenuView.readerActive);
+                    });
+                    return;
+                }
+                if ([step isEqualToString:@"address"]) {
+                    // Wie zweimal oben: Leiste ausklappen, Diktierfeld und Aufklapp-Bereich.
+                    [self browserRemoteInputControllerOpenAddressBar];
+                    NSLog(@"[SelfTest] address active=%d tiles=%lu field=%@", self.addressPanel != nil,
+                          (unsigned long)self.addressPanel.tileCount, NSStringFromCGRect(self.topMenuView.addressFieldFrame));
+                    return;
+                }
+                if ([step hasPrefix:@"dir:"]) {
+                    // Pfeiltaste im Aufklapp-Bereich: dir:up|down|left|right
+                    NSString *direction = [step substringFromIndex:4];
+                    CGVector vector = [direction isEqualToString:@"up"] ? CGVectorMake(0, -1)
+                        : [direction isEqualToString:@"down"] ? CGVectorMake(0, 1)
+                        : [direction isEqualToString:@"left"] ? CGVectorMake(-1, 0) : CGVectorMake(1, 0);
+                    [self.remoteInputController stepTargetInDirection:vector];
+                    NSLog(@"[SelfTest] dir %@ cursor=%@", direction, NSStringFromCGPoint(self.remoteInputController.cursorView.frame.origin));
+                    return;
+                }
+                if ([step isEqualToString:@"favorite"]) {
+                    [self toggleFavoriteForCurrentPage];
+                    NSLog(@"[SelfTest] favorite %@ = %d", self.webview.request.URL.host, self.topMenuView.favorite);
+                    return;
+                }
                 if ([step isEqualToString:@"advmenu"]) {
                     [self showAdvancedMenu];
                     return;
@@ -321,6 +376,22 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     }];
                     return;
                 }
+                // Nativer Player: öffnen (wie Menü „Im Player öffnen“), Zustand, an Position springen, schließen.
+                if ([step isEqualToString:@"native"]) {
+                    NSLog(@"[SelfTest] native hasVideo=%d", [self.videoPlaybackCoordinator pageHasVideo]);
+                    [self.videoPlaybackCoordinator openPageVideoInNativePlayer];
+                    return;
+                }
+                if ([step isEqualToString:@"nplayer"] || [step hasPrefix:@"nseek:"] || [step isEqualToString:@"nclose"]) {
+                    BrowserNativeVideoPlayerViewController *player = [self.videoPlaybackCoordinator currentNativePlayer];
+                    NSLog(@"[SelfTest] %@ %@", step, player != nil ? [player debugStateLine] : @"kein Player");
+                    if ([step hasPrefix:@"nseek:"]) {
+                        [player.player seekToTime:CMTimeMakeWithSeconds([step substringFromIndex:6].doubleValue, NSEC_PER_SEC)];
+                    } else if ([step isEqualToString:@"nclose"]) {
+                        [player dismissViewControllerAnimated:YES completion:nil];
+                    }
+                    return;
+                }
                 if ([step isEqualToString:@"video"]) {
                     [self.webview evaluateJavaScriptAsync:@"(function(){var v=document.querySelector('video');return v?('t='+v.currentTime.toFixed(1)+' paused='+v.paused+' ready='+v.readyState+' net='+v.networkState+' err='+(v.error?v.error.code:0)+' playErr='+(window.__browserLastPlayError||'')):'none';})()"
                                                completion:^(id result) {
@@ -364,6 +435,42 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 - (void)handleApplicationWillTerminate:(NSNotification *)notification {
     (void)notification;
     [self.tabCoordinator persistSession];
+}
+
+/// Spike: Befehl aus einem App Intent (Siri) oder dem Selbsttest. Nur vorhandene Aktionen,
+/// „reader“ wird bis zum Reader-Knopf nur geloggt. Später ersetzt durch die Befehlstabelle BrowserCommand.
+- (void)handleSiriCommandNotification:(NSNotification *)notification {
+    NSString *command = [notification.userInfo[@"command"] isKindOfClass:NSString.class] ? notification.userInfo[@"command"] : @"";
+    NSString *argument = [notification.userInfo[@"argument"] isKindOfClass:NSString.class] ? notification.userInfo[@"argument"] : nil;
+    NSLog(@"[Siri] Befehl %@ arg=%@ quelle=%@", command, argument ?: @"-", notification.userInfo[@"source"] ?: @"-");
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    if ([command isEqualToString:@"back"]) {
+        [self performTopBarAction:BrowserTopBarActionBack];
+    } else if ([command isEqualToString:@"forward"]) {
+        [self performTopBarAction:BrowserTopBarActionForward];
+    } else if ([command isEqualToString:@"reload"]) {
+        [self performTopBarAction:BrowserTopBarActionRefresh];
+    } else if ([command isEqualToString:@"home"]) {
+        [self performTopBarAction:BrowserTopBarActionHome];
+    } else if ([command isEqualToString:@"tabs"]) {
+        [self performTopBarAction:BrowserTopBarActionTabs];
+    } else if ([command isEqualToString:@"favorite"]) {
+        [self performTopBarAction:BrowserTopBarActionFavorite];
+    } else if ([command isEqualToString:@"newtab"]) {
+        [self browserCreateNewTabLoadingHomePage:YES];
+    } else if ([command isEqualToString:@"address"]) {
+        if (argument.length > 0) {
+            [self openAddressOrSearch:argument];
+        } else {
+            [self browserRemoteInputControllerOpenAddressBar];
+        }
+    } else if ([command isEqualToString:@"reader"]) {
+        [self performTopBarAction:BrowserTopBarActionReader];
+    } else {
+        NSLog(@"[Siri] unbekannter Befehl %@", command);
+    }
 }
 
 - (void)handleGlobalSelectPressEndedNotification:(NSNotification *)notification {
@@ -450,15 +557,20 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             [self browserShowTabOverview];
             break;
         case BrowserTopBarActionURL:
-            [self showStartView];
+            // Klick auf die Adresse: Bearbeiten-Zustand (wie zweimal oben); im Zustand selbst öffnet das Feld die Eingabe.
+            if (self.addressPanel != nil) {
+                [self showAddressDictationInput];
+            } else {
+                [self beginAddressEditing];
+            }
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                                         message:@"You can still open the side menu by double-tapping the Play/Pause button."
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Obere Leiste ausblenden?"
+                                                                                         message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."
                                                                                   preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Hide Bar"
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+                [alertController addAction:[UIAlertAction actionWithTitle:@"Ausblenden"
                                                                     style:UIAlertActionStyleDestructive
                                                                   handler:^(__unused UIAlertAction *action) {
                     [self browserHideTopNav];
@@ -473,6 +585,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             break;
         case BrowserTopBarActionFavorite:
             [self toggleFavoriteForCurrentPage];
+            break;
+        case BrowserTopBarActionReader:
+            [self toggleReaderMode];
             break;
     }
 }
@@ -537,6 +652,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     if (trimmed.length == 0) {
         return;
     }
+    [self endAddressEditingAnimated:YES];
     NSURLRequest *request = nil;
     if ([self enteredTextLooksLikeAddress:trimmed]) {
         NSString *address = [trimmed containsString:@"://"] ? trimmed : [@"https://" stringByAppendingString:trimmed];
@@ -585,15 +701,26 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)showInputURLorSearchGoogle {
+    [self showInputURLorSearchGoogleForDictation:NO];
+}
+
+/// Eingabe aus dem Diktierfeld: Standardtastatur (dort bietet tvOS das Diktat über die Siri-Taste an).
+- (void)showAddressDictationInput {
+    [self showInputURLorSearchGoogleForDictation:YES];
+}
+
+- (void)showInputURLorSearchGoogleForDictation:(BOOL)dictation {
     if (self.presentedViewController != nil) {
         [self dismissViewControllerAnimated:NO completion:nil];
     }
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Suchen oder Adresse eingeben"
-                                                                             message:@"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:dictation ? @"Sprechen, um zu diktieren" : @"Suchen oder Adresse eingeben"
+                                                                             message:dictation ? @"Siri-Taste gedrückt halten und Suchbegriff oder Adresse sagen – oder tippen."
+                                                                                               : @"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.keyboardType = UIKeyboardTypeWebSearch;
+        // Aus dem Diktierfeld: Standardtastatur, die tvOS mit Diktat-Hinweis (Siri-Taste) anbietet.
+        textField.keyboardType = dictation ? UIKeyboardTypeDefault : UIKeyboardTypeWebSearch;
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.placeholder = @"Suchbegriff oder z. B. computerbase.de";
@@ -612,6 +739,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         weakSelf.searchAlert = nil;
         NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:alertController.textFields.firstObject.text];
         if (request != nil) {
+            [weakSelf endAddressEditingAnimated:YES];
             [weakSelf.webview loadRequest:request];
         }
     }]];
@@ -629,8 +757,58 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 /// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
 - (void)browserRemoteInputControllerCompactTopBar {
+    [self endAddressEditingAnimated:YES];
     [self.topMenuView setCompact:YES animated:YES];
     self.pageScrollTravel = 0.0;
+}
+
+#pragma mark - Reader-Modus
+
+/// Reader-Knopf der Leiste: Artikel anzeigen bzw. zur Originalseite zurück.
+- (void)toggleReaderMode {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil) {
+        return;
+    }
+    self.readerCheckGeneration++;
+    __weak typeof(self) weakSelf = self;
+    [BrowserReaderMode toggleWebView:webView completion:^(BrowserReaderState state) {
+        if (weakSelf.webview != webView) {
+            return;
+        }
+        [weakSelf.topMenuView setReaderAvailable:state != BrowserReaderStateUnavailable active:state == BrowserReaderStateActive];
+        [webView refreshClickTargets];
+        [weakSelf.remoteInputController pointerTargetsDidChange];
+    }];
+}
+
+/// Fragt die Lesbarkeit der aktuellen Seite ab und zeigt oder verbirgt den Reader-Knopf.
+- (void)updateReaderAvailability {
+    BrowserWebView *webView = self.webview;
+    if (webView == nil) {
+        return;
+    }
+    NSUInteger generation = ++self.readerCheckGeneration;
+    __weak typeof(self) weakSelf = self;
+    [BrowserReaderMode checkWebView:webView completion:^(BrowserReaderState state) {
+        if (weakSelf.webview != webView || weakSelf.readerCheckGeneration != generation) {
+            return;
+        }
+        [weakSelf.topMenuView setReaderAvailable:state != BrowserReaderStateUnavailable active:state == BrowserReaderStateActive];
+        [weakSelf.remoteInputController pointerTargetsDidChange];
+    }];
+}
+
+/// Nach dem Laden: sofort und nochmals nach 2,5 s prüfen (Seiten, die ihren Text erst per Skript aufbauen).
+- (void)scheduleReaderAvailabilityChecks {
+    BrowserWebView *webView = self.webview;
+    for (NSNumber *delay in @[@0.4, @2.5]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (self.webview == webView && !webView.isLoading && !self.topMenuView.readerActive) {
+                [self updateReaderAvailability];
+            }
+        });
+    }
 }
 
 /// Stern in der Leiste: aktuelle Seite zu den Favoriten hinzufügen oder entfernen.
@@ -665,7 +843,80 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     return name;
 }
 
-/// Startansicht mit Suchfeld, Zuletzt besucht, Meistbesucht und Favoriten.
+#pragma mark - Adresse bearbeiten (Diktierfeld und Aufklapp-Bereich)
+
+/// Zweimal oben oder Klick auf die Adresse: Leiste ausklappen, Diktierfeld, darunter Favoriten/Oft/Zuletzt.
+/// Die Tastatur öffnet sich erst mit Klick auf das Feld (oder Play/Pause).
+- (void)beginAddressEditing {
+    if (self.addressPanel != nil || self.tabOverviewController.visible) {
+        return;
+    }
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    [self deactivateTopBarFocusMode];
+    if (!self.viewModel.topNavigationBarVisible || self.topMenuView.hidden) {
+        [self browserShowTopNav];
+    }
+    [self.topMenuView setCompact:NO animated:YES];
+    self.pageScrollTravel = 0.0;
+    [self.topMenuView setAddressEditing:YES animated:YES];
+
+    UIView *container = self.topMenuView.superview ?: self.view;
+    BrowserAddressPanelView *panel = [[BrowserAddressPanelView alloc] initWithFrame:container.bounds];
+    __weak typeof(self) weakSelf = self;
+    panel.openURLHandler = ^(NSURL *url) {
+        [weakSelf endAddressEditingAnimated:YES];
+        [weakSelf.webview loadRequest:[NSURLRequest requestWithURL:url]];
+    };
+    // Unter der Leiste (die Leiste bleibt hell), über der Seite; Zeiger und Hervorhebung liegen darüber.
+    [container insertSubview:panel belowSubview:self.topMenuView];
+    self.addressPanel = panel;
+    [panel reloadData];
+    CGRect bar = [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:panel];
+    [panel presentBelowBarFrame:bar animated:YES];
+
+    [self.remoteInputController refreshInteractionState];
+    // Fokus auf das Diktierfeld.
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    [self.remoteInputController movePointerToPoint:CGPointMake(CGRectGetMidX(field), CGRectGetMidY(field))];
+#if DEBUG
+    NSLog(@"[Address] Bearbeiten an, Kacheln=%lu", (unsigned long)panel.tileCount);
+#endif
+}
+
+- (void)endAddressEditingAnimated:(BOOL)animated {
+    BrowserAddressPanelView *panel = self.addressPanel;
+    if (panel == nil) {
+        return;
+    }
+    self.addressPanel = nil;
+    [self.topMenuView setAddressEditing:NO animated:animated];
+    [panel dismissAnimated:animated completion:nil];
+    [self.remoteInputController refreshInteractionState];
+    [self.remoteInputController pointerTargetsDidChange];
+#if DEBUG
+    NSLog(@"[Address] Bearbeiten aus");
+#endif
+}
+
+/// Klick im Bearbeiten-Zustand: Feld öffnet die Eingabe, Kachel die Seite, daneben schließt.
+- (void)handleAddressEditingSelectionAtPoint:(CGPoint)point {
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    if (CGRectContainsPoint(CGRectInset(field, -6.0, -6.0), point)) {
+        [self showAddressDictationInput];
+        return;
+    }
+    if ([self.addressPanel handleSelectionAtPoint:point inView:self.view]) {
+        return;
+    }
+    if ([self.addressPanel cardContainsPoint:point inView:self.view]) {
+        return;
+    }
+    [self endAddressEditingAnimated:YES];
+}
+
+/// Frühere Vollbild-Startansicht (BrowserStartViewController); nicht mehr eingebunden, bleibt als Rückfall.
 - (void)showStartView {
     if (self.presentedViewController != nil) {
         [self dismissViewControllerAnimated:NO completion:nil];
@@ -786,8 +1037,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         }
     }];
     if (found && self.topMenuView.compact) {
-        [self.topMenuView setCompact:NO animated:YES];
-        self.pageScrollTravel = 0.0;
+        // Klick auf die Kapsel: wie auf die Adresse (die Leiste klappt dabei auf).
+        [self beginAddressEditing];
         return YES;
     }
     if (found) {
@@ -851,6 +1102,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 - (void)browserHandlePrimaryAction {
     if (!self.remoteInputController.cursorModeEnabled || self.webview == nil) {
+        return;
+    }
+
+    if (self.addressPanel != nil) {
+        [self handleAddressEditingSelectionAtPoint:self.remoteInputController.cursorView.frame.origin];
         return;
     }
 
@@ -980,6 +1236,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     [self observeClickTargetsOfWebView:current];
     [current refreshClickTargets];
     [self.remoteInputController pointerTargetsDidChange];
+    [self.topMenuView setReaderAvailable:NO active:NO];
+    [self updateReaderAvailability];
     UIApplication.sharedApplication.idleTimerDisabled = current.videoPlaying;
     [self.nowPlayingController updateWithMediaInfo:current.mediaInfo];
     [self applyPageColorOfWebView:current];
@@ -1160,6 +1418,15 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return YES;
     }
+    if (self.addressPanel != nil) {
+        [self endAddressEditingAnimated:YES];
+        return YES;
+    }
+    // Reader läuft: Zurück beendet zuerst den Reader und zeigt die Originalseite.
+    if (self.topMenuView.readerActive) {
+        [self toggleReaderMode];
+        return YES;
+    }
     if (self.webview.canGoBack) {
         [self.webview goBack];
         return YES;
@@ -1193,6 +1460,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return;
     }
+    if (self.addressPanel != nil) {
+        [self showAddressDictationInput];
+        return;
+    }
     // Läuft ein Video oder steht der Zeiger auf einem, steuert Play/Pause das Video.
     if (self.webview != nil && (self.webview.videoPlaying || [self pointerIsOverVideo])) {
         [self.webview sendVideoCommand:@"toggle" atPoint:[self pointerPointInWebView]];
@@ -1211,10 +1482,29 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (UIView *)browserRemoteInputControllerLensSourceView {
-    return self.webview;
+    // Im Aufklapp-Bereich keine Linse: Kacheln liegen über der Seite, nicht in ihr.
+    return self.addressPanel != nil ? nil : self.webview;
+}
+
+- (BOOL)browserRemoteInputControllerAddressPanelActive {
+    return self.addressPanel != nil && self.presentedViewController == nil;
+}
+
+- (CGFloat)browserRemoteInputControllerCornerRadiusForTarget:(CGRect)target {
+    if (self.addressPanel == nil) {
+        return -1.0;
+    }
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    if (CGRectEqualToRect(CGRectIntegral(field), CGRectIntegral(target))) {
+        return CGRectGetHeight(field) / 2.0;
+    }
+    return [self.addressPanel cornerRadiusForTargetRect:target inView:self.view];
 }
 
 - (UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target {
+    if (self.addressPanel != nil) {
+        return nil; // Standardblau wie die Magnetic Buttons
+    }
     BrowserWebView *webView = self.webview;
     if (webView == nil || webView.window == nil) {
         return nil;
@@ -1234,6 +1524,15 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
+    if (self.addressPanel != nil) {
+        // Bearbeiten-Zustand: nur Diktierfeld und Kacheln; die Seite darunter ist gedimmt und nicht erreichbar.
+        NSMutableArray<NSValue *> *panelTargets = [NSMutableArray array];
+        [self.topMenuView enumeratePointerTargetsUsingBlock:^(CGRect frame, __unused BrowserTopBarAction action) {
+            [panelTargets addObject:[NSValue valueWithCGRect:[self.topMenuView convertRect:frame toView:self.view]]];
+        }];
+        [panelTargets addObjectsFromArray:[self.addressPanel pointerTargetRectsInView:self.view]];
+        return panelTargets;
+    }
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
     BrowserWebView *webView = self.webview;
     BOOL topBarVisible = [self topBarAcceptsPointer];
@@ -1281,6 +1580,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 /// die obere Leiste nur am Seitenanfang, damit der Sprung nach oben sonst die Seite scrollt.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets {
     NSArray<NSValue *> *pointerTargets = [self browserRemoteInputControllerPointerTargets];
+    if (self.addressPanel != nil) {
+        return pointerTargets;
+    }
     BOOL atTop = self.lastPageScrollOffset < 24.0;
     CGRect barFrame = [self topBarAcceptsPointer] ? [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:self.view] : CGRectNull;
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
@@ -1316,7 +1618,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)browserRemoteInputControllerOpenAddressBar {
-    [self showInputURLorSearchGoogle];
+    // Zweimal oben: Leiste ausklappen und Adresse bearbeiten, ohne gleich die Tastatur zu öffnen.
+    [self beginAddressEditing];
 }
 
 /// Clickpad rechts: über einem laufenden Video 10 s vor, sonst zum nächsten Element.
@@ -1355,10 +1658,18 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self observeClickTargetsOfWebView:webView];
     }
     [self.tabCoordinator webViewDidStartLoad:webView];
+    if (webView == self.webview) {
+        // Neue Seite: Reader zu Ende, Lesbarkeit unbekannt.
+        self.readerCheckGeneration++;
+        [self.topMenuView setReaderAvailable:NO active:NO];
+    }
 }
 
 - (void)webViewDidFinishLoad:(id)webView {
     [self.tabCoordinator webViewDidFinishLoad:webView];
+    if (webView == self.webview) {
+        [self scheduleReaderAvailabilityChecks];
+    }
     if (webView == self.webview && self.webview.request.URL != nil) {
         [BrowserHistoryStore.sharedStore recordVisitWithURL:self.webview.request.URL title:[self currentSiteDisplayName]];
     }
@@ -1403,12 +1714,12 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         return;
     }
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Could Not Load Webpage"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Seite konnte nicht geladen werden"
                                                                              message:error.localizedDescription
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     if (tab.requestURL.length > 1) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Google This Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Bei Google suchen"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForFailedRequestURLString:tab.requestURL];
@@ -1418,20 +1729,20 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         }]];
     }
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Reload Page"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             weakSelf.tabCoordinator.previousURL = @"";
             [weakSelf.webview reload];
         }]];
     } else {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Enter a URL or Search"
+        [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf requestURLorSearchInput];
         }]];
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 

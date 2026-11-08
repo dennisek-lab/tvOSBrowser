@@ -6,14 +6,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Automatische Untertitel im nativen Player (whisper.cpp, lokal).
 ///
-/// Einhängen (BrowserNativeVideoPlayerViewController, nach dem Anlegen des AVPlayer):
-///     self.subtitleController = [BrowserSubtitleController attachToPlayerViewController:self playbackURL:… requestHeaders:… cookies:…];
-/// Aufräumen beim Schließen: [self.subtitleController detach];
+/// Hängt sich selbst ein (`+load`): über `BrowserNativePlayerDidCreatePlayerItemNotification` des
+/// BrowserNativeVideoPlayerViewController wird je Player ein Controller angelegt (als assoziiertes Objekt),
+/// `BrowserNativePlayerWillEndSessionNotification` räumt ihn ab. Der Player muss nicht geändert werden.
 ///
-/// Legt die Untertitelebene in `contentOverlayView`, einen Schalter „Automatische Untertitel“ in
-/// `transportBarCustomMenuItems` (bestehende Einträge bleiben erhalten) und startet die Erkennung,
-/// wenn `BrowserPreferencesStore.autoSubtitlesEnabled` an ist. Tonquelle: Audio-Tap bei Dateien,
-/// eigene Segmentauswertung bei HLS. Logpräfix `[Subtitles]`.
+/// Legt die Untertitelebene in `subtitleOverlayView` (sonst `contentOverlayView`), einen Schalter
+/// „Automatische Untertitel“ in `transportBarCustomMenuItems` (bestehende Einträge bleiben erhalten) und
+/// startet die Erkennung, wenn `BrowserPreferencesStore.autoSubtitlesEnabled` an ist und keine
+/// Stream-/Seiten-Untertitel laufen. Tonquelle: Audio-Tap bei Dateien, eigene Segmentauswertung bei HLS.
+/// Logpräfix `[Subtitles]`.
 @interface BrowserSubtitleController : NSObject
 
 + (instancetype)attachToPlayerViewController:(AVPlayerViewController *)playerViewController

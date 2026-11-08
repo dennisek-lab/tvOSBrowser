@@ -11,7 +11,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
     BrowserTopBarActionURL,
     BrowserTopBarActionFullscreen,
     BrowserTopBarActionMenu,
-    BrowserTopBarActionFavorite
+    BrowserTopBarActionFavorite,
+    BrowserTopBarActionReader
 };
 
 @class BrowserTopBarView;
@@ -32,6 +33,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 @property (nonatomic, readonly) UIImageView *tabsImageView;
 @property (nonatomic, readonly) UIImageView *fullscreenImageView;
 @property (nonatomic, readonly) UIImageView *menuImageView;
+/// Reader-Knopf links neben dem Menü-Symbol.
+@property (nonatomic, readonly) UIImageView *readerImageView;
 @property (nonatomic, readonly) UILabel *URLLabel;
 @property (nonatomic, readonly) UIActivityIndicatorView *loadingSpinner;
 @property (nonatomic, readonly, getter=isFocusModeActive) BOOL focusModeActive;
@@ -46,6 +49,10 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 - (void)setLoadingProgress:(double)progress loading:(BOOL)loading;
 /// Seitenname, dahinter dezent die Domain (nil = keine). Bei verschlüsselter Verbindung (HTTPS) ist der Name grün.
 - (void)setDisplayTitle:(nullable NSString *)title domain:(nullable NSString *)domain secure:(BOOL)secure;
+/// Reader-Modus: available = Seite lesbar (sonst Knopf ausgeblendet), active = Reader läuft (Knopf hervorgehoben).
+- (void)setReaderAvailable:(BOOL)available active:(BOOL)active;
+@property (nonatomic, readonly) BOOL readerAvailable;
+@property (nonatomic, readonly) BOOL readerActive;
 - (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;
 - (void)setFocusModeActive:(BOOL)focusModeActive;
 /// Kompakte Leiste beim Scrollen: kleine Glas-Kapsel nur mit dem Seitennamen (wie Safari).
@@ -56,6 +63,14 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 /// Scrollansicht, über deren oberem Rand die Leiste schwebt (für den Kanteneffekt des Systems).
 - (void)attachToScrollView:(nullable UIScrollView *)scrollView;
 - (nullable UIView *)preferredFocusItem;
+
+#pragma mark - Adresse bearbeiten (Diktierfeld)
+/// Bearbeiten-Zustand: Die Kapsel wird zum Feld „Sprechen, um zu diktieren“ (Mikrofon und Platzhalter mittig),
+/// die übrigen Knöpfe werden ausgeblendet. Als Zeigerziel gilt dann nur das Feld (Aktion BrowserTopBarActionURL).
+@property (nonatomic, readonly, getter=isAddressEditing) BOOL addressEditing;
+- (void)setAddressEditing:(BOOL)addressEditing animated:(BOOL)animated;
+/// Diktierfeld in Koordinaten der Leiste (CGRectNull außerhalb des Bearbeiten-Zustands).
+@property (nonatomic, readonly) CGRect addressFieldFrame;
 
 @end
 

@@ -64,6 +64,12 @@
 		13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */ = {isa = PBXBuildFile; fileRef = E53AD484DE66F498680E6080 /* BrowserSubtitleHLSAudioSource.m */; };
 		B36C5EF1454752D297B41FC6 /* BrowserSubtitleOverlayView.m in Sources */ = {isa = PBXBuildFile; fileRef = 835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */; };
 		87AE7A3B51C58A21FC6C714A /* BrowserSubtitleController.m in Sources */ = {isa = PBXBuildFile; fileRef = 52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */; };
+		BC7377FCB96ADE6D0703EE8F /* Reader in Resources */ = {isa = PBXBuildFile; fileRef = 02AB7C306633303A188E18EE /* Reader */; };
+		F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */ = {isa = PBXBuildFile; fileRef = EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */; };
+		C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */; };
+		3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */; };
+		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
+		232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */ = {isa = PBXBuildFile; fileRef = 48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -162,6 +168,15 @@
 		835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleOverlayView.m; sourceTree = "<group>"; };
 		C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSubtitleController.h; sourceTree = "<group>"; };
 		52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSubtitleController.m; sourceTree = "<group>"; };
+		02AB7C306633303A188E18EE /* Reader */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Reader; sourceTree = "<group>"; };
+		083704A0266ED4493FABF426 /* BrowserReaderMode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserReaderMode.h; sourceTree = "<group>"; };
+		EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserReaderMode.m; sourceTree = "<group>"; };
+		1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAppIntents.swift; sourceTree = "<group>"; };
+		CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
+		2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFaviconCache.h; sourceTree = "<group>"; };
+		70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFaviconCache.m; sourceTree = "<group>"; };
+		D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressPanelView.h; sourceTree = "<group>"; };
+		48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressPanelView.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -323,6 +338,13 @@
 				835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */,
 				C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */,
 				52B1E9922A25BC377FAB1EB5 /* BrowserSubtitleController.m */,
+				083704A0266ED4493FABF426 /* BrowserReaderMode.h */,
+				EA8792B99D04AB1D4CAA7691 /* BrowserReaderMode.m */,
+				1DD4439ECBA448258C56B2D1 /* BrowserAppIntents.swift */,
+				2BA62F9E46A251535C36FC8F /* BrowserFaviconCache.h */,
+				70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */,
+				D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */,
+				48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -390,8 +412,10 @@
 			children = (
 				B002B8661BAE420500C744AF /* main.m */,
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
+				CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
 				7AADFF423E379F3DCAE70806 /* WhisperModels */,
+				02AB7C306633303A188E18EE /* Reader */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
@@ -443,6 +467,7 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
 			);
 			mainGroup = B002B8591BAE420500C744AF;
 			productRefGroup = B002B8631BAE420500C744AF /* Products */;
@@ -465,6 +490,8 @@
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
 				E4895E2842B91B8723258DD5 /* WhisperModels in Resources */,
+				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,
+				3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
@@ -539,6 +566,10 @@
 				13CF45819819E8CAA246C3E0 /* BrowserSubtitleHLSAudioSource.m in Sources */,
 				6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */,
 				68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */,
+				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
+				C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */,
+				232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */,
+				D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */,
 				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,
@@ -707,6 +738,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.tvosbrowser.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
+				SWIFT_VERSION = 5.0;
 				TVOS_DEPLOYMENT_TARGET = 17.0;
 			};
 			name = Debug;
@@ -735,6 +767,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.tvosbrowser.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
+				SWIFT_VERSION = 5.0;
 				TVOS_DEPLOYMENT_TARGET = 17.0;
 			};
 			name = Release;
