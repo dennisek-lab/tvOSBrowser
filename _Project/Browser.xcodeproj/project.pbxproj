@@ -56,6 +56,7 @@
 		4E74E160BF506F77842D2BDF /* BrowserContentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */; };
 		BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */ = {isa = PBXBuildFile; fileRef = 59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */; };
 		399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */ = {isa = PBXBuildFile; fileRef = E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */; };
+		56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -139,6 +140,8 @@
 		59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ContentBlocker; sourceTree = "<group>"; };
 		40607E1D6455EA12B85887D4 /* BrowserCookieConsentBlocker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserCookieConsentBlocker.h; sourceTree = "<group>"; };
 		E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserCookieConsentBlocker.m; sourceTree = "<group>"; };
+		5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserGuideViewController.h; sourceTree = "<group>"; };
+		AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserGuideViewController.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -287,6 +290,8 @@
 				F43B2DB3432E7E005D24D9F6 /* BrowserContentBlocker.m */,
 				40607E1D6455EA12B85887D4 /* BrowserCookieConsentBlocker.h */,
 				E90E57833C8779DA5696E0B5 /* BrowserCookieConsentBlocker.m */,
+				5DC8C8CE72179C926E9197FC /* BrowserGuideViewController.h */,
+				AA39324A06B2B2B9527C8411 /* BrowserGuideViewController.m */,
 				A1B49A622D6A3800001D58A1 /* BrowserWebView.m */,
 			);
 			name = Views;
@@ -477,6 +482,7 @@
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,
 				A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */,
 				A1B49A632D6A3800001D58A1 /* BrowserWebView.m in Sources */,
+				56CE6E979FFDC1F0A8CAD944 /* BrowserGuideViewController.m in Sources */,
 				399CB53E3E141C81337BC668 /* BrowserCookieConsentBlocker.m in Sources */,
 				42492D8131BB517A39E91AD2 /* BrowserStartViewController.m in Sources */,
 				30BF46DEC490AD88A574B406 /* BrowserHistoryStore.m in Sources */,

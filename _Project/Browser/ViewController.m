@@ -6,6 +6,7 @@
 //  Improved by Jip van Akker on 14/10/2015 through 10/01/2019
 //
 
+#import "BrowserGuideViewController.h"
 #import "BrowserHistoryStore.h"
 #import "BrowserMenuCoordinator.h"
 #import "BrowserDOMInteractionService.h"
@@ -717,28 +718,13 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)showHintsAlert {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Bedienung"
-                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad zweimal oben drücken: Adressleiste.\nAm Clickpad-Ring kreisen: von Element zu Element springen.\nClickpad links/rechts drücken: zurück/vor, über einem Video 10 s spulen.\nZurück-Taste: Seite zurück, auf der ersten Seite zum Home-Bildschirm.\nPlay/Pause: Video starten/anhalten, sonst Schnellmenü. Halten: Suche (dann Siri-Taste halten und sprechen). Zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
-
+    BrowserGuideViewController *guide = [[BrowserGuideViewController alloc] init];
+    guide.dontShowOnLaunch = self.preferencesStore.dontShowHintsOnLaunch;
     __weak typeof(self) weakSelf = self;
-    if (self.preferencesStore.dontShowHintsOnLaunch) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Always Show On Launch"
-                                                            style:UIAlertActionStyleDestructive
-                                                          handler:^(__unused UIAlertAction *action) {
-            weakSelf.preferencesStore.dontShowHintsOnLaunch = NO;
-        }]];
-    } else {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Don't Show This Again"
-                                                            style:UIAlertActionStyleDestructive
-                                                          handler:^(__unused UIAlertAction *action) {
-            weakSelf.preferencesStore.dontShowHintsOnLaunch = YES;
-        }]];
-    }
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Dismiss"
-                                                        style:UIAlertActionStyleCancel
-                                                      handler:nil]];
-    [self presentViewController:alertController animated:YES completion:nil];
+    guide.toggleHandler = ^(BOOL dontShowOnLaunch) {
+        weakSelf.preferencesStore.dontShowHintsOnLaunch = dontShowOnLaunch;
+    };
+    [self presentViewController:guide animated:YES completion:nil];
 }
 
 - (BOOL)topBarAcceptsPointer {
