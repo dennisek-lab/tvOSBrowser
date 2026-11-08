@@ -47,7 +47,7 @@ Risiko bei Updates: **hoch** = nutzt private/undokumentierte APIs oder Layout-In
 | YouTube-Erfassung/-Extraktor | `BrowserWebView.m` (`BrowserYouTubeRequestCaptureScript`), `BrowserYouTubeExtractor.m` | hoch (Extraktion ist abgeschaltet) |
 | DNS-Proxy (Cloudflare DoH) | `BrowserDNSProxy.m/.h`, `SceneDelegate.m`, `AppDelegate.m` | hoch (`nw_*`-Privacy-Context, `proxyConfigurations`) |
 | Eingabedialog für Formulare (Passwörter) | `BrowserPageActionCoordinator.m`, `BrowserDOMInteractionService.m` | niedrig bis mittel |
-| Start-/Verlaufsansicht, Favoriten | `BrowserStartViewController.m`, `BrowserHistoryStore.m` | niedrig |
+| Adress-Bearbeiten mit Aufklapp-Bereich (Favoriten, Oft, Zuletzt), Favicons | `BrowserAddressPanelView.m`, `BrowserFaviconCache.m`, `BrowserHistoryStore.m` (alte Vollbild-Startansicht `BrowserStartViewController.m` nicht mehr eingebunden) | niedrig |
 | Bedienungsdialog | `BrowserGuideViewController.m` | niedrig |
 | Tab-Übersicht, Sitzung | `BrowserTabOverviewController.m`, `BrowserTabCoordinator.m`, `BrowserSessionStore.m` | niedrig |
 | Systemklassen-Hacks | `WebCoreNSURLSessionTaskTransactionMetrics+AddPrivacyStance.m` (aktiv), `AVPlayerViewController+BrowserFullscreenBlock.m` und `WebAVPlayerViewController+FullscreenSubviewHack.m` (beide per Schalter aus) | hoch |
@@ -307,10 +307,11 @@ Die Listenauswahl steht in `LISTS` am Anfang von `build_adblock_rules.py` (aus `
 |:--|:--|
 | Wischen | Zeiger bewegen, rastet ein (`kSnapRadius` 36 pt, löst bei `kReleaseMargin` 28 pt; Ziele größer als 420 × 140 werden nur hervorgehoben); Randscrollen am Bildschirmrand |
 | Auswahl (Mitte) | Klick (`performSelectAction` → Host `browserRemoteInputControllerHandlePrimaryAction`); Doppelzustellung wird mit 0,15 s entprellt |
-| Oben/unten | eine Seite scrollen (`kPageScrollFraction` 0,8); **oben zweimal** (< 0,4 s) → `browserRemoteInputControllerOpenAddressBar`; **unten zweimal** → `browserRemoteInputControllerCompactTopBar` |
+| Oben/unten | eine Seite scrollen (`kPageScrollFraction` 0,8); **oben zweimal** (< 0,4 s) → `browserRemoteInputControllerOpenAddressBar` (Leiste ausklappen, Bearbeiten-Zustand mit Aufklapp-Bereich, Abschnitt 13; keine Tastatur); **unten zweimal** → `browserRemoteInputControllerCompactTopBar` |
 | Links/rechts | `browserRemoteInputControllerNavigateBack/Forward`: Zeiger auf laufendem Video → ±10 s (`sendVideoCommand:… seek:±10`), sonst `stepTargetBy:∓1` (Element-zu-Element; Reihenfolge nach Zeilen à 24 pt, dann links→rechts; am Ende des Sichtbaren `scrollThenStep:` scrollt weiter und springt zum nächsten Ziel, nach 0,45 s Wartezeit auf die neue Meldung). Ziele: `browserRemoteInputControllerStepTargets` (Zeigerziele plus Videos ohne eigene Bedienelemente, obere Leiste nur am Seitenanfang) |
 | Play/Pause | kurz (nach 0,3 s Doppeltipp-Fenster): Video steuern, sonst Adressdialog; lang (≥ 0,6 s): `…HandlePlayPauseLongPress` (Suche/Diktat); doppelt: `…HandleAdvancedMenuPress` (•••-Menü) |
 | Menü/Zurück | `browserRemoteInputControllerHandleMenuPress`: Seitenvollbild verlassen → Dialog schließen → Seite zurück → sonst `NO` (System geht zum Home-Bildschirm, vorher Sitzung sichern) |
+| Im Aufklapp-Bereich der Adresse | optionale Host-Methode `browserRemoteInputControllerAddressPanelActive`: Pfeile → `stepTargetInDirection:` (räumlicher Sprung: Kandidaten in Blickrichtung, Wertung Abstand + 2 × seitlicher Versatz ab Zielkante), kein Seiten- oder Randscrollen, Zeiger wird nicht ausgeblendet; Select → `browserHandlePrimaryAction` → `handleAddressEditingSelectionAtPoint:`; Play/Pause → Eingabedialog; Menü → schließen. Eckenradius der Hervorhebung per `browserRemoteInputControllerCornerRadiusForTarget:` (Feld: Kapselform, Kacheln: Radius des Icons), keine Linse |
 | Ring (Kreisbewegung) | `trackRotationWithDelta:`: Eintritt bei ≥ 200° akkumulierter Drehung (`kRotationEnterAngle`), danach je 60° (`kRotationStepAngle`) ein Schritt; im Uhrzeigersinn vor, dagegen zurück; Zeiger kehrt zum Gestenstart zurück |
 
 ### 8.3 Magnetic Buttons (Hervorhebung)
@@ -357,7 +358,8 @@ Kein externer Teil. Werte in `#pragma mark - Abstimmung` und in den Konstanten d
 - HTTPS: `setDisplayTitle:domain:secure:` – Seitenname grün, bei kräftig gefärbter Leiste (`colorfulPage`) stattdessen Schloss-Symbol `lock.fill` in Schriftfarbe.
 - Favoritenstern: `favorite` (gefüllt/gelb), Datenquelle `BrowserHistoryStore` (Abschnitt 13).
 - Ladelinie: `setLoadingProgress:loading:`, gespeist aus `estimatedProgress` (KVO in `BrowserWebView`, `loadingProgressDidChange`).
-- Kompaktmodus: `setCompact:animated:` – Kapsel 560 × 58 pt statt 86 pt hoch; Auslöser in `pageDidScrollToOffset:`: Offset < 24 pt (Seitenanfang) oder mehr als 140 pt nach oben gescrollt → aufklappen; mehr als 24 pt nach unten gescrollt bei Offset > 60 pt → Kapsel. Doppelt unten (Fernbedienung) → `browserRemoteInputControllerCompactTopBar`.
+- Kompaktmodus: `setCompact:animated:` – Kapsel 560 × 58 pt statt 86 pt hoch; Auslöser in `pageDidScrollToOffset:`: Offset < 24 pt (Seitenanfang) oder mehr als 140 pt nach oben gescrollt → aufklappen; mehr als 24 pt nach unten gescrollt bei Offset > 60 pt → Kapsel. Doppelt unten (Fernbedienung) → `browserRemoteInputControllerCompactTopBar` (schließt vorher den Bearbeiten-Zustand). Klick auf die Kapsel öffnet den Bearbeiten-Zustand (klappt dabei auf).
+- Bearbeiten-Zustand: `setAddressEditing:animated:` (eigener Abschnitt am Ende von `BrowserTopBarView.m`, eigene Subviews `dictationFieldView`/`dictationIconView`/`dictationLabel`). Die Kapsel zeigt mittig Mikrofon `mic.fill` und „Sprechen, um zu diktieren“ (halbtransparent), alle Knöpfe, Name und Kreisel auf Alpha 0. Einziges Zeigerziel ist dann `addressFieldFrame` (Aktion `BrowserTopBarActionURL`); `setCompact:YES` wird solange ignoriert.
 - Kanteneffekt des Systems: `attachToScrollView:`.
 - Zeigerziele: `enumeratePointerTargetsUsingBlock:`; Fokusmodus (tvOS-Fokus statt Zeiger) für die Knöpfe über `BrowserTopBarFocusButton`.
 
@@ -469,7 +471,9 @@ Gliederung: 10.1 Video-Hooks im Seitenkontext, 10.2 Übergabe an den nativen Pla
 
 Alle rein UIKit, niedriges Update-Risiko. Hier nur die Einhängung.
 
-- **Start-/Verlaufsansicht** (`BrowserStartViewController.m`): Suchfeld, „Zuletzt besucht“, „Meistbesucht“, Favoriten; öffnet über `openURLHandler`. Daten aus `BrowserHistoryStore` (`recordVisitWithURL:title:`, `recentEntries:`, `topEntries:`, `favorites`, `addFavoriteWithURL:…`, `isFavoriteURL:`; je Host zusammengefasst, in `NSUserDefaults`; Benachrichtigung `BrowserHistoryStoreDidChangeNotification`). Aufruf über Klick auf die Adresse bzw. Menü (`historyMenuItem`, `favoritesMenuItem`). Redesign (aus der Leiste ausklappen) laut PLAN.md zurückgestellt.
+- **Adresse bearbeiten mit Aufklapp-Bereich** (`BrowserAddressPanelView.m`, ersetzt die Vollbild-Startansicht): Auslöser zweimal oben, Klick auf Adresse oder Kapsel (`beginAddressEditing` in `ViewController.m`). Die Leiste klappt aus und wird zum Diktierfeld (Abschnitt 9); darunter wächst eine Glas-Karte (`UIGlassEffect` klar, Abdunkelung 0,38) in Leistenbreite 14 pt unterhalb aus der Leiste heraus (Federanimation 0,42 s: Höhe, Effekt nil → Glas, Inhalt blendet verzögert ein); die Seite bleibt mit 50 % Schwarz gedimmt sichtbar. Drei Spalten „Favoriten“ (Stern, Icons 136 pt, ohne Namen), „Oft besucht“ und „Zuletzt“ (Icons 96 pt mit Namen darunter), je 2 × 2 Kacheln; leere Plätze als dezente Flächen. „Zuletzt“ meidet Seiten, die schon unter „Oft besucht“ stehen, füllt bei wenig Verlauf aber auf. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet; die Hervorhebung ist die normale Magnetic-Button-Hervorhebung (Glas, Glow Standardblau). Die Karte ist rein optisch (`userInteractionEnabled = NO`); Ziele liefert `pointerTargetRectsInView:`, Klick `handleSelectionAtPoint:inView:`. Klick auf das Feld bzw. Play/Pause öffnet den Eingabedialog `showAddressDictationInput` (wie `showInputURLorSearchGoogle`, aber Standardtastatur statt Websuche, damit tvOS das Diktat über die Siri-Taste anbietet); Eingabe lädt wie bisher und schließt den Zustand. Menü oder Klick neben die Karte schließt. Logpräfix `[Address]`.
+- **Favicons** (`BrowserFaviconCache.m`): Reihenfolge `https://<host>/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/favicon.ico`, dann `https://www.google.com/s2/favicons?domain=<host>&sz=128`. Erstes Bild ab 48 px gewinnt, kleinere werden nur genommen, wenn nichts Besseres kommt. Speicher (`NSCache`) und Platte (`Library/Caches/Favicons/<host>.img`, Fehlschlag als `.none`, nach 24 h neuer Versuch). Ab 96 px füllt das Icon die Kachel, kleinere sitzen auf hellem Grund; ohne Icon Anfangsbuchstabe auf farbiger Kachel (Farbe aus dem Host). Logpräfix `[Favicon]` (DEBUG).
+- **Alte Start-/Verlaufsansicht** (`BrowserStartViewController.m`, nicht mehr eingebunden, `showStartView` bleibt als Rückfall): Suchfeld, „Zuletzt besucht“, „Meistbesucht“, Favoriten; öffnet über `openURLHandler`. Daten aus `BrowserHistoryStore` (`recordVisitWithURL:title:`, `recentEntries:`, `topEntries:`, `favorites`, `addFavoriteWithURL:…`, `isFavoriteURL:`; je Host zusammengefasst, in `NSUserDefaults`; Benachrichtigung `BrowserHistoryStoreDidChangeNotification`). Früher Aufruf über Klick auf die Adresse.
 - **Bedienungsdialog** (`BrowserGuideViewController.m`): Glas-Karte mit kurzer Bedienungshilfe, Schalter für den Start-Hinweis (`dontShowHintsOnLaunch`, `toggleHandler`). Aufruf `showHintsAlert` in `ViewController` (beim Start einmal, per Selbsttest `guide`). Der Text sollte mit Abschnitt 8.2 übereinstimmen; bei geänderter Belegung hier und in `README.mdown` nachziehen.
 - **Tab-Übersicht** (`BrowserTabOverviewController.m`): Kartenansicht der Tabs; Host-Protokoll `BrowserTabOverviewControllerHost`; Tastenlogik in `BrowserRemoteInputController` (`TabOverviewVisible`, `…DismissTabOverview`, `…HandleTabOverviewAlternateAction`). Offen laut PLAN.md: Konflikte mit Play/Pause und Dialogen prüfen.
 - **Sitzung** (`BrowserSessionStore.m`, `BrowserTabCoordinator.m`): offene Tabs und Cookie-Kopie in `NSUserDefaults`; `persistSession` vor Rückgabe an Home. Cookie-Sicherung `saveCookiesToDefaults`/`restoreCookiesFromDefaults` (AppDelegate), aufgerufen von `SceneDelegate`.
@@ -520,6 +524,10 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `label` | Text der Adress-Beschriftung der Leiste | `label <Text>` |
 | `views` | Ansichtshierarchie bei (300, 6) (z. B. Streifen hinter der Leiste) | `view <Klasse> frame=… bg=… alpha=…` |
 | `menu` | Menütaste (`HandleMenuPress`) | `menu handled=0|1` |
+| `address` | wie zweimal oben: Bearbeiten-Zustand mit Aufklapp-Bereich | `address active=1 tiles=N field=…`, Screenshot |
+| `dir:up` / `dir:down` / `dir:left` / `dir:right` | Pfeiltaste im Aufklapp-Bereich (`stepTargetInDirection:`) | `dir down cursor=(x, y)` |
+| `favorite` | Stern: aktuelle Seite zu den Favoriten (bzw. entfernen) | `favorite <host> = 0|1` |
+| `wait` | nichts tun (3 s Pause, z. B. damit eine Seite lädt) | – |
 | `guide` | Bedienungsdialog anzeigen | Screenshot |
 | `clearall` | alle Website-Daten löschen (`resetWebsiteDataWithCompletion:`) | `clearall fertig` |
 | `clearsite:<host>` | nur Einträge löschen, deren `displayName` den Host enthält (z. B. gespeicherte Cookie-Einwilligung) | `clearsite <host>: N Einträge gelöscht` |
@@ -540,6 +548,8 @@ POINTER_SELFTEST="url:https://de.wikipedia.org;300,400;next;next;click"
 POINTER_SELFTEST="url:https://de.wikipedia.org;zoom;probe;views"
 # Ring-Erkennung
 POINTER_SELFTEST="gestures"
+# Aufklapp-Bereich der Adresse mit Daten füllen und öffnen
+POINTER_SELFTEST="url:https://www.apple.com/de/;wait;favorite;url:https://de.wikipedia.org/;wait;favorite;url:https://www.heise.de/;wait;address;dir:down;dir:right"
 ```
 
 ---

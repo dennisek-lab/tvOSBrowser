@@ -256,6 +256,11 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     }
 }
 
+- (BOOL)addressPanelActive {
+    return [self.host respondsToSelector:@selector(browserRemoteInputControllerAddressPanelActive)] &&
+        [self.host browserRemoteInputControllerAddressPanelActive];
+}
+
 - (BOOL)pointerOverlaysSuppressed {
     return !self.cursorModeEnabled ||
         [self.host browserRemoteInputControllerTabOverviewVisible] ||
@@ -408,6 +413,12 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
     [self.rootView insertSubview:highlight belowSubview:self.cursorView];
     CGRect frame = CGRectInset(target, -6.0, -6.0);
     CGFloat radius = MIN(16.0, CGRectGetHeight(frame) / 2.0);
+    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerCornerRadiusForTarget:)]) {
+        CGFloat targetRadius = [self.host browserRemoteInputControllerCornerRadiusForTarget:target];
+        if (targetRadius >= 0.0) {
+            radius = MIN(targetRadius + 6.0, CGRectGetHeight(frame) / 2.0);
+        }
+    }
     UIView *surface = self.highlightSurfaceView;
     BrowserGlowView *glow = self.highlightGlowView;
     UIColor *glowColor = nil;
@@ -530,7 +541,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)hideCursorForIdle {
-    if ([self pointerOverlaysSuppressed]) {
+    if ([self pointerOverlaysSuppressed] || [self addressPanelActive]) {
         return;
     }
     self.cursorIdleHidden = YES;
@@ -887,6 +898,26 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         return NO;
     }
 
+    if (presentedViewController == nil && [self addressPanelActive]) {
+        // Aufklapp-Bereich der Adressleiste: Pfeile bewegen den Fokus zwischen Feld und Kacheln.
+        switch (press.type) {
+            case UIPressTypeUpArrow:
+                [self stepTargetInDirection:CGVectorMake(0.0, -1.0)];
+                return YES;
+            case UIPressTypeDownArrow:
+                [self stepTargetInDirection:CGVectorMake(0.0, 1.0)];
+                return YES;
+            case UIPressTypeLeftArrow:
+                [self stepTargetInDirection:CGVectorMake(-1.0, 0.0)];
+                return YES;
+            case UIPressTypeRightArrow:
+                [self stepTargetInDirection:CGVectorMake(1.0, 0.0)];
+                return YES;
+            default:
+                break;
+        }
+    }
+
     if (presentedViewController == nil && self.cursorModeEnabled) {
         switch (press.type) {
             case UIPressTypeUpArrow:
@@ -1047,7 +1078,7 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         return;
     }
 
-    if (!CGPointEqualToPoint(overflow, CGPointZero)) {
+    if (!CGPointEqualToPoint(overflow, CGPointZero) && ![self addressPanelActive]) {
         // Sanft: Überhang 1:1, damit es am Seitenrand nicht davonschießt.
         [self applyManualScrollDelta:CGPointMake(overflow.x * 0.9, overflow.y * 0.9)];
     }
@@ -1215,7 +1246,48 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
 }
 
 - (void)stepTargetBy:(NSInteger)direction {
-    [self stepTargetBy:direction allowScroll:YES];
+    [self stepTargetBy:direction allowScroll:![self addressPanelActive]];
+}
+
+/// Räumlicher Sprung (wie die Fokus-Engine): Kandidaten in Blickrichtung, gewichtet nach Abstand und seitlichem Versatz.
+- (void)stepTargetInDirection:(CGVector)direction {
+    [self revealCursorIfIdle];
+    NSArray<NSValue *> *targets = [self.host respondsToSelector:@selector(browserRemoteInputControllerStepTargets)]
+        ? [self.host browserRemoteInputControllerStepTargets]
+        : [self.host browserRemoteInputControllerPointerTargets];
+    CGPoint reference = CGRectIsNull(self.snappedTarget) ? self.freePoint
+        : CGPointMake(CGRectGetMidX(self.snappedTarget), CGRectGetMidY(self.snappedTarget));
+    CGFloat length = hypot(direction.dx, direction.dy);
+    if (length <= 0.0) {
+        return;
+    }
+    CGVector unit = CGVectorMake(direction.dx / length, direction.dy / length);
+    NSValue *best = nil;
+    CGFloat bestScore = CGFLOAT_MAX;
+    for (NSValue *value in targets) {
+        CGRect rect = value.CGRectValue;
+        CGFloat vx = CGRectGetMidX(rect) - reference.x, vy = CGRectGetMidY(rect) - reference.y;
+        CGFloat along = vx * unit.dx + vy * unit.dy;
+        CGFloat across = fabs(vx * unit.dy - vy * unit.dx);
+        // Breite Ziele (z. B. das Diktierfeld) zählen seitlich ab ihrer Kante, nicht ab der Mitte.
+        CGFloat halfExtent = fabs(unit.dx) > 0.5 ? CGRectGetHeight(rect) / 2.0 : CGRectGetWidth(rect) / 2.0;
+        across = MAX(0.0, across - halfExtent);
+        if (along < 2.0) {
+            continue;
+        }
+        CGFloat score = along + across * 2.0;
+        if (score < bestScore) {
+            bestScore = score;
+            best = value;
+        }
+    }
+    if (best == nil) {
+        return;
+    }
+    CGRect target = best.CGRectValue;
+    self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    self.snappedTarget = CGRectNull;
+    [self updatePointerAnimated:YES];
 }
 
 - (void)stepTargetBy:(NSInteger)direction allowScroll:(BOOL)allowScroll {

@@ -57,6 +57,14 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 - (void)attachToScrollView:(nullable UIScrollView *)scrollView;
 - (nullable UIView *)preferredFocusItem;
 
+#pragma mark - Adresse bearbeiten (Diktierfeld)
+/// Bearbeiten-Zustand: Die Kapsel wird zum Feld „Sprechen, um zu diktieren“ (Mikrofon und Platzhalter mittig),
+/// die übrigen Knöpfe werden ausgeblendet. Als Zeigerziel gilt dann nur das Feld (Aktion BrowserTopBarActionURL).
+@property (nonatomic, readonly, getter=isAddressEditing) BOOL addressEditing;
+- (void)setAddressEditing:(BOOL)addressEditing animated:(BOOL)animated;
+/// Diktierfeld in Koordinaten der Leiste (CGRectNull außerhalb des Bearbeiten-Zustands).
+@property (nonatomic, readonly) CGRect addressFieldFrame;
+
 @end
 
 NS_ASSUME_NONNULL_END

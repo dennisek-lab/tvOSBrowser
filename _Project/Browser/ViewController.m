@@ -6,6 +6,7 @@
 //  Improved by Jip van Akker on 14/10/2015 through 10/01/2019
 //
 
+#import "BrowserAddressPanelView.h"
 #import "BrowserGuideViewController.h"
 #import <objc/message.h>
 #import "BrowserHistoryStore.h"
@@ -49,6 +50,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
 @property (nonatomic) CGFloat lastPageScrollOffset;
 @property (nonatomic) CGFloat pageScrollTravel;
+/// Adressleiste im Bearbeiten-Zustand: Aufklapp-Bereich mit Favoriten, Oft besucht, Zuletzt (nil = geschlossen).
+@property (nonatomic, nullable) BrowserAddressPanelView *addressPanel;
 
 @end
 
@@ -274,6 +277,28 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     NSLog(@"[SelfTest] menu handled=%d", handled);
                     return;
                 }
+                if ([step isEqualToString:@"address"]) {
+                    // Wie zweimal oben: Leiste ausklappen, Diktierfeld und Aufklapp-Bereich.
+                    [self browserRemoteInputControllerOpenAddressBar];
+                    NSLog(@"[SelfTest] address active=%d tiles=%lu field=%@", self.addressPanel != nil,
+                          (unsigned long)self.addressPanel.tileCount, NSStringFromCGRect(self.topMenuView.addressFieldFrame));
+                    return;
+                }
+                if ([step hasPrefix:@"dir:"]) {
+                    // Pfeiltaste im Aufklapp-Bereich: dir:up|down|left|right
+                    NSString *direction = [step substringFromIndex:4];
+                    CGVector vector = [direction isEqualToString:@"up"] ? CGVectorMake(0, -1)
+                        : [direction isEqualToString:@"down"] ? CGVectorMake(0, 1)
+                        : [direction isEqualToString:@"left"] ? CGVectorMake(-1, 0) : CGVectorMake(1, 0);
+                    [self.remoteInputController stepTargetInDirection:vector];
+                    NSLog(@"[SelfTest] dir %@ cursor=%@", direction, NSStringFromCGPoint(self.remoteInputController.cursorView.frame.origin));
+                    return;
+                }
+                if ([step isEqualToString:@"favorite"]) {
+                    [self toggleFavoriteForCurrentPage];
+                    NSLog(@"[SelfTest] favorite %@ = %d", self.webview.request.URL.host, self.topMenuView.favorite);
+                    return;
+                }
                 if ([step isEqualToString:@"advmenu"]) {
                     [self showAdvancedMenu];
                     return;
@@ -450,7 +475,12 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
             [self browserShowTabOverview];
             break;
         case BrowserTopBarActionURL:
-            [self showStartView];
+            // Klick auf die Adresse: Bearbeiten-Zustand (wie zweimal oben); im Zustand selbst öffnet das Feld die Eingabe.
+            if (self.addressPanel != nil) {
+                [self showAddressDictationInput];
+            } else {
+                [self beginAddressEditing];
+            }
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
@@ -537,6 +567,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     if (trimmed.length == 0) {
         return;
     }
+    [self endAddressEditingAnimated:YES];
     NSURLRequest *request = nil;
     if ([self enteredTextLooksLikeAddress:trimmed]) {
         NSString *address = [trimmed containsString:@"://"] ? trimmed : [@"https://" stringByAppendingString:trimmed];
@@ -585,15 +616,26 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)showInputURLorSearchGoogle {
+    [self showInputURLorSearchGoogleForDictation:NO];
+}
+
+/// Eingabe aus dem Diktierfeld: Standardtastatur (dort bietet tvOS das Diktat über die Siri-Taste an).
+- (void)showAddressDictationInput {
+    [self showInputURLorSearchGoogleForDictation:YES];
+}
+
+- (void)showInputURLorSearchGoogleForDictation:(BOOL)dictation {
     if (self.presentedViewController != nil) {
         [self dismissViewControllerAnimated:NO completion:nil];
     }
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Suchen oder Adresse eingeben"
-                                                                             message:@"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:dictation ? @"Sprechen, um zu diktieren" : @"Suchen oder Adresse eingeben"
+                                                                             message:dictation ? @"Siri-Taste gedrückt halten und Suchbegriff oder Adresse sagen – oder tippen."
+                                                                                               : @"Tipp: Siri-Taste gedrückt halten und sprechen, die Suche startet dann von selbst."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.keyboardType = UIKeyboardTypeWebSearch;
+        // Aus dem Diktierfeld: Standardtastatur, die tvOS mit Diktat-Hinweis (Siri-Taste) anbietet.
+        textField.keyboardType = dictation ? UIKeyboardTypeDefault : UIKeyboardTypeWebSearch;
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.placeholder = @"Suchbegriff oder z. B. computerbase.de";
@@ -612,6 +654,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         weakSelf.searchAlert = nil;
         NSURLRequest *request = [weakSelf.navigationService googleSearchRequestForQuery:alertController.textFields.firstObject.text];
         if (request != nil) {
+            [weakSelf endAddressEditingAnimated:YES];
             [weakSelf.webview loadRequest:request];
         }
     }]];
@@ -629,6 +672,7 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 /// Kurzer Name der aktuellen Seite für Verlauf und Favoriten.
 - (void)browserRemoteInputControllerCompactTopBar {
+    [self endAddressEditingAnimated:YES];
     [self.topMenuView setCompact:YES animated:YES];
     self.pageScrollTravel = 0.0;
 }
@@ -665,7 +709,80 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     return name;
 }
 
-/// Startansicht mit Suchfeld, Zuletzt besucht, Meistbesucht und Favoriten.
+#pragma mark - Adresse bearbeiten (Diktierfeld und Aufklapp-Bereich)
+
+/// Zweimal oben oder Klick auf die Adresse: Leiste ausklappen, Diktierfeld, darunter Favoriten/Oft/Zuletzt.
+/// Die Tastatur öffnet sich erst mit Klick auf das Feld (oder Play/Pause).
+- (void)beginAddressEditing {
+    if (self.addressPanel != nil || self.tabOverviewController.visible) {
+        return;
+    }
+    if (self.presentedViewController != nil) {
+        [self dismissViewControllerAnimated:NO completion:nil];
+    }
+    [self deactivateTopBarFocusMode];
+    if (!self.viewModel.topNavigationBarVisible || self.topMenuView.hidden) {
+        [self browserShowTopNav];
+    }
+    [self.topMenuView setCompact:NO animated:YES];
+    self.pageScrollTravel = 0.0;
+    [self.topMenuView setAddressEditing:YES animated:YES];
+
+    UIView *container = self.topMenuView.superview ?: self.view;
+    BrowserAddressPanelView *panel = [[BrowserAddressPanelView alloc] initWithFrame:container.bounds];
+    __weak typeof(self) weakSelf = self;
+    panel.openURLHandler = ^(NSURL *url) {
+        [weakSelf endAddressEditingAnimated:YES];
+        [weakSelf.webview loadRequest:[NSURLRequest requestWithURL:url]];
+    };
+    // Unter der Leiste (die Leiste bleibt hell), über der Seite; Zeiger und Hervorhebung liegen darüber.
+    [container insertSubview:panel belowSubview:self.topMenuView];
+    self.addressPanel = panel;
+    [panel reloadData];
+    CGRect bar = [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:panel];
+    [panel presentBelowBarFrame:bar animated:YES];
+
+    [self.remoteInputController refreshInteractionState];
+    // Fokus auf das Diktierfeld.
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    [self.remoteInputController movePointerToPoint:CGPointMake(CGRectGetMidX(field), CGRectGetMidY(field))];
+#if DEBUG
+    NSLog(@"[Address] Bearbeiten an, Kacheln=%lu", (unsigned long)panel.tileCount);
+#endif
+}
+
+- (void)endAddressEditingAnimated:(BOOL)animated {
+    BrowserAddressPanelView *panel = self.addressPanel;
+    if (panel == nil) {
+        return;
+    }
+    self.addressPanel = nil;
+    [self.topMenuView setAddressEditing:NO animated:animated];
+    [panel dismissAnimated:animated completion:nil];
+    [self.remoteInputController refreshInteractionState];
+    [self.remoteInputController pointerTargetsDidChange];
+#if DEBUG
+    NSLog(@"[Address] Bearbeiten aus");
+#endif
+}
+
+/// Klick im Bearbeiten-Zustand: Feld öffnet die Eingabe, Kachel die Seite, daneben schließt.
+- (void)handleAddressEditingSelectionAtPoint:(CGPoint)point {
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    if (CGRectContainsPoint(CGRectInset(field, -6.0, -6.0), point)) {
+        [self showAddressDictationInput];
+        return;
+    }
+    if ([self.addressPanel handleSelectionAtPoint:point inView:self.view]) {
+        return;
+    }
+    if ([self.addressPanel cardContainsPoint:point inView:self.view]) {
+        return;
+    }
+    [self endAddressEditingAnimated:YES];
+}
+
+/// Frühere Vollbild-Startansicht (BrowserStartViewController); nicht mehr eingebunden, bleibt als Rückfall.
 - (void)showStartView {
     if (self.presentedViewController != nil) {
         [self dismissViewControllerAnimated:NO completion:nil];
@@ -786,8 +903,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         }
     }];
     if (found && self.topMenuView.compact) {
-        [self.topMenuView setCompact:NO animated:YES];
-        self.pageScrollTravel = 0.0;
+        // Klick auf die Kapsel: wie auf die Adresse (die Leiste klappt dabei auf).
+        [self beginAddressEditing];
         return YES;
     }
     if (found) {
@@ -851,6 +968,11 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 
 - (void)browserHandlePrimaryAction {
     if (!self.remoteInputController.cursorModeEnabled || self.webview == nil) {
+        return;
+    }
+
+    if (self.addressPanel != nil) {
+        [self handleAddressEditingSelectionAtPoint:self.remoteInputController.cursorView.frame.origin];
         return;
     }
 
@@ -1160,6 +1282,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return YES;
     }
+    if (self.addressPanel != nil) {
+        [self endAddressEditingAnimated:YES];
+        return YES;
+    }
     if (self.webview.canGoBack) {
         [self.webview goBack];
         return YES;
@@ -1193,6 +1319,10 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
         [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
         return;
     }
+    if (self.addressPanel != nil) {
+        [self showAddressDictationInput];
+        return;
+    }
     // Läuft ein Video oder steht der Zeiger auf einem, steuert Play/Pause das Video.
     if (self.webview != nil && (self.webview.videoPlaying || [self pointerIsOverVideo])) {
         [self.webview sendVideoCommand:@"toggle" atPoint:[self pointerPointInWebView]];
@@ -1211,10 +1341,29 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (UIView *)browserRemoteInputControllerLensSourceView {
-    return self.webview;
+    // Im Aufklapp-Bereich keine Linse: Kacheln liegen über der Seite, nicht in ihr.
+    return self.addressPanel != nil ? nil : self.webview;
+}
+
+- (BOOL)browserRemoteInputControllerAddressPanelActive {
+    return self.addressPanel != nil && self.presentedViewController == nil;
+}
+
+- (CGFloat)browserRemoteInputControllerCornerRadiusForTarget:(CGRect)target {
+    if (self.addressPanel == nil) {
+        return -1.0;
+    }
+    CGRect field = [self.topMenuView convertRect:self.topMenuView.addressFieldFrame toView:self.view];
+    if (CGRectEqualToRect(CGRectIntegral(field), CGRectIntegral(target))) {
+        return CGRectGetHeight(field) / 2.0;
+    }
+    return [self.addressPanel cornerRadiusForTargetRect:target inView:self.view];
 }
 
 - (UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target {
+    if (self.addressPanel != nil) {
+        return nil; // Standardblau wie die Magnetic Buttons
+    }
     BrowserWebView *webView = self.webview;
     if (webView == nil || webView.window == nil) {
         return nil;
@@ -1234,6 +1383,15 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
+    if (self.addressPanel != nil) {
+        // Bearbeiten-Zustand: nur Diktierfeld und Kacheln; die Seite darunter ist gedimmt und nicht erreichbar.
+        NSMutableArray<NSValue *> *panelTargets = [NSMutableArray array];
+        [self.topMenuView enumeratePointerTargetsUsingBlock:^(CGRect frame, __unused BrowserTopBarAction action) {
+            [panelTargets addObject:[NSValue valueWithCGRect:[self.topMenuView convertRect:frame toView:self.view]]];
+        }];
+        [panelTargets addObjectsFromArray:[self.addressPanel pointerTargetRectsInView:self.view]];
+        return panelTargets;
+    }
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
     BrowserWebView *webView = self.webview;
     BOOL topBarVisible = [self topBarAcceptsPointer];
@@ -1281,6 +1439,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 /// die obere Leiste nur am Seitenanfang, damit der Sprung nach oben sonst die Seite scrollt.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets {
     NSArray<NSValue *> *pointerTargets = [self browserRemoteInputControllerPointerTargets];
+    if (self.addressPanel != nil) {
+        return pointerTargets;
+    }
     BOOL atTop = self.lastPageScrollOffset < 24.0;
     CGRect barFrame = [self topBarAcceptsPointer] ? [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:self.view] : CGRectNull;
     NSMutableArray<NSValue *> *targets = [NSMutableArray array];
@@ -1316,7 +1477,8 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
 }
 
 - (void)browserRemoteInputControllerOpenAddressBar {
-    [self showInputURLorSearchGoogle];
+    // Zweimal oben: Leiste ausklappen und Adresse bearbeiten, ohne gleich die Tastatur zu öffnen.
+    [self beginAddressEditing];
 }
 
 /// Clickpad rechts: über einem laufenden Video 10 s vor, sonst zum nächsten Element.
