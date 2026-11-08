@@ -23,6 +23,14 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, getter=canGoForward) BOOL canGoForward;
 @property (nonatomic, readonly, getter=isLoading) BOOL loading;
 @property (nonatomic) BOOL scalesPageToFit;
+/// Wird aufgerufen, wenn die Seite neue klickbare Elemente gemeldet hat (magnetischer Zeiger).
+@property (nullable, nonatomic, copy) void (^clickTargetsDidChange)(void);
+/// Klickbare Elemente im sichtbaren Bereich, in Koordinaten dieser Ansicht.
+- (NSArray<NSValue *> * _Nonnull)clickTargetRects;
+/// Bittet die Seite, ihre klickbaren Elemente sofort neu zu melden (asynchron).
+- (void)refreshClickTargets;
+/// Führt JavaScript aus, ohne auf das Ergebnis zu warten.
+- (void)evaluateJavaScriptAsync:(NSString * _Nonnull)script;
 /// Grundzoom, wenn scalesPageToFit aus ist (1.0 = 100 %).
 @property (nonatomic) double pageZoom;
 

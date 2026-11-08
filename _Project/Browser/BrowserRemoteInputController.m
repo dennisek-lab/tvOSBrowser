@@ -18,46 +18,46 @@ static UIImage *BrowserPointerCursor(void) {
     return image;
 }
 
-static NSString *BrowserPressTypeString(UIPressType type) {
-    switch (type) {
-        case UIPressTypeMenu: return @"Menu";
-        case UIPressTypePlayPause: return @"PlayPause";
-        case UIPressTypeSelect: return @"Select";
-        case UIPressTypeUpArrow: return @"Up";
-        case UIPressTypeDownArrow: return @"Down";
-        case UIPressTypeLeftArrow: return @"Left";
-        case UIPressTypeRightArrow: return @"Right";
-        default: return [NSString stringWithFormat:@"Type-%ld", (long)type];
-    }
-}
+#pragma mark - Abstimmung
 
-static NSString *BrowserPressPhaseString(UIPressPhase phase) {
-    switch (phase) {
-        case UIPressPhaseBegan: return @"Began";
-        case UIPressPhaseChanged: return @"Changed";
-        case UIPressPhaseStationary: return @"Stationary";
-        case UIPressPhaseEnded: return @"Ended";
-        case UIPressPhaseCancelled: return @"Cancelled";
-        default: return [NSString stringWithFormat:@"Phase-%ld", (long)phase];
-    }
-}
+/// Ab hier rastet der Zeiger an einem Ziel ein (Abstand Fingerposition zum Zielrand, Punkte).
+static const CGFloat kSnapRadius = 36.0;
+/// So weit darf der Finger über das Ziel hinaus, bevor der Zeiger sich wieder löst.
+static const CGFloat kReleaseMargin = 28.0;
+/// Größere Ziele (Bilder, Karten, breite Felder) werden nur hervorgehoben, der Zeiger springt nicht in die Mitte.
+static const CGFloat kMaxCenterSnapWidth = 420.0;
+static const CGFloat kMaxCenterSnapHeight = 140.0;
+/// Seitenweises Scrollen über den Clickpad-Rand: Anteil der sichtbaren Höhe.
+static const CGFloat kPageScrollFraction = 0.8;
+/// Nach dieser Zeit ohne Berührung blendet sich der Zeiger aus.
+static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 
 @interface BrowserRemoteInputController ()
 
 @property (nonatomic, weak) id<BrowserRemoteInputControllerHost> host;
 @property (nonatomic, weak) UIView *rootView;
 @property (nonatomic, readwrite) UIImageView *cursorView;
+@property (nonatomic) UIView *highlightView;
 @property (nonatomic, readwrite) UIPanGestureRecognizer *manualScrollPanRecognizer;
 @property (nonatomic, readwrite) UITapGestureRecognizer *playPauseDoubleTapRecognizer;
 @property (nonatomic, readwrite, getter=isCursorModeEnabled) BOOL cursorModeEnabled;
+
+/// Fingerposition des Zeigers ohne Einrasten (Klickspitze, Koordinaten von rootView).
+@property (nonatomic) CGPoint freePoint;
+/// Ziel, an dem der Zeiger gerade eingerastet ist (CGRectNull, wenn keins).
+@property (nonatomic) CGRect snappedTarget;
+
 @property (nonatomic) CGPoint lastTouchLocation;
+@property (nonatomic) NSTimeInterval lastTouchTimestamp;
+@property (nonatomic) BOOL pressInProgress;
+@property (nonatomic) BOOL revealOnlyTouch;
+@property (nonatomic) BOOL cursorIdleHidden;
+
 @property (nonatomic) CADisplayLink *manualScrollDisplayLink;
 @property (nonatomic) CGPoint manualScrollVelocity;
 @property (nonatomic) CFTimeInterval manualScrollLastTimestamp;
 @property (nonatomic) CFTimeInterval manualScrollLastMovementTimestamp;
 @property (nonatomic) CFTimeInterval lastDirectSelectPressTimestamp;
-@property (nonatomic) CFTimeInterval lastSelectPressTimestamp;
-@property (nonatomic) BOOL awaitingSecondSelectPress;
 
 @end
 
@@ -71,10 +71,24 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
         _rootView = rootView;
         _lastTouchLocation = CGPointMake(-1, -1);
         _cursorModeEnabled = YES;
+        _snappedTarget = CGRectNull;
 
-        _cursorView = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 64, 64)];
-        _cursorView.center = CGPointMake(CGRectGetMidX([UIScreen mainScreen].bounds), CGRectGetMidY([UIScreen mainScreen].bounds));
+        CGRect screen = [UIScreen mainScreen].bounds;
+        _freePoint = CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen));
+        _cursorView = [[UIImageView alloc] initWithFrame:CGRectMake(_freePoint.x, _freePoint.y, 64, 64)];
         _cursorView.image = BrowserDefaultCursor();
+        _cursorView.userInteractionEnabled = NO;
+
+        _highlightView = [[UIView alloc] initWithFrame:CGRectZero];
+        _highlightView.userInteractionEnabled = NO;
+        _highlightView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.14];
+        _highlightView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.85].CGColor;
+        _highlightView.layer.borderWidth = 3.0;
+        _highlightView.layer.shadowColor = UIColor.blackColor.CGColor;
+        _highlightView.layer.shadowOpacity = 0.35;
+        _highlightView.layer.shadowRadius = 10.0;
+        _highlightView.layer.shadowOffset = CGSizeZero;
+        _highlightView.alpha = 0.0;
 
         _playPauseDoubleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handlePlayPauseDoubleTap:)];
         _playPauseDoubleTapRecognizer.numberOfTapsRequired = 2;
@@ -101,6 +115,12 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     }
 }
 
+- (BOOL)pointerOverlaysSuppressed {
+    return !self.cursorModeEnabled ||
+        [self.host browserRemoteInputControllerTabOverviewVisible] ||
+        [self.host browserRemoteInputControllerTopBarFocusActive];
+}
+
 - (void)refreshInteractionState {
     UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
     BOOL topBarFocusActive = [self.host browserRemoteInputControllerTopBarFocusActive];
@@ -113,7 +133,208 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     self.cursorView.hidden = !self.cursorModeEnabled ||
         [self.host browserRemoteInputControllerTabOverviewVisible] ||
         topBarFocusActive;
+    if ([self pointerOverlaysSuppressed]) {
+        [self clearSnapAnimated:NO];
+    }
 }
+
+#pragma mark - Zeigerposition und Einrasten
+
+- (CGRect)pointerBounds {
+    CGRect bounds = self.rootView.bounds;
+    if (CGRectIsEmpty(bounds)) {
+        bounds = [UIScreen mainScreen].bounds;
+    }
+    return bounds;
+}
+
+- (BOOL)targetAllowsCenterSnap:(CGRect)target {
+    return CGRectGetWidth(target) <= kMaxCenterSnapWidth && CGRectGetHeight(target) <= kMaxCenterSnapHeight;
+}
+
+/// Bestes Ziel für die Fingerposition: das kleinste, das den Punkt enthält, sonst das nächste im Einrastradius.
+- (CGRect)bestTargetForPoint:(CGPoint)point {
+    NSArray<NSValue *> *targets = [self.host browserRemoteInputControllerPointerTargets];
+    CGRect best = CGRectNull;
+    CGFloat bestArea = CGFLOAT_MAX;
+    CGFloat bestDistance = CGFLOAT_MAX;
+    BOOL bestContains = NO;
+    for (NSValue *value in targets) {
+        CGRect rect = value.CGRectValue;
+        if (CGRectIsEmpty(rect)) {
+            continue;
+        }
+        if (CGRectContainsPoint(rect, point)) {
+            CGFloat area = CGRectGetWidth(rect) * CGRectGetHeight(rect);
+            if (!bestContains || area < bestArea) {
+                best = rect;
+                bestArea = area;
+                bestContains = YES;
+            }
+            continue;
+        }
+        if (bestContains) {
+            continue;
+        }
+        CGFloat dx = MAX(MAX(CGRectGetMinX(rect) - point.x, 0.0), point.x - CGRectGetMaxX(rect));
+        CGFloat dy = MAX(MAX(CGRectGetMinY(rect) - point.y, 0.0), point.y - CGRectGetMaxY(rect));
+        CGFloat distance = hypot(dx, dy);
+        if (distance <= kSnapRadius && distance < bestDistance) {
+            best = rect;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+- (void)updatePointerAnimated:(BOOL)animated {
+    if ([self pointerOverlaysSuppressed]) {
+        [self placeCursorAtPoint:self.freePoint animated:NO];
+        [self clearSnapAnimated:NO];
+        return;
+    }
+
+    CGRect current = self.snappedTarget;
+    BOOL keepCurrent = !CGRectIsNull(current) &&
+        CGRectContainsPoint(CGRectInset(current, -kReleaseMargin, -kReleaseMargin), self.freePoint);
+    CGRect target = keepCurrent ? [self refreshedTargetMatching:current] : [self bestTargetForPoint:self.freePoint];
+    BOOL targetChanged = !CGRectEqualToRect(target, current);
+    self.snappedTarget = target;
+
+    if (CGRectIsNull(target)) {
+        [self placeCursorAtPoint:self.freePoint animated:NO];
+        self.cursorView.image = BrowserDefaultCursor();
+        [self setCursorImageVisible:YES];
+        [self clearSnapAnimated:animated];
+        return;
+    }
+
+    BOOL centerSnap = [self targetAllowsCenterSnap:target];
+    CGPoint cursorPoint = centerSnap ? CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) : self.freePoint;
+    [self placeCursorAtPoint:cursorPoint animated:animated && targetChanged];
+    // Eingerastet: Pfeil ausblenden, die Hervorhebung ist der Zeiger. Bei großen Zielen bleibt die Hand sichtbar.
+    self.cursorView.image = BrowserPointerCursor();
+    [self setCursorImageVisible:!centerSnap];
+    [self showHighlightForTarget:target animated:animated];
+}
+
+/// Nach einer neuen Meldung der Seite das passende Ziel wiederfinden (gleiches Element, neue Lage).
+- (CGRect)refreshedTargetMatching:(CGRect)previous {
+    NSArray<NSValue *> *targets = [self.host browserRemoteInputControllerPointerTargets];
+    for (NSValue *value in targets) {
+        if (CGRectEqualToRect(value.CGRectValue, previous)) {
+            return previous;
+        }
+    }
+    // Gleich großes Ziel in der Nähe (Seite hat gescrollt) oder neu bestimmen.
+    for (NSValue *value in targets) {
+        CGRect rect = value.CGRectValue;
+        if (fabs(CGRectGetWidth(rect) - CGRectGetWidth(previous)) < 1.0 &&
+            fabs(CGRectGetHeight(rect) - CGRectGetHeight(previous)) < 1.0 &&
+            CGRectContainsPoint(CGRectInset(rect, -kReleaseMargin, -kReleaseMargin), self.freePoint)) {
+            return rect;
+        }
+    }
+    return [self bestTargetForPoint:self.freePoint];
+}
+
+- (void)placeCursorAtPoint:(CGPoint)point animated:(BOOL)animated {
+    CGRect frame = self.cursorView.frame;
+    frame.origin = point;
+    if (animated) {
+        [UIView animateWithDuration:0.09
+                              delay:0
+                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction
+                         animations:^{ self.cursorView.frame = frame; }
+                         completion:nil];
+    } else {
+        self.cursorView.frame = frame;
+    }
+}
+
+- (void)setCursorImageVisible:(BOOL)visible {
+    CGFloat alpha = (visible && !self.cursorIdleHidden) ? 1.0 : 0.0;
+    if (self.cursorView.alpha != alpha) {
+        [UIView animateWithDuration:0.12 animations:^{ self.cursorView.alpha = alpha; }];
+    }
+}
+
+- (void)showHighlightForTarget:(CGRect)target animated:(BOOL)animated {
+    UIView *highlight = self.highlightView;
+    if (highlight.superview != self.rootView) {
+        [highlight removeFromSuperview];
+    }
+    [self.rootView insertSubview:highlight belowSubview:self.cursorView];
+    CGRect frame = CGRectInset(target, -6.0, -6.0);
+    CGFloat radius = MIN(16.0, CGRectGetHeight(frame) / 2.0);
+    void (^apply)(void) = ^{
+        highlight.frame = frame;
+        highlight.layer.cornerRadius = radius;
+        highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
+    };
+    if (animated && highlight.alpha > 0.0) {
+        [UIView animateWithDuration:0.12
+                              delay:0
+                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut
+                         animations:apply
+                         completion:nil];
+    } else {
+        [UIView performWithoutAnimation:^{ highlight.frame = frame; highlight.layer.cornerRadius = radius; }];
+        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0; }];
+    }
+}
+
+- (void)clearSnapAnimated:(BOOL)animated {
+    self.snappedTarget = CGRectNull;
+    if (self.highlightView.alpha > 0.0) {
+        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ self.highlightView.alpha = 0.0; }];
+    }
+    [self setCursorImageVisible:YES];
+}
+
+- (void)pointerTargetsDidChange {
+    if (self.lastTouchLocation.x != -1 || self.pressInProgress) {
+        // Während der Finger wischt, bewertet die nächste Bewegung ohnehin neu.
+        return;
+    }
+    [self updatePointerAnimated:YES];
+}
+
+#pragma mark - Zeiger ausblenden bei Nichtbenutzung
+
+- (void)scheduleIdleHide {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideCursorForIdle) object:nil];
+    [self performSelector:@selector(hideCursorForIdle) withObject:nil afterDelay:kCursorIdleHideDelay];
+}
+
+- (void)hideCursorForIdle {
+    if ([self pointerOverlaysSuppressed]) {
+        return;
+    }
+    self.cursorIdleHidden = YES;
+    [UIView animateWithDuration:0.35 animations:^{
+        self.cursorView.alpha = 0.0;
+        self.highlightView.alpha = 0.0;
+    }];
+}
+
+/// Zeiger wieder einblenden. Gibt YES zurück, wenn er vorher ausgeblendet war.
+- (BOOL)revealCursorIfIdle {
+    [self scheduleIdleHide];
+    if (!self.cursorIdleHidden) {
+        return NO;
+    }
+    self.cursorIdleHidden = NO;
+    [self updatePointerAnimated:NO];
+    [UIView animateWithDuration:0.15 animations:^{
+        if (!CGRectIsNull(self.snappedTarget)) {
+            self.highlightView.alpha = 1.0;
+        }
+    }];
+    return YES;
+}
+
+#pragma mark - Scrollen
 
 - (BOOL)applyManualScrollDelta:(CGPoint)delta {
     UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
@@ -129,6 +350,26 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     CGPoint nextOffset = CGPointMake(nextOffsetX, nextOffsetY);
     [scrollView setContentOffset:nextOffset animated:NO];
     return !CGPointEqualToPoint(contentOffset, nextOffset);
+}
+
+- (void)scrollPageByFraction:(CGFloat)fraction {
+    UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
+    if (scrollView == nil) {
+        return;
+    }
+    CGFloat maxOffsetY = MAX(0.0, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds));
+    CGFloat delta = CGRectGetHeight(scrollView.bounds) * fraction;
+    CGPoint offset = scrollView.contentOffset;
+    offset.y = MIN(MAX(offset.y + delta, 0.0), maxOffsetY);
+    [self clearSnapAnimated:YES];
+    [UIView animateWithDuration:0.28
+                          delay:0
+                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{ [scrollView setContentOffset:offset animated:NO]; }
+                     completion:^(__unused BOOL finished) {
+        [self.host browserRemoteInputControllerPersistSession];
+        [self updatePointerAnimated:YES];
+    }];
 }
 
 - (void)stopManualScrollInertia {
@@ -180,74 +421,6 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     }
 }
 
-- (void)handleGlobalSelectPressEndedNotification {
-    if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
-        return;
-    }
-
-    if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
-        return;
-    }
-
-    if ((CACurrentMediaTime() - self.lastDirectSelectPressTimestamp) < 0.15) {
-        return;
-    }
-
-    [self handleSelectPressEnded];
-}
-
-- (void)handleDeferredSelectPressAction {
-    if (!self.awaitingSecondSelectPress) {
-        return;
-    }
-
-    self.awaitingSecondSelectPress = NO;
-    self.lastTouchLocation = CGPointMake(-1, -1);
-
-    if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
-        return;
-    }
-
-    if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
-        [self.host browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:self.cursorView.frame.origin];
-        return;
-    }
-
-    [self.host browserRemoteInputControllerHandlePrimaryAction];
-}
-
-- (void)handleSelectPressEnded {
-    CFTimeInterval now = CACurrentMediaTime();
-    if (self.awaitingSecondSelectPress && (now - self.lastSelectPressTimestamp) < 0.35) {
-        self.awaitingSecondSelectPress = NO;
-        self.lastSelectPressTimestamp = now;
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredSelectPressAction) object:nil];
-        if (![self.host browserRemoteInputControllerTabOverviewVisible]) {
-            [self setCursorModeEnabled:!self.cursorModeEnabled];
-        }
-        return;
-    }
-
-    self.awaitingSecondSelectPress = YES;
-    self.lastSelectPressTimestamp = now;
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredSelectPressAction) object:nil];
-    [self performSelector:@selector(handleDeferredSelectPressAction) withObject:nil afterDelay:0.3];
-}
-
-- (void)handlePlayPauseDoubleTap:(UITapGestureRecognizer *)sender {
-    if (sender.state != UIGestureRecognizerStateEnded) {
-        return;
-    }
-    if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
-        return;
-    }
-    if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
-        [self.host browserRemoteInputControllerDismissTabOverview];
-        return;
-    }
-    [self.host browserRemoteInputControllerHandleAdvancedMenuPress];
-}
-
 - (void)handleManualScrollPan:(UIPanGestureRecognizer *)gestureRecognizer {
     if (self.cursorModeEnabled ||
         [self.host browserRemoteInputControllerTabOverviewVisible] ||
@@ -282,15 +455,85 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     }
 }
 
-- (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-    UIPress *press = presses.anyObject;
-    if (press != nil && (press.type == UIPressTypeMenu || press.type == UIPressTypePlayPause || press.type == UIPressTypeSelect)) {
-        NSLog(@"[InputTrace][Root] pressesBegan type=%@ phase=%@ presented=%@",
-              BrowserPressTypeString(press.type),
-              BrowserPressPhaseString(press.phase),
-              [self.host browserRemoteInputControllerPresentedViewController] == nil ? @"(nil)" : NSStringFromClass([[self.host browserRemoteInputControllerPresentedViewController] class]));
+#pragma mark - Klick
+
+- (void)handleGlobalSelectPressEndedNotification {
+    if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
+        return;
     }
+    if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
+        return;
+    }
+    // Derselbe Druck kommt auch direkt an. Doppelte Zustellung verwerfen.
+    if ((CACurrentMediaTime() - self.lastDirectSelectPressTimestamp) < 0.15) {
+        return;
+    }
+    self.lastDirectSelectPressTimestamp = CACurrentMediaTime();
+    [self performSelectAction];
+}
+
+/// Klick sofort ausführen. Der frühere Doppelklick (Umschalten in den Scrollmodus) entfällt,
+/// damit kein Klick mehr 0,3 Sekunden warten muss.
+- (void)performSelectAction {
+    self.lastTouchLocation = CGPointMake(-1, -1);
+    if ([self.host browserRemoteInputControllerPresentedViewController] != nil) {
+        return;
+    }
+    if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
+        [self.host browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:self.cursorView.frame.origin];
+        return;
+    }
+    if ([self revealCursorIfIdle]) {
+        // Erster Druck nach einer Pause zeigt nur den Zeiger.
+        return;
+    }
+    [self.host browserRemoteInputControllerHandlePrimaryAction];
+}
+
+- (void)handlePlayPauseDoubleTap:(UITapGestureRecognizer *)sender {
+    if (sender.state != UIGestureRecognizerStateEnded) {
+        return;
+    }
+    if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
+        return;
+    }
+    if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
+        [self.host browserRemoteInputControllerDismissTabOverview];
+        return;
+    }
+    [self.host browserRemoteInputControllerHandleAdvancedMenuPress];
+}
+
+#pragma mark - Tasten
+
+- (BOOL)isClickpadPress:(UIPress *)press {
+    switch (press.type) {
+        case UIPressTypeSelect:
+        case UIPressTypeUpArrow:
+        case UIPressTypeDownArrow:
+        case UIPressTypeLeftArrow:
+        case UIPressTypeRightArrow:
+            return YES;
+        default:
+            return NO;
+    }
+}
+
+- (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     (void)event;
+    for (UIPress *press in presses) {
+        if ([self isClickpadPress:press]) {
+            // Beim Drücken bewegt sich der Finger minimal. Diese Bewegung soll den Zeiger nicht verschieben.
+            self.pressInProgress = YES;
+        }
+    }
+}
+
+- (void)handlePressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    (void)presses;
+    (void)event;
+    self.pressInProgress = NO;
+    self.lastTouchLocation = CGPointMake(-1, -1);
 }
 
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
@@ -299,13 +542,9 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     if (press == nil) {
         return NO;
     }
-
-    if (press.type == UIPressTypeMenu || press.type == UIPressTypePlayPause || press.type == UIPressTypeSelect) {
-        NSLog(@"[InputTrace][Root] pressesEnded type=%@ phase=%@ presented=%@ tabOverview=%@",
-              BrowserPressTypeString(press.type),
-              BrowserPressPhaseString(press.phase),
-              [self.host browserRemoteInputControllerPresentedViewController] == nil ? @"(nil)" : NSStringFromClass([[self.host browserRemoteInputControllerPresentedViewController] class]),
-              [self.host browserRemoteInputControllerTabOverviewVisible] ? @"YES" : @"NO");
+    if ([self isClickpadPress:press]) {
+        self.pressInProgress = NO;
+        self.lastTouchLocation = CGPointMake(-1, -1);
     }
 
     if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
@@ -345,14 +584,11 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     }
 
     if (press.type == UIPressTypeSelect) {
+        if ((CACurrentMediaTime() - self.lastDirectSelectPressTimestamp) < 0.15) {
+            return YES;
+        }
         self.lastDirectSelectPressTimestamp = CACurrentMediaTime();
-        [self handleSelectPressEnded];
-        return YES;
-    }
-
-    if (press.type == UIPressTypeUpArrow &&
-        [self.host browserRemoteInputControllerCanActivateTopBarFocus]) {
-        [self.host browserRemoteInputControllerActivateTopBarFocus];
+        [self performSelectAction];
         return YES;
     }
 
@@ -361,9 +597,27 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
             [self.host browserRemoteInputControllerDismissTabOverview];
             return YES;
         }
-        if (press.type == UIPressTypeSelect) {
-            [self.host browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:self.cursorView.frame.origin];
-            return YES;
+        return NO;
+    }
+
+    if (presentedViewController == nil && self.cursorModeEnabled) {
+        switch (press.type) {
+            case UIPressTypeUpArrow:
+                [self revealCursorIfIdle];
+                [self scrollPageByFraction:-kPageScrollFraction];
+                return YES;
+            case UIPressTypeDownArrow:
+                [self revealCursorIfIdle];
+                [self scrollPageByFraction:kPageScrollFraction];
+                return YES;
+            case UIPressTypeLeftArrow:
+                [self.host browserRemoteInputControllerNavigateBack];
+                return YES;
+            case UIPressTypeRightArrow:
+                [self.host browserRemoteInputControllerNavigateForward];
+                return YES;
+            default:
+                break;
         }
     }
 
@@ -378,6 +632,8 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     return NO;
 }
 
+#pragma mark - Wischen
+
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     (void)touches;
     (void)event;
@@ -391,7 +647,20 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
         return NO;
     }
     self.lastTouchLocation = CGPointMake(-1, -1);
+    self.lastTouchTimestamp = 0;
+    // Erste Berührung nach einer Pause zeigt nur den Zeiger, diese Wischbewegung verschiebt ihn nicht.
+    self.revealOnlyTouch = [self revealCursorIfIdle];
     return YES;
+}
+
+/// Beschleunigung: langsames Wischen bleibt präzise, schnelles Wischen trägt weit.
+- (CGFloat)gainForSpeed:(CGFloat)pointsPerSecond {
+    CGFloat speedSetting = [[NSUserDefaults standardUserDefaults] objectForKey:@"PointerSpeed"] != nil
+        ? [[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"]
+        : 1.0;
+    CGFloat normalized = MIN(MAX((pointsPerSecond - 150.0) / 1600.0, 0.0), 1.0);
+    CGFloat gain = 0.75 + normalized * normalized * 1.85;
+    return gain * MIN(MAX(speedSetting, 0.3), 3.0);
 }
 
 - (BOOL)handleTouchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -399,56 +668,77 @@ static NSString *BrowserPressPhaseString(UIPressPhase phase) {
     if ([self.host browserRemoteInputControllerTopBarFocusActive]) {
         return NO;
     }
-    if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
-        return NO;
-    }
+    BOOL tabOverviewVisible = [self.host browserRemoteInputControllerTabOverviewVisible];
     if (!self.cursorModeEnabled) {
         return NO;
     }
 
-    for (UITouch *touch in touches) {
-        UIScrollView *activeScrollView = [self.host browserRemoteInputControllerActiveScrollView];
-        UIView *targetView = activeScrollView ?: self.rootView;
-        CGPoint location = [touch locationInView:targetView];
+    UITouch *touch = touches.anyObject;
+    if (touch == nil) {
+        return YES;
+    }
+    // In Bildschirmkoordinaten messen, nicht in der (scrollenden) WebView.
+    CGPoint location = [touch locationInView:self.rootView];
+    NSTimeInterval timestamp = touch.timestamp;
 
-        if (self.lastTouchLocation.x == -1 && self.lastTouchLocation.y == -1) {
-            self.lastTouchLocation = location;
-        } else {
-            CGFloat xDiff = location.x - self.lastTouchLocation.x;
-            CGFloat yDiff = location.y - self.lastTouchLocation.y;
-            CGRect rect = self.cursorView.frame;
-
-            if (rect.origin.x + xDiff >= 0 && rect.origin.x + xDiff <= 1920) {
-                rect.origin.x += xDiff;
-            }
-            if (rect.origin.y + yDiff >= 0 && rect.origin.y + yDiff <= 1080) {
-                rect.origin.y += yDiff;
-            }
-            self.cursorView.frame = rect;
-            self.lastTouchLocation = location;
-        }
-
-        self.cursorView.image = BrowserDefaultCursor();
-        if ([self.host browserRemoteInputControllerTabOverviewVisible]) {
-            if ([self.host browserRemoteInputControllerTabOverviewContainsPoint:self.cursorView.frame.origin]) {
-                self.cursorView.image = BrowserPointerCursor();
-            }
-            break;
-        }
-        if (self.cursorModeEnabled) {
-            NSString *containsLink = [self.host browserRemoteInputControllerHoverStateAtCursorPoint:self.cursorView.frame.origin];
-            if ([containsLink isEqualToString:@"true"]) {
-                self.cursorView.image = BrowserPointerCursor();
-            }
-        }
-        break;
+    if (self.lastTouchLocation.x == -1 && self.lastTouchLocation.y == -1) {
+        self.lastTouchLocation = location;
+        self.lastTouchTimestamp = timestamp;
+        return YES;
     }
 
+    CGFloat dx = location.x - self.lastTouchLocation.x;
+    CGFloat dy = location.y - self.lastTouchLocation.y;
+    NSTimeInterval dt = MAX(timestamp - self.lastTouchTimestamp, 1.0 / 240.0);
+    self.lastTouchLocation = location;
+    self.lastTouchTimestamp = timestamp;
+
+    if (self.pressInProgress || self.revealOnlyTouch) {
+        return YES;
+    }
+    [self scheduleIdleHide];
+
+    CGFloat gain = [self gainForSpeed:hypot(dx, dy) / dt];
+    CGPoint next = CGPointMake(self.freePoint.x + dx * gain, self.freePoint.y + dy * gain);
+
+    // An die Ränder begrenzen (gemessen an der Klickspitze). Was darüber hinausgeht, scrollt die Seite.
+    CGRect bounds = [self pointerBounds];
+    CGFloat maxX = CGRectGetMaxX(bounds) - 2.0;
+    CGFloat maxY = CGRectGetMaxY(bounds) - 2.0;
+    CGPoint overflow = CGPointZero;
+    if (next.x < CGRectGetMinX(bounds)) { overflow.x = next.x - CGRectGetMinX(bounds); next.x = CGRectGetMinX(bounds); }
+    if (next.x > maxX) { overflow.x = next.x - maxX; next.x = maxX; }
+    if (next.y < CGRectGetMinY(bounds)) { overflow.y = next.y - CGRectGetMinY(bounds); next.y = CGRectGetMinY(bounds); }
+    if (next.y > maxY) { overflow.y = next.y - maxY; next.y = maxY; }
+    self.freePoint = next;
+
+    if (tabOverviewVisible) {
+        [self placeCursorAtPoint:next animated:NO];
+        self.cursorView.image = [self.host browserRemoteInputControllerTabOverviewContainsPoint:next]
+            ? BrowserPointerCursor()
+            : BrowserDefaultCursor();
+        [self setCursorImageVisible:YES];
+        return YES;
+    }
+
+    if (!CGPointEqualToPoint(overflow, CGPointZero)) {
+        [self applyManualScrollDelta:CGPointMake(overflow.x * 2.0, overflow.y * 2.0)];
+    }
+    [self updatePointerAnimated:YES];
     return YES;
+}
+
+- (void)movePointerToPoint:(CGPoint)point {
+    self.cursorIdleHidden = NO;
+    self.freePoint = point;
+    [self updatePointerAnimated:YES];
+    [self scheduleIdleHide];
 }
 
 - (void)handleTouchesEnded {
     self.lastTouchLocation = CGPointMake(-1, -1);
+    self.revealOnlyTouch = NO;
+    [self scheduleIdleHide];
 }
 
 @end

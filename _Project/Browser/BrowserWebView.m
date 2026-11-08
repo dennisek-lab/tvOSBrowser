@@ -1,5 +1,6 @@
 #import "BrowserWebView.h"
 #import "BrowserDNSProxy.h"
+#import "BrowserClickTargetTracker.h"
 
 #import <dlfcn.h>
 #import <objc/message.h>
@@ -491,6 +492,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 @property (nullable, nonatomic, copy) NSString *lastTitle;
 @property (nonatomic, copy) NSString *userAgent;
 @property (nonatomic) BOOL loading;
+@property (nonatomic, strong) BrowserClickTargetTracker *clickTargetTracker;
 
 @end
 
@@ -537,6 +539,15 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     }
     BrowserConfigurePrivateMediaPreferences(configuration);
     BrowserInstallYouTubeCaptureUserScript(configuration);
+    self.clickTargetTracker = [BrowserClickTargetTracker new];
+    [self.clickTargetTracker installIntoConfiguration:configuration];
+    __weak typeof(self) weakSelf = self;
+    self.clickTargetTracker.targetsDidChange = ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf.clickTargetsDidChange != nil) {
+            strongSelf.clickTargetsDidChange();
+        }
+    };
     [[BrowserDNSProxy sharedProxy] applyToWebsiteDataStore:[BrowserWebView defaultWebsiteDataStore]];
 
     id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
@@ -564,6 +575,23 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 
     [self addSubview:runtimeView];
     [self setUserAgent:userAgent];
+    self.clickTargetTracker.scrollView = [self scrollView];
+}
+
+- (NSArray<NSValue *> *)clickTargetRects {
+    return [self.clickTargetTracker targetRectsForViewWidth:CGRectGetWidth(self.bounds)];
+}
+
+- (void)refreshClickTargets {
+    [self evaluateJavaScriptAsync:[BrowserClickTargetTracker refreshScript]];
+}
+
+- (void)evaluateJavaScriptAsync:(NSString *)script {
+    SEL selector = NSSelectorFromString(@"evaluateJavaScript:completionHandler:");
+    if (script.length == 0 || self.runtimeWebView == nil || ![self.runtimeWebView respondsToSelector:selector]) {
+        return;
+    }
+    ((void (*)(id, SEL, id, id))objc_msgSend)(self.runtimeWebView, selector, script, nil);
 }
 
 - (void)layoutSubviews {
@@ -900,6 +928,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
 }
 
 - (void)webView:(id)webView didStartProvisionalNavigation:(id)navigation {
+    [self.clickTargetTracker reset];
     self.loading = YES;
     if ([self.delegate respondsToSelector:@selector(webViewDidStartLoad:)]) {
         [self.delegate webViewDidStartLoad:self];

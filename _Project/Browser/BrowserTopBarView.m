@@ -313,6 +313,33 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
     return [self convertRect:view.bounds fromView:view];
 }
 
+- (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block {
+    if (block == nil || self.hidden) {
+        return;
+    }
+    NSArray *items = @[
+        @[self.backImageView, @(BrowserTopBarActionBack)],
+        @[self.refreshImageView, @(BrowserTopBarActionRefresh)],
+        @[self.forwardImageView, @(BrowserTopBarActionForward)],
+        @[self.homeImageView, @(BrowserTopBarActionHome)],
+        @[self.tabsImageView, @(BrowserTopBarActionTabs)],
+        @[self.URLLabel, @(BrowserTopBarActionURL)],
+        @[self.fullscreenImageView, @(BrowserTopBarActionFullscreen)],
+        @[self.menuImageView, @(BrowserTopBarActionMenu)],
+    ];
+    for (NSArray *item in items) {
+        UIView *view = item[0];
+        if (view.hidden || view.alpha < 0.05 || view.window == nil) {
+            continue;
+        }
+        CGRect frame = [self interactiveFrameForView:view];
+        // Kleine Symbole auf eine gut treffbare Mindestgröße bringen.
+        CGFloat growX = MAX(0.0, (64.0 - CGRectGetWidth(frame)) / 2.0);
+        CGFloat growY = MAX(0.0, (64.0 - CGRectGetHeight(frame)) / 2.0);
+        block(CGRectInset(frame, -growX, -growY), (BrowserTopBarAction)[item[1] integerValue]);
+    }
+}
+
 - (CGRect)uniformFocusFrameForRect:(CGRect)frame horizontalInset:(CGFloat)horizontalInset {
     CGFloat normalizedHeight = MIN(kTopBarUniformFocusHeight, CGRectGetHeight(self.chromeEffectView.bounds));
     CGFloat originY = floor((CGRectGetHeight(self.chromeEffectView.bounds) - normalizedHeight) / 2.0);

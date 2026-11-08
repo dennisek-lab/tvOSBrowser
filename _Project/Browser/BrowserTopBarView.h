@@ -36,6 +36,8 @@ typedef NS_ENUM(NSInteger, BrowserTopBarAction) {
 @property (nonatomic, readonly, getter=isFocusModeActive) BOOL focusModeActive;
 
 - (CGRect)interactiveFrameForView:(UIView *)view;
+/// Knöpfe für den magnetischen Zeiger: Rechteck in Koordinaten der Leiste und zugehörige Aktion.
+- (void)enumeratePointerTargetsUsingBlock:(void (^)(CGRect frame, BrowserTopBarAction action))block;
 - (void)setFocusModeActive:(BOOL)focusModeActive;
 - (nullable UIView *)preferredFocusItem;
 

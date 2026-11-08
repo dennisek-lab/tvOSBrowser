@@ -20,7 +20,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserRemoteInputControllerHandleMenuPress;
 - (void)browserRemoteInputControllerHandlePlayPausePress;
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress;
-- (NSString *)browserRemoteInputControllerHoverStateAtCursorPoint:(CGPoint)point;
+/// Einrastziele für den magnetischen Zeiger (Seitenelemente und Knöpfe der oberen Leiste), in Koordinaten von rootView.
+- (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets;
+- (void)browserRemoteInputControllerNavigateBack;
+- (void)browserRemoteInputControllerNavigateForward;
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
 
@@ -44,6 +47,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
 - (BOOL)handleTouchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
 - (void)handleTouchesEnded;
+- (void)handlePressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
+/// Die Seite hat neue Klickziele gemeldet oder gescrollt: Einrasten und Hervorhebung neu bewerten.
+- (void)pointerTargetsDidChange;
+/// Setzt die Fingerposition des Zeigers direkt (Selbsttest, später Schnellmenü). Einrasten greift wie beim Wischen.
+- (void)movePointerToPoint:(CGPoint)point;
 - (void)setCursorModeEnabled:(BOOL)cursorModeEnabled;
 - (void)refreshInteractionState;
 

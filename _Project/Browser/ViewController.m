@@ -127,7 +127,41 @@ static UIColor *kTextColor(void) {
         [self showHintsAlert];
     }
     self.displayedHintsOnLaunch = YES;
+#if DEBUG
+    [self runPointerSelfTestIfRequested];
+#endif
 }
+
+#if DEBUG
+/// Selbsttest ohne Fernbedienung: POINTER_SELFTEST="x,y;x,y;…" fährt die Punkte im Abstand von 3 s ab.
+/// Ein Punkt "click" löst einen Klick aus. Vorher werden offene Hinweise geschlossen.
+- (void)runPointerSelfTestIfRequested {
+    NSString *spec = NSProcessInfo.processInfo.environment[@"POINTER_SELFTEST"];
+    if (spec.length == 0) {
+        return;
+    }
+    NSArray<NSString *> *steps = [spec componentsSeparatedByString:@";"];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self dismissViewControllerAnimated:NO completion:nil];
+        [steps enumerateObjectsUsingBlock:^(NSString *step, NSUInteger index, __unused BOOL *stop) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((index * 3 + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if ([step isEqualToString:@"click"]) {
+                    NSLog(@"[SelfTest] click");
+                    [self browserHandlePrimaryAction];
+                    return;
+                }
+                NSArray<NSString *> *parts = [step componentsSeparatedByString:@","];
+                if (parts.count != 2) {
+                    return;
+                }
+                CGPoint point = CGPointMake(parts[0].doubleValue, parts[1].doubleValue);
+                NSLog(@"[SelfTest] move %@ targets=%lu", NSStringFromCGPoint(point), (unsigned long)[self browserRemoteInputControllerPointerTargets].count);
+                [self.remoteInputController movePointerToPoint:point];
+            });
+        }];
+    });
+}
+#endif
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
@@ -387,8 +421,8 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)showHintsAlert {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Usage Guide"
-                                                                             message:@"Double press the touch area to switch between cursor & scroll mode.\nPress the touch area while in cursor mode to click.\nSingle tap to Menu button to Go Back, or Exit on root page.\nSingle tap the Play/Pause button to: Go Forward, Enter URL or Reload Page.\nDouble tap the Play/Pause to show the Advanced Menu with more options.\nUse the tabs icon in the top bar to open the tab overview."
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Bedienung"
+                                                                             message:@"Wischen bewegt den Zeiger. In der Nähe von Links und Knöpfen rastet er ein.\nClickpad drücken: klicken.\nClickpad oben/unten drücken: eine Seite scrollen. Zeiger an den Rand schieben scrollt ebenfalls.\nClickpad links/rechts drücken: zurück/vor.\nZurück-Taste: Seite zurück.\nPlay/Pause: Schnellmenü, zweimal: erweitertes Menü.\nDie Knöpfe der oberen Leiste lassen sich direkt anklicken."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     __weak typeof(self) weakSelf = self;
@@ -411,8 +445,48 @@ static UIColor *kTextColor(void) {
     [self presentViewController:alertController animated:YES completion:nil];
 }
 
+- (BOOL)topBarAcceptsPointer {
+    return self.viewModel.topNavigationBarVisible && !self.topMenuView.hidden && self.topMenuView.alpha > 0.05;
+}
+
+/// Klick auf einen Knopf der oberen Leiste direkt auslösen, ohne den Umweg über den Fokusmodus.
+- (BOOL)performTopBarActionAtPoint:(CGPoint)point {
+    if (![self topBarAcceptsPointer]) {
+        return NO;
+    }
+    __block BOOL found = NO;
+    __block BrowserTopBarAction foundAction = BrowserTopBarActionURL;
+    [self.topMenuView enumeratePointerTargetsUsingBlock:^(CGRect frame, BrowserTopBarAction action) {
+        if (!found && CGRectContainsPoint([self.topMenuView convertRect:frame toView:self.view], point)) {
+            found = YES;
+            foundAction = action;
+        }
+    }];
+    if (found) {
+        [self performTopBarAction:foundAction];
+    }
+    return found;
+}
+
+- (void)observeClickTargetsOfWebView:(BrowserWebView *)webView {
+    if (webView == nil || webView.clickTargetsDidChange != nil) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    __weak BrowserWebView *weakWebView = webView;
+    webView.clickTargetsDidChange = ^{
+        if (weakSelf.webview == weakWebView) {
+            [weakSelf.remoteInputController pointerTargetsDidChange];
+        }
+    };
+}
+
 - (void)browserHandlePrimaryAction {
     if (!self.remoteInputController.cursorModeEnabled || self.webview == nil) {
+        return;
+    }
+
+    if ([self performTopBarActionAtPoint:self.remoteInputController.cursorView.frame.origin]) {
         return;
     }
 
@@ -689,16 +763,46 @@ static UIColor *kTextColor(void) {
     [self showAdvancedMenu];
 }
 
-- (NSString *)browserRemoteInputControllerHoverStateAtCursorPoint:(CGPoint)point {
-    if (self.webview.request == nil) {
-        return @"false";
+- (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {
+    NSMutableArray<NSValue *> *targets = [NSMutableArray array];
+    BrowserWebView *webView = self.webview;
+    BOOL topBarVisible = [self topBarAcceptsPointer];
+    CGRect topBarFrame = topBarVisible ? [self.topMenuView.superview convertRect:self.topMenuView.frame toView:self.view] : CGRectNull;
+
+    if (webView != nil && webView.window != nil) {
+        [self observeClickTargetsOfWebView:webView];
+        CGRect visible = [webView convertRect:webView.bounds toView:self.view];
+        for (NSValue *value in [webView clickTargetRects]) {
+            CGRect rect = CGRectIntersection([webView convertRect:value.CGRectValue toView:self.view], visible);
+            if (CGRectIsEmpty(rect)) {
+                continue;
+            }
+            // Was unter der oberen Leiste liegt, ist nicht erreichbar.
+            if (topBarVisible && CGRectContainsPoint(topBarFrame, CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect)))) {
+                continue;
+            }
+            [targets addObject:[NSValue valueWithCGRect:rect]];
+        }
     }
-    CGPoint webPoint = [self.view convertPoint:point toView:self.webview];
-    if (webPoint.y < 0) {
-        return @"false";
+
+    if (topBarVisible) {
+        [self.topMenuView enumeratePointerTargetsUsingBlock:^(CGRect frame, __unused BrowserTopBarAction action) {
+            [targets addObject:[NSValue valueWithCGRect:[self.topMenuView convertRect:frame toView:self.view]]];
+        }];
     }
-    CGPoint domPoint = [self browserDOMPointForCursor];
-    return [self.pageActionCoordinator hoverStateAtDOMPoint:domPoint webView:self.webview];
+    return targets;
+}
+
+- (void)browserRemoteInputControllerNavigateBack {
+    if (self.webview.canGoBack) {
+        [self.webview goBack];
+    }
+}
+
+- (void)browserRemoteInputControllerNavigateForward {
+    if (self.webview.canGoForward) {
+        [self.webview goForward];
+    }
 }
 
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled {
@@ -724,6 +828,9 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)webViewDidStartLoad:(id)webView {
+    if ([webView isKindOfClass:BrowserWebView.class]) {
+        [self observeClickTargetsOfWebView:webView];
+    }
     [self.tabCoordinator webViewDidStartLoad:webView];
 }
 
@@ -807,6 +914,11 @@ static UIColor *kTextColor(void) {
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     [self.remoteInputController handlePressesBegan:presses withEvent:event];
     [super pressesBegan:presses withEvent:event];
+}
+
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    [self.remoteInputController handlePressesCancelled:presses withEvent:event];
+    [super pressesCancelled:presses withEvent:event];
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
