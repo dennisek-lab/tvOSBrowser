@@ -1186,6 +1186,27 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)webSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.webSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Untertitel (Webseite)"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        [self.host browserSetWebSubtitlesEnabled:!enabled];
+    }];
+}
+
+/// Zeigerstil durchschalten: macOS dunkel → macOS hell → SF Symbols.
+- (BrowserAdvancedMenuItem *)cursorStyleMenuItem {
+    NSUInteger style = self.preferencesStore.cursorStyle % 3;
+    NSArray<NSString *> *names = @[@"Dunkel", @"Hell", @"Symbol"];
+    return [self advancedMenuItemWithTitle:@"Zeiger"
+                                    detail:names[style]
+                                   handler:^{
+        self.preferencesStore.cursorStyle = (style + 1) % 3;
+        [self.host browserBringCursorToFront];
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)autoOpenNativePlayerMenuItem {
     BOOL enabled = self.preferencesStore.autoOpenVideosInNativePlayer;
     return [self advancedMenuItemWithTitle:@"Native Player automatisch"
@@ -1204,6 +1225,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],
         [self autoSubtitlesMenuItem],
+        [self webSubtitlesMenuItem],
         [self cloudflareDNSMenuItem],
     ];
 }
@@ -1278,6 +1300,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             [self topNavigationVisibilityMenuItem],
             [self rainbowGlowMenuItem],
             [self liquidGlassAnimationsMenuItem],
+            [self cursorStyleMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],
             [self userAgentModeMenuItem],
