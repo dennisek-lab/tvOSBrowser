@@ -73,6 +73,7 @@
 		3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */; };
 		D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */ = {isa = PBXBuildFile; fileRef = 70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */; };
 		232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */ = {isa = PBXBuildFile; fileRef = 48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */; };
+		7A1D3C5E9B2F4A6C8E0D1F21 /* BrowserAddressInputController.m in Sources */ = {isa = PBXBuildFile; fileRef = 7A1D3C5E9B2F4A6C8E0D1F23 /* BrowserAddressInputController.m */; };
 		C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */; };
 		DCB82D092D8518B7A751DC98 /* BrowserCommand.m in Sources */ = {isa = PBXBuildFile; fileRef = 6157FC5AB882D846E726CD36 /* BrowserCommand.m */; };
 		A558E2A249E80DDC1355C771 /* BrowserCommandParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 6194890DB589857E8304FBAE /* BrowserCommandParser.m */; };
@@ -200,6 +201,8 @@
 		70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFaviconCache.m; sourceTree = "<group>"; };
 		D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressPanelView.h; sourceTree = "<group>"; };
 		48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressPanelView.m; sourceTree = "<group>"; };
+		7A1D3C5E9B2F4A6C8E0D1F22 /* BrowserAddressInputController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressInputController.h; sourceTree = "<group>"; };
+		7A1D3C5E9B2F4A6C8E0D1F23 /* BrowserAddressInputController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressInputController.m; sourceTree = "<group>"; };
 		A7E5F0C1B2D3E4F5A6B7C8D9 /* BrowserPerf.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserPerf.h; sourceTree = "<group>"; };
 		D1FF718DE4E2144091280B37 /* BrowserMotion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserMotion.h; sourceTree = "<group>"; };
 		7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserMotion.m; sourceTree = "<group>"; };
@@ -401,6 +404,8 @@
 				70F738CE00959FA50F9BBD86 /* BrowserFaviconCache.m */,
 				D1CAB26588C9544CB14DC68C /* BrowserAddressPanelView.h */,
 				48C87AEF11C46BC291C556E0 /* BrowserAddressPanelView.m */,
+				7A1D3C5E9B2F4A6C8E0D1F22 /* BrowserAddressInputController.h */,
+				7A1D3C5E9B2F4A6C8E0D1F23 /* BrowserAddressInputController.m */,
 				D1FF718DE4E2144091280B37 /* BrowserMotion.h */,
 				A7E5F0C1B2D3E4F5A6B7C8D9 /* BrowserPerf.h */,
 				7CB3501C9E8C39AAA80C8568 /* BrowserMotion.m */,
@@ -667,6 +672,7 @@
 				F451473A9202627E0EB516CE /* BrowserReaderMode.m in Sources */,
 				C036C406A76FD394335D2E03 /* BrowserAppIntents.swift in Sources */,
 				232C8D41E0A3A9892570B00A /* BrowserAddressPanelView.m in Sources */,
+				7A1D3C5E9B2F4A6C8E0D1F21 /* BrowserAddressInputController.m in Sources */,
 				D0CFED8929809ADF69F1C78F /* BrowserFaviconCache.m in Sources */,
 				A74DEB982B0F00C3BF821208 /* BrowserWebSubtitleController.m in Sources */,
 				1AA607AF0112F40B46BFF304 /* BrowserWebSubtitleOverlay.m in Sources */,
