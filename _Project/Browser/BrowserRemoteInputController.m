@@ -17,9 +17,21 @@ static UIImage *BrowserPointerCursor(void) {
 
 /// Einrasten mit Hysterese: Ab diesem Abstand der Fingerposition zum Zielrand rastet der Zeiger ein (Punkte) …
 static const CGFloat kSnapEnterRadius = 24.0;
-/// … und löst sich erst, wenn die Fingerposition so weit über den Zielrand hinaus ist. Dazwischen zieht das Ziel den
-/// sichtbaren Zeiger stufenlos an; an der Lösegrenze ist die Anziehung null, deshalb springt beim Lösen nichts.
-static const CGFloat kSnapReleaseRadius = 48.0;
+/// … und löst sich erst, wenn die Fingerposition so weit über den Zielrand hinaus ist (vorher 48). Dazwischen zieht das
+/// Ziel den sichtbaren Zeiger stufenlos an; an der Lösegrenze ist die Anziehung null, deshalb springt beim Lösen nichts.
+/// Gilt nur, wenn in Bewegungsrichtung kein Nachbarziel liegt; sonst wechselt der Zeiger vorher dorthin (s. u.).
+static const CGFloat kSnapReleaseRadius = 80.0;
+/// Weiterreichen statt Loslösen (Nutzerwunsch 8. November 2026: „magnetischer, man überspringt leicht Buttons“):
+/// Ist die Fingerposition so weit über den Rand eines kleinen Ziels hinaus, wechselt der Zeiger zum nächsten Ziel in
+/// Bewegungsrichtung (Lücke höchstens kSnapHandoffReach, Kegel ±60°) und steht dort in der Mitte; die im alten Ziel
+/// aufsummierte Bewegung verfällt. Ohne Nachbarn gilt kSnapReleaseRadius.
+static const CGFloat kSnapHandoffDistance = 28.0;
+static const CGFloat kSnapHandoffReach = 220.0;
+/// Pro Wischgeste höchstens ein Wechsel. Ein weiterer nur bei langen, schnellen Wischern: Seit dem letzten Wechsel
+/// mindestens kSnapRepeatTravel pt Zeigerweg (nach Beschleunigung, also mit Zeigertempo) und gerade mindestens
+/// kSnapRepeatMinSpeed pt/s. Sonst hält das Ziel den Zeiger (höchstens kSnapHandoffDistance über den Rand).
+static const CGFloat kSnapRepeatTravel = 160.0;
+static const CGFloat kSnapRepeatMinSpeed = 1400.0;
 /// So stark zieht ein kleines Ziel den sichtbaren Zeiger zur Mitte (1 = genau Mitte), solange der Finger darin ist.
 static const CGFloat kSnapPull = 0.85;
 /// Zeitkonstante des weichen Übergangs zu einem neuen Ziel (Einrasten, Zielwechsel, Sprung per links/rechts), s.
@@ -145,8 +157,12 @@ static const CGFloat kGlideMaxDistance = 140.0;
 @property (nonatomic, strong) NSArray<NSNumber *> *ringWidths;
 - (void)setGlowColor:(UIColor *)color;
 - (void)setShapeSize:(CGSize)size cornerRadius:(CGFloat)radius animated:(BOOL)animated;
-/// Hält Drehen und Atmen an (Ebenenzeit steht), solange die Hervorhebung unsichtbar ist; Fortsetzen ohne Sprung.
+/// Hält Drehen und Atmen an (Animationen entfernt), solange die Hervorhebung unsichtbar ist. Beim Fortsetzen laufen
+/// sie im gemeinsamen Takt aller Glows weiter (BrowserGlowClockStart), damit die alte und die neue Hervorhebung beim
+/// Zielwechsel dieselbe Farbstellung zeigen.
 @property (nonatomic) BOOL animationsPaused;
+/// NO: stehender Farbverlauf (gleiche Farben, keine Drehung, kein Atmen), s. BrowserMotion.glowAnimationEnabled.
+@property (nonatomic) BOOL motionEnabled;
 @end
 
 @implementation BrowserGlowView
@@ -247,6 +263,8 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
         _ringMasks = masks;
         _gradients = gradients;
         _ringWidths = widths;
+        _motionEnabled = YES;
+        _animationsPaused = YES; // unsichtbar angelegt; showHighlightForTarget: setzt fort
         self.rainbow = YES;
     }
     return self;
@@ -259,17 +277,45 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
     }
     // Einfarbig: wie bisher über den Schatten der Ebene. Regenbogen: Schatten aus, die Ringe leuchten selbst.
     self.layer.shadowOpacity = rainbow ? 0.0 : 0.95;
-    if (rainbow) {
+    if (rainbow && self.motionEnabled) {
         [self startRotation];
     } else {
-        for (CAGradientLayer *gradient in self.gradients) {
-            [gradient removeAnimationForKey:@"spin"];
-        }
-        [self.glowWrappers.firstObject removeAnimationForKey:@"breathe"];
+        [self stopRotation];
     }
 }
 
+- (void)setMotionEnabled:(BOOL)motionEnabled {
+    if (_motionEnabled == motionEnabled) {
+        return;
+    }
+    _motionEnabled = motionEnabled;
+    if (motionEnabled && self.rainbow) {
+        [self startRotation];
+    } else {
+        [self stopRotation];
+    }
+}
+
+/// Ohne Animation steht der Verlauf in der Grundlage (Drehung 0, Lichthof mit seiner Grund-Deckkraft).
+- (void)stopRotation {
+    for (CAGradientLayer *gradient in self.gradients) {
+        [gradient removeAnimationForKey:@"spin"];
+    }
+    [self.glowWrappers.firstObject removeAnimationForKey:@"breathe"];
+}
+
+/// Gemeinsamer Zeitnullpunkt aller Glow-Animationen (Medienzeit beim ersten Gebrauch).
+static CFTimeInterval BrowserGlowClockStart(void) {
+    static CFTimeInterval start;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ start = CACurrentMediaTime(); });
+    return start;
+}
+
 - (void)startRotation {
+    if (!self.motionEnabled || self.animationsPaused) {
+        return;
+    }
     for (CAGradientLayer *gradient in self.gradients) {
         if ([gradient animationForKey:@"spin"] != nil) {
             continue;
@@ -280,6 +326,7 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
         spin.duration = 3.6;
         spin.repeatCount = HUGE_VALF;
         spin.removedOnCompletion = NO;
+        spin.beginTime = [gradient convertTime:BrowserGlowClockStart() fromLayer:nil];
         [gradient addAnimation:spin forKey:@"spin"];
     }
     // Der weite Lichthof atmet leicht, wie beim Original.
@@ -293,6 +340,7 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
         breathe.repeatCount = HUGE_VALF;
         breathe.removedOnCompletion = NO;
         breathe.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        breathe.beginTime = [halo convertTime:BrowserGlowClockStart() fromLayer:nil];
         [halo addAnimation:breathe forKey:@"breathe"];
     }
 }
@@ -300,7 +348,7 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
 - (void)didMoveToWindow {
     [super didMoveToWindow];
     // Nach Hintergrund/Vordergrund entfernt Core Animation Endlosanimationen; beim Zurückkommen neu starten.
-    if (self.window != nil && self.rainbow) {
+    if (self.window != nil && self.rainbow && self.motionEnabled) {
         [self startRotation];
     }
 }
@@ -310,24 +358,17 @@ static id BrowserGlowBlurFilter(CGFloat radius) {
 }
 
 /// Leistung: Die Endlosanimationen (Drehen mit Weichzeichner, Atmen) laufen sonst auch bei Alpha 0 weiter und
-/// lassen den Render-Server jedes Bild neu zusammensetzen. Angehalten wird über die Ebenenzeit (speed 0); beim
-/// Fortsetzen läuft alles an derselben Stelle weiter (docs/ERWEITERUNGEN.md Abschnitt 21).
+/// lassen den Render-Server jedes Bild neu zusammensetzen. Unsichtbar werden sie entfernt, beim Fortsetzen im
+/// gemeinsamen Takt neu angelegt (docs/ERWEITERUNGEN.md Abschnitt 21).
 - (void)setAnimationsPaused:(BOOL)paused {
     if (_animationsPaused == paused) {
         return;
     }
     _animationsPaused = paused;
-    CALayer *layer = self.layer;
     if (paused) {
-        CFTimeInterval now = [layer convertTime:CACurrentMediaTime() fromLayer:nil];
-        layer.speed = 0.0;
-        layer.timeOffset = now;
-    } else {
-        CFTimeInterval pausedAt = layer.timeOffset;
-        layer.speed = 1.0;
-        layer.timeOffset = 0.0;
-        layer.beginTime = 0.0;
-        layer.beginTime = [layer convertTime:CACurrentMediaTime() fromLayer:nil] - pausedAt;
+        [self stopRotation];
+    } else if (self.rainbow) {
+        [self startRotation];
     }
 }
 
@@ -413,6 +454,57 @@ static void BrowserGlowAnimateKey(CALayer *layer, NSString *key, id fromValue) {
 
 @end
 
+/// Eine Hervorhebung: Glow außen, Linse (Kantenbrechung), Glasfläche mit Lichtkante. Der Controller hält zwei davon:
+/// Beim Zielwechsel blendet die alte an ihrem Ort aus und die neue ploppt am neuen Ziel auf, statt dass eine Fläche
+/// vom alten zum neuen Ziel gleitet (wirkte z. B. so, als käme die Markierung eines Textlinks aus dem Bild daneben).
+@interface BrowserMagneticHighlightView : UIView
+@property (nonatomic, readonly) BrowserGlowView *glowView;
+@property (nonatomic, readonly) UIView *lensContainer;
+@property (nonatomic, readonly) BrowserGlassHighlightSurfaceView *surfaceView;
+/// Linse: Momentaufnahme der Seite (Randband, ggf. Mitte), nur bei neuer Lage oder Größe neu aufgenommen.
+@property (nonatomic, nullable) UIView *lensCenterSnapshot;
+@property (nonatomic, nullable) UIView *lensEdgeSnapshot;
+@property (nonatomic) CGRect lensRect;
+@property (nonatomic, nullable) CAShapeLayer *lensSeam;
+/// Ziel (Koordinaten von rootView), das diese Hervorhebung zeigt; CGRectNull = keins.
+@property (nonatomic) CGRect shownTarget;
+#if DEBUG
+/// Zusatzmarkierung der Varianten G–I.
+@property (nonatomic, nullable) CAShapeLayer *debugMarkLayer;
+#endif
+@end
+
+@implementation BrowserMagneticHighlightView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.userInteractionEnabled = NO;
+        self.backgroundColor = UIColor.clearColor;
+        self.layer.cornerCurve = kCACornerCurveContinuous;
+        // Statt Schatten ein Leuchten außen herum (Farbe je Ziel, sonst Systemblau), s. BrowserGlowView.
+        _glowView = [[BrowserGlowView alloc] initWithFrame:CGRectZero];
+        [self addSubview:_glowView];
+        _lensContainer = [[UIView alloc] initWithFrame:CGRectZero];
+        _lensContainer.userInteractionEnabled = NO;
+        _lensContainer.clipsToBounds = YES;
+        _lensContainer.layer.cornerCurve = kCACornerCurveContinuous;
+        _lensRect = CGRectNull;
+        [self addSubview:_lensContainer];
+        _surfaceView = [[BrowserGlassHighlightSurfaceView alloc] initWithFrame:CGRectZero];
+        _surfaceView.userInteractionEnabled = NO;
+        _surfaceView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        _surfaceView.layer.cornerCurve = kCACornerCurveContinuous;
+        _surfaceView.clipsToBounds = YES;
+        [self addSubview:_surfaceView];
+        _shownTarget = CGRectNull;
+        self.alpha = 0.0;
+    }
+    return self;
+}
+
+@end
+
 /// Abstand eines Punkts zum Rechteck (0 innerhalb).
 static CGFloat BrowserDistanceToRect(CGPoint point, CGRect rect) {
     CGFloat dx = MAX(MAX(CGRectGetMinX(rect) - point.x, 0.0), point.x - CGRectGetMaxX(rect));
@@ -449,20 +541,103 @@ static CGFloat BrowserDistanceToRect(CGPoint point, CGRect rect) {
 @end
 #endif
 
+#pragma mark - Bausteine der Hervorhebung
+
+/// Zusätzliche Markierung des Ziels (nur DEBUG-Varianten).
+typedef NS_ENUM(NSInteger, BrowserMagneticMark) {
+    BrowserMagneticMarkNone = 0,
+    BrowserMagneticMarkTint,       // getönte Fläche in der Zielfarbe
+    BrowserMagneticMarkContour,    // scharfe Kontur in der Zielfarbe
+    BrowserMagneticMarkUnderline,  // Unterstreichung unter dem Text
+};
+
+/// Woraus die Hervorhebung besteht. Der Glow (BrowserGlowView) gehört immer dazu und ist hier nicht schaltbar.
+typedef struct {
+    BOOL lens;                 // Refraktion: Momentaufnahme der Seite im Randband (Linsenkante)
+    CGFloat lensCenterScale;   // Vergrößerung der Mitte (1 = keine; nur DEBUG-Variante Z vergrößert)
+    CGFloat lensEdgeScale;     // Vergrößerung im Randband (Linsenkante)
+    CGFloat lensBand;          // größte Breite des Randbands (pt)
+    BOOL highlights;           // Lichtkante der Fläche und heller Saum der Linse
+    CGFloat padding;           // so weit ragt die Fläche (und damit der Glow) über das Ziel hinaus
+    BrowserMagneticMark mark;
+} BrowserMagneticStyle;
+
+/// Variante A, die Darstellung im Release: kein Zoom (Mitte 1,0; Nutzerwunsch 8. November 2026, „der Zoom ist
+/// verwirrend“), Brechung nur im 6-pt-Randband, Lichtkante, Fläche 6 pt größer als das Ziel.
+static BrowserMagneticStyle BrowserMagneticStyleStandard(void) {
+    return (BrowserMagneticStyle){YES, 1.0, 1.13, 6.0, YES, 6.0, BrowserMagneticMarkNone};
+}
+
+#if DEBUG
+/// Vergleich der Darstellungen (docs/magnetic-varianten/): NSUserDefaults-Schlüssel „MagneticVariant“, im Selbsttest
+/// `pref:MagneticVariant=B`. Z vorher (Mitte 1,04-fach vergrößert), A aktuell, B ohne Refraktion, C ohne Highlights,
+/// D ohne beides; nur für Textziele: E eng (3 pt), F eng ohne Refraktion, G getönte Fläche, H Kontur, I Unterstreichung.
+static NSString *BrowserMagneticVariant(void) {
+    NSString *value = [NSUserDefaults.standardUserDefaults stringForKey:@"MagneticVariant"];
+    return value.length > 0 ? value.uppercaseString : @"A";
+}
+
+static BOOL BrowserMagneticVariantIsTextOnly(NSString *variant) {
+    return [@[@"E", @"F", @"G", @"H", @"I"] containsObject:variant];
+}
+#endif
+
+static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
+    BrowserMagneticStyle style = BrowserMagneticStyleStandard();
+#if DEBUG
+    NSString *variant = BrowserMagneticVariant();
+    if ([variant isEqualToString:@"Z"]) {
+        style.lensCenterScale = 1.04;
+    } else if ([variant isEqualToString:@"B"]) {
+        style.lens = NO;
+    } else if ([variant isEqualToString:@"C"]) {
+        style.highlights = NO;
+    } else if ([variant isEqualToString:@"D"]) {
+        style.lens = NO;
+        style.highlights = NO;
+    } else if (text && [variant isEqualToString:@"E"]) {
+        style.padding = 3.0;
+        style.lensBand = 3.0;
+    } else if (text && [variant isEqualToString:@"F"]) {
+        style.lens = NO;
+        style.padding = 3.0;
+    } else if (text && [variant isEqualToString:@"G"]) {
+        style.lens = NO;
+        style.mark = BrowserMagneticMarkTint;
+    } else if (text && [variant isEqualToString:@"H"]) {
+        style.lens = NO;
+        style.highlights = NO;
+        style.mark = BrowserMagneticMarkContour;
+    } else if (text && [variant isEqualToString:@"I"]) {
+        style.lens = NO;
+        style.highlights = NO;
+        style.mark = BrowserMagneticMarkUnderline;
+    }
+#else
+    (void)text;
+#endif
+    return style;
+}
+
 @interface BrowserRemoteInputController ()
 
 @property (nonatomic, weak) id<BrowserRemoteInputControllerHost> host;
 @property (nonatomic, weak) UIView *rootView;
 @property (nonatomic, readwrite) UIImageView *cursorView;
-@property (nonatomic) UIView *highlightView;
-@property (nonatomic) UIView *highlightSurfaceView;
-@property (nonatomic) BrowserGlowView *highlightGlowView;
-/// Linse: Momentaufnahme der Seite unter der Hervorhebung, in der Mitte leicht, am Rand stärker vergrößert.
-@property (nonatomic) UIView *lensContainer;
-@property (nonatomic) UIView *lensCenterSnapshot;
-@property (nonatomic) UIView *lensEdgeSnapshot;
-@property (nonatomic) CGRect lensRect;
-@property (nonatomic) CAShapeLayer *lensSeam;
+/// Gerade gezeigte Hervorhebung und die zweite für den nächsten Zielwechsel (blendet aus bzw. wartet).
+@property (nonatomic) BrowserMagneticHighlightView *highlightView;
+@property (nonatomic) BrowserMagneticHighlightView *spareHighlightView;
+@property (nonatomic, readonly) BrowserGlowView *highlightGlowView;
+/// Die Seite hat neue Ziele gemeldet (Scrollen, DOM): Bleibt das Ziel gleich groß, folgt die Hervorhebung ohne
+/// Aufploppen an die neue Stelle.
+@property (nonatomic) BOOL highlightRepositionPending;
+/// Magnet: Wechsel von Ziel zu Ziel in der laufenden Wischgeste und Zeigerweg seit dem letzten Wechsel.
+@property (nonatomic) NSInteger snapHopsThisGesture;
+@property (nonatomic) CGFloat snapTravelSinceHop;
+#if DEBUG
+/// Zuletzt angewandte MagneticVariant (Wechsel baut die Hervorhebung neu auf).
+@property (nonatomic, copy) NSString *debugMagneticVariant;
+#endif
 @property (nonatomic, readwrite) UIPanGestureRecognizer *manualScrollPanRecognizer;
 @property (nonatomic, readwrite) UITapGestureRecognizer *playPauseDoubleTapRecognizer;
 @property (nonatomic, readwrite, getter=isCursorModeEnabled) BOOL cursorModeEnabled;
@@ -593,30 +768,17 @@ enum { kHistoryCount = 32 };
         _cursorView.image = BrowserDefaultCursor();
         _cursorView.userInteractionEnabled = NO;
 
-        _highlightView = [[UIView alloc] initWithFrame:CGRectZero];
-        _highlightView.userInteractionEnabled = NO;
-        // Auswahl im Glas-Look: helle, halbdurchsichtige Fläche mit Glanz oben, Lichtkante und weichem Schatten.
-        // Bewusst ohne echte Glaslinse – die bricht den Text darunter und kostet mehr Leistung.
-        _highlightView.backgroundColor = UIColor.clearColor;
-        _highlightView.layer.cornerCurve = kCACornerCurveContinuous;
-        // Statt Schatten ein Leuchten außen herum (Farbe je Ziel, sonst Systemblau), s. BrowserGlowView.
-        BrowserGlowView *glow = [[BrowserGlowView alloc] initWithFrame:CGRectZero];
-        [_highlightView addSubview:glow];
-        _highlightGlowView = glow;
-        _lensContainer = [[UIView alloc] initWithFrame:CGRectZero];
-        _lensContainer.userInteractionEnabled = NO;
-        _lensContainer.clipsToBounds = YES;
-        _lensContainer.layer.cornerCurve = kCACornerCurveContinuous;
-        _lensRect = CGRectNull;
-        [_highlightView addSubview:_lensContainer];
-        UIView *surface = [[BrowserGlassHighlightSurfaceView alloc] initWithFrame:CGRectZero];
-        surface.userInteractionEnabled = NO;
-        surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        surface.layer.cornerCurve = kCACornerCurveContinuous;
-        surface.clipsToBounds = YES;
-        [_highlightView addSubview:surface];
-        _highlightSurfaceView = surface;
-        _highlightView.alpha = 0.0;
+        _highlightView = [[BrowserMagneticHighlightView alloc] initWithFrame:CGRectZero];
+        _spareHighlightView = [[BrowserMagneticHighlightView alloc] initWithFrame:CGRectZero];
+        _highlightView.glowView.motionEnabled = BrowserMotion.glowAnimationEnabled;
+        _spareHighlightView.glowView.motionEnabled = BrowserMotion.glowAnimationEnabled;
+#if DEBUG
+        _debugMagneticVariant = BrowserMagneticVariant();
+#endif
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(glowMotionSettingMayHaveChanged:)
+                                                   name:UIAccessibilityReduceMotionStatusDidChangeNotification object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(glowMotionSettingMayHaveChanged:)
+                                                   name:NSUserDefaultsDidChangeNotification object:nil];
 
         _playPauseDoubleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handlePlayPauseDoubleTap:)];
         _playPauseDoubleTapRecognizer.numberOfTapsRequired = 2;
@@ -731,8 +893,9 @@ enum { kHistoryCount = 32 };
     return best;
 }
 
-/// Hält das aktuelle Ziel (Hysterese) oder bestimmt ein neues. Gelöst wird erst jenseits von kSnapReleaseRadius,
-/// oder wenn der Finger in einem anderen Ziel liegt (dicht beieinander liegende Links bleiben erreichbar).
+/// Hält das aktuelle Ziel (Hysterese) oder bestimmt ein neues. Kleine Ziele reichen den Zeiger an das nächste Ziel in
+/// Bewegungsrichtung weiter (kSnapHandoffDistance), höchstens eins pro Wischgeste (snapHopAllowed); gelöst wird erst
+/// jenseits von kSnapReleaseRadius, wenn kein Nachbar in Reichweite liegt.
 - (CGRect)targetWithHysteresisFor:(CGPoint)point {
     CGRect current = self.snappedTarget;
     if (CGRectIsNull(current)) {
@@ -747,13 +910,113 @@ enum { kHistoryCount = 32 };
         // Liegt im aktuellen Ziel ein kleineres (verschachtelte Ziele), gewinnt das kleinere.
         return (!CGRectIsNull(best) && CGRectContainsRect(refreshed, best)) ? best : refreshed;
     }
-    if (BrowserDistanceToRect(point, refreshed) > kSnapReleaseRadius) {
-        return best;
+    BOOL magnet = [self targetAllowsCenterSnap:refreshed] && [self fingerOrGlideActive];
+    CGFloat distance = BrowserDistanceToRect(point, refreshed);
+    if (!magnet) {
+        // Große Ziele, Sprünge (Selbsttest, links/rechts): wie bisher.
+        if (distance > kSnapReleaseRadius) {
+            return best;
+        }
+        return (!CGRectIsNull(best) && CGRectContainsPoint(best, point)) ? best : refreshed;
     }
-    if (!CGRectIsNull(best) && CGRectContainsPoint(best, point)) {
+    // Finger in einem anderen Ziel (dicht stehende Links) oder weit genug draußen: zum Nachbarn in Bewegungsrichtung.
+    CGRect neighbor = CGRectNull;
+    if (!CGRectIsNull(best) && CGRectContainsPoint(best, point) && !CGRectEqualToRect(best, refreshed)) {
+        neighbor = best;
+    } else if (distance >= kSnapHandoffDistance) {
+        neighbor = [self neighborTargetOf:refreshed towardPoint:point];
+    }
+    if (!CGRectIsNull(neighbor)) {
+        if ([self snapHopAllowed]) {
+            [self hopToTarget:neighbor];
+            return neighbor;
+        }
+        // Wechsel für diese Geste verbraucht: Ziel hält den Zeiger, Bewegung darüber hinaus verfällt.
+        [self holdPointerAtTarget:refreshed margin:kSnapHandoffDistance];
+        return refreshed;
+    }
+    if (distance > kSnapReleaseRadius) {
         return best;
     }
     return refreshed;
+}
+
+- (BOOL)fingerOrGlideActive {
+    return self.padTouching || self.touchSourceActive || self.gliding;
+}
+
+/// Erster Wechsel einer Geste immer; weitere nur bei langem, schnellem Wischen (kSnapRepeatTravel, kSnapRepeatMinSpeed).
+- (BOOL)snapHopAllowed {
+    if (self.snapHopsThisGesture == 0) {
+        return YES;
+    }
+    if (self.snapTravelSinceHop < kSnapRepeatTravel) {
+        return NO;
+    }
+    CGPoint velocity = [self inputVelocityAtTime:_lastSampleArrival];
+    CGFloat rawSpeed = hypot(velocity.x, velocity.y);
+    return rawSpeed * [self gainForSpeed:rawSpeed] >= kSnapRepeatMinSpeed;
+}
+
+/// Nächstes Ziel vom Rand von current aus in Richtung point (Kegel ±60°, Lücke ≤ kSnapHandoffReach).
+- (CGRect)neighborTargetOf:(CGRect)current towardPoint:(CGPoint)point {
+    CGPoint nearest = CGPointMake(MIN(MAX(point.x, CGRectGetMinX(current)), CGRectGetMaxX(current)),
+                                  MIN(MAX(point.y, CGRectGetMinY(current)), CGRectGetMaxY(current)));
+    CGFloat length = hypot(point.x - nearest.x, point.y - nearest.y);
+    if (length <= 0.0) {
+        return CGRectNull;
+    }
+    CGVector unit = CGVectorMake((point.x - nearest.x) / length, (point.y - nearest.y) / length);
+    CGRect best = CGRectNull;
+    CGFloat bestScore = CGFLOAT_MAX;
+    for (NSValue *value in [self currentPointerTargets]) {
+        CGRect rect = value.CGRectValue;
+        if (CGRectIsEmpty(rect) || CGRectEqualToRect(rect, current) || CGRectContainsRect(rect, current) ||
+            CGRectContainsRect(current, rect)) {
+            continue;
+        }
+        // Nächster Punkt des Kandidaten zur Austrittsstelle, davon Anteil in Bewegungsrichtung und seitlich.
+        CGPoint q = CGPointMake(MIN(MAX(nearest.x, CGRectGetMinX(rect)), CGRectGetMaxX(rect)),
+                                MIN(MAX(nearest.y, CGRectGetMinY(rect)), CGRectGetMaxY(rect)));
+        CGFloat vx = q.x - nearest.x, vy = q.y - nearest.y;
+        CGFloat along = vx * unit.dx + vy * unit.dy;
+        CGFloat across = fabs(vx * unit.dy - vy * unit.dx);
+        CGFloat gap = hypot(vx, vy);
+        if (along < 0.5 || gap > kSnapHandoffReach || across > along * 1.73) {
+            continue;
+        }
+        CGFloat score = along + across * 2.0;
+        if (score < bestScore) {
+            bestScore = score;
+            best = rect;
+        }
+    }
+    return best;
+}
+
+/// Wechsel zu target: Fingerposition in dessen Mitte, die bisher aufsummierte Bewegung verfällt.
+- (void)hopToTarget:(CGRect)target {
+    if ([self fingerOrGlideActive]) {
+        self.snapHopsThisGesture += 1;
+    }
+    self.snapTravelSinceHop = 0.0;
+    CGPoint center = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+    self.freePoint = center;
+    self.rawPoint = center;
+    self.filterVelocity = CGPointZero;
+#if DEBUG
+    NSLog(@"[Pointer] Magnet: Wechsel zu %@ (Wechsel in dieser Geste: %ld)", NSStringFromCGRect(target), (long)self.snapHopsThisGesture);
+#endif
+}
+
+/// Hält die Fingerposition höchstens margin pt außerhalb von target.
+- (void)holdPointerAtTarget:(CGRect)target margin:(CGFloat)margin {
+    CGRect box = CGRectInset(target, -margin, -margin);
+    CGPoint free = self.freePoint;
+    free.x = MIN(MAX(free.x, CGRectGetMinX(box)), CGRectGetMaxX(box));
+    free.y = MIN(MAX(free.y, CGRectGetMinY(box)), CGRectGetMaxY(box));
+    self.freePoint = free;
+    self.rawPoint = free;
 }
 
 /// Angezogene Lage im Ziel: Richtung Mitte, mindestens 4 pt innerhalb des Rands (ein Klick trifft das Ziel).
@@ -869,69 +1132,125 @@ enum { kHistoryCount = 32 };
     }
 }
 
+- (BrowserGlowView *)highlightGlowView {
+    return self.highlightView.glowView;
+}
+
+/// Zeigt die Hervorhebung am Ziel. Kein Gleiten vom alten Ziel her und keine Vergrößerung: Bei einem neuen Ziel blendet
+/// die bisherige Hervorhebung an ihrem Ort aus, die zweite erscheint am neuen Ziel (kurzes Aufploppen, BrowserMotion).
+/// Dasselbe Ziel an neuer Stelle (Seite gescrollt) wird ohne Animation nachgeführt.
 - (void)showHighlightForTarget:(CGRect)target animated:(BOOL)animated {
-    UIView *highlight = self.highlightView;
-    if (highlight.superview != self.rootView) {
-        [highlight removeFromSuperview];
+    BrowserMagneticHighlightView *current = self.highlightView;
+    BOOL currentVisible = current.superview == self.rootView && current.alpha > 0.0 && !CGRectIsNull(current.shownTarget);
+    BOOL sameElementMoved = currentVisible && self.highlightRepositionPending &&
+        fabs(CGRectGetWidth(current.shownTarget) - CGRectGetWidth(target)) < 1.0 &&
+        fabs(CGRectGetHeight(current.shownTarget) - CGRectGetHeight(target)) < 1.0;
+    self.highlightRepositionPending = NO;
+    BOOL sameTarget = currentVisible && CGRectEqualToRect(current.shownTarget, target);
+    BrowserMagneticHighlightView *highlight = current;
+    BOOL popIn = NO;
+    if (currentVisible && !sameTarget && !sameElementMoved) {
+        // Zielwechsel: alte Hervorhebung blendet an Ort und Stelle aus, die zweite übernimmt.
+        BrowserMagneticHighlightView *outgoing = current;
+        highlight = self.spareHighlightView;
+        self.spareHighlightView = outgoing;
+        self.highlightView = highlight;
+        outgoing.shownTarget = CGRectNull;
+        [UIView animateWithDuration:animated ? [BrowserMotion durationForKind:BrowserMotionKindFade] * 0.6 : 0.0
+                              delay:0.0
+                            options:UIViewAnimationOptionBeginFromCurrentState
+                         animations:^{ outgoing.alpha = 0.0; }
+                         completion:^(__unused BOOL finished) {
+            if (outgoing != self.highlightView && outgoing.alpha <= 0.0) {
+                outgoing.glowView.animationsPaused = YES;
+            }
+        }];
+        popIn = YES;
+    } else if (!currentVisible) {
+        popIn = YES;
     }
+    [highlight.layer removeAllAnimations];
+    highlight.transform = CGAffineTransformIdentity;
     [self.rootView insertSubview:highlight belowSubview:self.cursorView];
-    CGRect frame = CGRectInset(target, -6.0, -6.0);
+
+    BOOL textTarget = NO;
+#if DEBUG
+    if (BrowserMagneticVariantIsTextOnly(BrowserMagneticVariant()) &&
+        [self.host respondsToSelector:@selector(browserRemoteInputControllerTargetIsText:)]) {
+        textTarget = [self.host browserRemoteInputControllerTargetIsText:target];
+    }
+#endif
+    BrowserMagneticStyle style = BrowserMagneticStyleForTarget(textTarget);
+    CGRect frame = CGRectInset(target, -style.padding, -style.padding);
     // Ecken nach Liquid Glass: Knöpfe, Links und Textzeilen als Kapsel, größere Flächen (Karten, Bilder) mit
-    // großer, kontinuierlicher Rundung statt kantiger 16 pt.
+    // großer, kontinuierlicher Rundung statt kantiger 16 pt. Mehrzeilige Ziele (ab 80 pt, etwa ein Google-Treffer mit
+    // Kopfzeile und Titel) keine Kapsel: deren Halbkreise würden Favicon und Titelanfang an der linken Kante anschneiden.
     CGFloat height = CGRectGetHeight(frame);
-    CGFloat radius = height <= 120.0 ? height / 2.0 : MIN(34.0, height / 2.0);
+    CGFloat radius = height <= 80.0 ? height / 2.0 : MIN(34.0, height / 2.0);
     if ([self.host respondsToSelector:@selector(browserRemoteInputControllerCornerRadiusForTarget:)]) {
         CGFloat targetRadius = [self.host browserRemoteInputControllerCornerRadiusForTarget:target];
         if (targetRadius >= 0.0) {
-            radius = MIN(targetRadius + 6.0, CGRectGetHeight(frame) / 2.0);
+            radius = MIN(targetRadius + style.padding, CGRectGetHeight(frame) / 2.0);
         }
     }
-    UIView *surface = self.highlightSurfaceView;
-    BrowserGlowView *glow = self.highlightGlowView;
+    BrowserGlowView *glow = highlight.glowView;
     UIColor *glowColor = nil;
     if ([self.host respondsToSelector:@selector(browserRemoteInputControllerGlowColorForTarget:)]) {
         glowColor = [self.host browserRemoteInputControllerGlowColorForTarget:target];
     }
-    [glow setGlowColor:glowColor ?: [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0]];
+    UIColor *markColor = glowColor ?: [UIColor colorWithRed:0.23 green:0.57 blue:1.0 alpha:1.0];
+    [glow setGlowColor:markColor];
     BOOL rainbow = [BrowserPreferencesStore new].rainbowGlowEnabled;
     if (glow.rainbow != rainbow) {
         glow.rainbow = rainbow;
     }
-    BOOL springs = animated && highlight.alpha > 0.0;
+    glow.motionEnabled = BrowserMotion.glowAnimationEnabled;
     if (!self.cursorIdleHidden) {
         glow.animationsPaused = NO;
     }
-    glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
-    [glow setShapeSize:frame.size cornerRadius:radius animated:springs];
-    [self updateLensForFrame:frame radius:radius];
-    void (^apply)(void) = ^{
+    highlight.shownTarget = target;
+    [UIView performWithoutAnimation:^{
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        highlight.surfaceView.rimLayer.hidden = !style.highlights;
         highlight.frame = frame;
         highlight.layer.cornerRadius = radius;
-        surface.layer.cornerRadius = radius;
-        highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0;
-    };
-    if (animated && highlight.alpha > 0.0) {
-        // Liquid Glass: kurze Feder mit leichtem Nachschwingen; schlicht: 0,12 s easeOut (BrowserMotion).
-        [BrowserMotion animateKind:BrowserMotionKindSnap delay:0
-                           options:UIViewAnimationOptionBeginFromCurrentState
-                        animations:apply
-                        completion:nil];
-    } else {
-        [UIView performWithoutAnimation:^{
-            highlight.frame = frame;
-            highlight.layer.cornerRadius = radius;
-            surface.layer.cornerRadius = radius;
-            }];
-        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ highlight.alpha = self.cursorIdleHidden ? 0.0 : 1.0; }];
+        highlight.surfaceView.layer.cornerRadius = radius;
+        glow.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
+        [glow setShapeSize:frame.size cornerRadius:radius animated:NO];
+        [CATransaction commit];
+    }];
+    [self updateLensForFrame:frame radius:radius style:style];
+#if DEBUG
+    [self updateDebugMarkForFrame:frame radius:radius style:style color:markColor];
+#endif
+    CGFloat targetAlpha = self.cursorIdleHidden ? 0.0 : 1.0;
+    if (!popIn || !animated || targetAlpha <= 0.0) {
+        highlight.alpha = targetAlpha;
+        return;
     }
+    // Aufploppen an Ort und Stelle: Liquid Glass aus 0,92 mit kurzer Feder, schlicht nur Einblenden (BrowserMotion,
+    // dort auch „Bewegung reduzieren“). Danach steht die Fläche in Originalgröße, ohne Vergrößerung.
+    highlight.alpha = 0.0;
+    if (BrowserMotion.liquidGlassEnabled) {
+        highlight.transform = CGAffineTransformMakeScale(0.92, 0.92);
+    }
+    [BrowserMotion animateKind:BrowserMotionKindSnap delay:0
+                       options:UIViewAnimationOptionBeginFromCurrentState
+                    animations:^{
+        highlight.alpha = targetAlpha;
+        highlight.transform = CGAffineTransformIdentity;
+    }
+                    completion:nil];
 }
 
 /// Linse nur bei neuer Lage oder Größe neu aufnehmen (nicht pro Frame): Seite unter dem Ziel als Snapshot,
-/// Mitte ~1,04-fach (Text bleibt lesbar), schmales Randband ~1,13-fach, dazu ein feiner heller Saum am Übergang.
-- (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius {
-    UIView *container = self.lensContainer;
+/// Mitte ohne Zoom (1,0, ausgeblendet; nur DEBUG-Variante Z vergrößert 1,04-fach), Randband 1,13-fach (Kantenbrechung), feiner heller Saum.
+- (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius style:(BrowserMagneticStyle)style {
+    BrowserMagneticHighlightView *highlight = self.highlightView;
+    UIView *container = highlight.lensContainer;
     UIView *source = nil;
-    if ([self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)] &&
+    if (style.lens && [self.host respondsToSelector:@selector(browserRemoteInputControllerLensSourceView)] &&
         (![self.host respondsToSelector:@selector(browserRemoteInputControllerLensAllowedForTarget:)] ||
          [self.host browserRemoteInputControllerLensAllowedForTarget:frame])) {
         source = [self.host browserRemoteInputControllerLensSourceView];
@@ -941,32 +1260,33 @@ enum { kHistoryCount = 32 };
         && CGRectGetWidth(frame) > 20.0 && CGRectGetHeight(frame) > 12.0;
     if (!usable) {
         container.hidden = YES;
-        self.lensRect = CGRectNull;
+        highlight.lensRect = CGRectNull;
         return;
     }
     container.hidden = NO;
     container.frame = CGRectMake(0, 0, frame.size.width, frame.size.height);
     container.layer.cornerRadius = radius;
-    if (CGRectEqualToRect(self.lensRect, frame) && self.lensCenterSnapshot != nil) {
+    if (CGRectEqualToRect(highlight.lensRect, frame) && highlight.lensCenterSnapshot != nil) {
+        highlight.lensSeam.hidden = !style.highlights;
         return;
     }
-    self.lensRect = frame;
+    highlight.lensRect = frame;
     // Snapshot der WebView (liegt unter der Hervorhebung, enthält sie also nicht).
-    [self.lensCenterSnapshot removeFromSuperview];
-    [self.lensEdgeSnapshot removeFromSuperview];
+    [highlight.lensCenterSnapshot removeFromSuperview];
+    [highlight.lensEdgeSnapshot removeFromSuperview];
     CGRect bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
-    CGFloat band = MIN(6.0, CGRectGetHeight(bounds) / 4.0);
+    CGFloat band = MIN(style.lensBand, CGRectGetHeight(bounds) / 4.0);
     UIView *center = [source resizableSnapshotViewFromRect:inSource afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
     UIView *edge = [source resizableSnapshotViewFromRect:inSource afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
     if (center == nil || edge == nil) {
         container.hidden = YES;
-        self.lensRect = CGRectNull;
+        highlight.lensRect = CGRectNull;
         return;
     }
     center.frame = bounds;
     edge.frame = bounds;
     // Rand: kräftigere Vergrößerung, nur im Ring sichtbar -> sichtbarer Sprung wie bei der Kante einer Glaslinse.
-    edge.transform = CGAffineTransformMakeScale(1.13, 1.13);
+    edge.transform = CGAffineTransformMakeScale(style.lensEdgeScale, style.lensEdgeScale);
     CAShapeLayer *ring = [CAShapeLayer layer];
     ring.frame = bounds;
     ring.fillRule = kCAFillRuleEvenOdd;
@@ -977,7 +1297,8 @@ enum { kHistoryCount = 32 };
     edgeClip.userInteractionEnabled = NO;
     edgeClip.layer.mask = ring;
     [edgeClip addSubview:edge];
-    center.transform = CGAffineTransformMakeScale(1.04, 1.04);
+    center.transform = CGAffineTransformMakeScale(style.lensCenterScale, style.lensCenterScale);
+    center.hidden = style.lensCenterScale <= 1.0; // ohne Zoom zeigt die Mitte die Seite selbst
     [container addSubview:center];
     [container addSubview:edgeClip];
     // Feiner heller Saum an der Innenkante des Rings.
@@ -987,18 +1308,90 @@ enum { kHistoryCount = 32 };
     seam.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.35].CGColor;
     seam.lineWidth = 1.0;
     seam.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(bounds, band, band) cornerRadius:MAX(2.0, radius - band)].CGPath;
-    [self.lensSeam removeFromSuperlayer];
+    seam.hidden = !style.highlights;
+    [highlight.lensSeam removeFromSuperlayer];
     [container.layer addSublayer:seam];
-    self.lensSeam = seam;
-    self.lensCenterSnapshot = center;
-    self.lensEdgeSnapshot = edgeClip;
+    highlight.lensSeam = seam;
+    highlight.lensCenterSnapshot = center;
+    highlight.lensEdgeSnapshot = edgeClip;
+}
+
+#if DEBUG
+/// Zusatzmarkierung der Textvarianten G (Tönung), H (Kontur), I (Unterstreichung) über der Fläche.
+- (void)updateDebugMarkForFrame:(CGRect)frame radius:(CGFloat)radius style:(BrowserMagneticStyle)style color:(UIColor *)color {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    BrowserMagneticHighlightView *highlight = self.highlightView;
+    CAShapeLayer *mark = highlight.debugMarkLayer;
+    if (style.mark == BrowserMagneticMarkNone) {
+        mark.hidden = YES;
+        [CATransaction commit];
+        return;
+    }
+    if (mark == nil) {
+        mark = [CAShapeLayer layer];
+        highlight.debugMarkLayer = mark;
+    }
+    if (mark.superlayer != highlight.layer) {
+        [highlight.layer addSublayer:mark];
+    }
+    mark.hidden = NO;
+    CGRect bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    mark.frame = bounds;
+    switch (style.mark) {
+        case BrowserMagneticMarkTint:
+            mark.fillColor = [color colorWithAlphaComponent:0.16].CGColor;
+            mark.strokeColor = UIColor.clearColor.CGColor;
+            mark.path = [UIBezierPath bezierPathWithRoundedRect:bounds cornerRadius:radius].CGPath;
+            break;
+        case BrowserMagneticMarkContour:
+            mark.fillColor = UIColor.clearColor.CGColor;
+            mark.strokeColor = [color colorWithAlphaComponent:0.95].CGColor;
+            mark.lineWidth = 2.0;
+            mark.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(bounds, 1.0, 1.0) cornerRadius:MAX(0.0, radius - 1.0)].CGPath;
+            break;
+        default: {
+            CGRect line = CGRectMake(style.padding, CGRectGetHeight(bounds) - style.padding + 1.0,
+                                     CGRectGetWidth(bounds) - 2.0 * style.padding, 3.0);
+            mark.fillColor = color.CGColor;
+            mark.strokeColor = UIColor.clearColor.CGColor;
+            mark.path = [UIBezierPath bezierPathWithRoundedRect:line cornerRadius:1.5].CGPath;
+            break;
+        }
+    }
+    [CATransaction commit];
+}
+#endif
+
+/// „Bewegung reduzieren“ oder Einstellung „Glow-Animation“ geändert (bzw. irgendein NSUserDefaults-Schlüssel):
+/// Glow sofort umstellen. DEBUG: eine neue MagneticVariant baut die Hervorhebung neu auf.
+- (void)glowMotionSettingMayHaveChanged:(__unused NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.highlightView.glowView.motionEnabled = BrowserMotion.glowAnimationEnabled;
+        self.spareHighlightView.glowView.motionEnabled = BrowserMotion.glowAnimationEnabled;
+#if DEBUG
+        NSString *variant = BrowserMagneticVariant();
+        if (self.debugMagneticVariant != nil && ![self.debugMagneticVariant isEqualToString:variant]) {
+            self.highlightView.lensRect = CGRectNull;
+            self.spareHighlightView.lensRect = CGRectNull;
+            self.highlightView.shownTarget = CGRectNull;
+            self.highlightShownTarget = CGRectNull;
+            if (!CGRectIsNull(self.snappedTarget)) {
+                [self updatePointerAnimated:NO];
+            }
+        }
+        self.debugMagneticVariant = variant;
+#endif
+    });
 }
 
 - (void)clearSnapAnimated:(BOOL)animated {
     self.snappedTarget = CGRectNull;
     self.highlightShownTarget = CGRectNull;
     if (self.highlightView.alpha > 0.0) {
-        [UIView animateWithDuration:animated ? 0.12 : 0.0 animations:^{ self.highlightView.alpha = 0.0; } completion:^(__unused BOOL finished) {
+        self.highlightView.shownTarget = CGRectNull;
+        [UIView animateWithDuration:animated ? 0.12 : 0.0 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState
+                         animations:^{ self.highlightView.alpha = 0.0; } completion:^(__unused BOOL finished) {
             [self pauseGlowIfHighlightHidden];
         }];
     }
@@ -1014,8 +1407,10 @@ enum { kHistoryCount = 32 };
 
 - (void)pointerTargetsDidChange {
     // Seite hat sich geändert (Scrollen, Laden, DOM): Linsenbild ist veraltet und wird neu aufgenommen.
-    self.lensRect = CGRectNull;
+    self.highlightView.lensRect = CGRectNull;
+    self.spareHighlightView.lensRect = CGRectNull;
     self.highlightShownTarget = CGRectNull;
+    self.highlightRepositionPending = YES;
     if (self.lastTouchLocation.x != -1 || self.pressInProgress || self.padTouching || self.pointerLink != nil) {
         // Während der Finger wischt (oder der Zeiger noch gleitet), bewertet das nächste Bild ohnehin neu.
         return;
@@ -1554,6 +1949,10 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
         _stats.touchSamplesIgnored += 1;
         return YES;
     }
+    if (!self.touchSourceActive) {
+        self.snapHopsThisGesture = 0;
+        self.snapTravelSinceHop = 0.0;
+    }
     self.touchSourceActive = YES;
     _stats.samples += 1;
     [self enqueueRawPointerDelta:CGPointMake(dx, dy) sampleTime:CACurrentMediaTime() viaGameController:NO];
@@ -1877,6 +2276,18 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
             self.gliding = NO; // Gleiten scrollt nie, es endet am Rand.
         }
         self.rawPoint = next;
+        if (fingerDriven) {
+            self.snapTravelSinceHop += hypot(move.x, move.y);
+        }
+        // Eingerastet in einem kleinen Ziel: die Rohlage höchstens bis zur Lösegrenze laufen lassen. Sonst sammelt sich
+        // Bewegung an, und das nächste Bild überspringt Ziele.
+        if (!CGRectIsNull(self.snappedTarget) && [self targetAllowsCenterSnap:self.snappedTarget]) {
+            CGRect box = CGRectInset(self.snappedTarget, -(kSnapReleaseRadius + 2.0), -(kSnapReleaseRadius + 2.0));
+            CGPoint clamped = self.rawPoint;
+            clamped.x = MIN(MAX(clamped.x, CGRectGetMinX(box)), CGRectGetMaxX(box));
+            clamped.y = MIN(MAX(clamped.y, CGRectGetMinY(box)), CGRectGetMaxY(box));
+            self.rawPoint = clamped;
+        }
     }
     if (self.liftPending && !fingerDown) {
         self.liftPending = NO;
@@ -2015,6 +2426,8 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
         [self.host browserRemoteInputControllerPresentedViewController] != nil || [self overlayCardVisible];
     if (!self.padTouching) {
         self.padTouching = YES;
+        self.snapHopsThisGesture = 0;
+        self.snapTravelSinceHop = 0.0;
         self.padLastValue = value;
         self.padBaselineValidX = !xZero;
         self.padBaselineValidY = !yZero;
@@ -2466,6 +2879,8 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
     NSLog(@"[PointerTest] Start %@, Ziele: %@", NSStringFromCGPoint(self.freePoint), [targetList componentsJoinedByString:@" | "]);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((0.1 + liftTime + 0.9) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [sampler stop];
+        NSLog(@"[PointerTest] Ziel danach %@ (Wechsel %ld)", CGRectIsNull(weakSelf.snappedTarget) ? @"frei" : NSStringFromCGRect(weakSelf.snappedTarget),
+              (long)weakSelf.snapHopsThisGesture);
         NSLog(@"[PointerTest] %@%@", artifacts ? @"" : @"sauber ", [BrowserRemoteInputController debugSummaryForFrames:frames times:frameTimes unit:unit
                                                                          fingerDuration:duration liftTime:liftTime
                                                                             sampleCount:sampleCount flick:flick]);

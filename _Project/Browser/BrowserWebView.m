@@ -754,6 +754,11 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
                                                viewWidth:CGRectGetWidth(self.bounds)];
 }
 
+- (BOOL)isTextTargetAtPoint:(CGPoint)point {
+    return [self.clickTargetTracker isTextTargetAtViewPoint:CGPointMake(point.x, point.y - self.topObscuredInset)
+                                                  viewWidth:CGRectGetWidth(self.bounds)];
+}
+
 - (NSArray<NSValue *> *)videoRects {
     return [self rectsShiftedByTopInset:[self.clickTargetTracker videoRectsForViewWidth:CGRectGetWidth(self.bounds)]];
 }

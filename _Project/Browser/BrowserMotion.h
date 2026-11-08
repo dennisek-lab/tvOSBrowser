@@ -34,6 +34,9 @@ typedef NS_ENUM(NSInteger, BrowserMotionKind) {
 
 /// YES: Liquid-Glass-Stil (Einstellung an und „Bewegung reduzieren“ aus).
 @property (class, nonatomic, readonly) BOOL liquidGlassEnabled;
+/// YES: Glow der Hervorhebung dreht sich und atmet (Einstellung „Glow-Animation“ an und „Bewegung reduzieren“ aus).
+/// NO: stehender Farbverlauf. Änderungen von „Bewegung reduzieren“ meldet UIAccessibilityReduceMotionStatusDidChangeNotification.
+@property (class, nonatomic, readonly) BOOL glowAnimationEnabled;
 /// YES, wenn UIGlassEffect zur Laufzeit vorhanden ist (tvOS 26 und neuer).
 @property (class, nonatomic, readonly) BOOL glassMaterialAvailable;
 

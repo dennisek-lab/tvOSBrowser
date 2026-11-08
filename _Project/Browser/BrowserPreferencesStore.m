@@ -20,6 +20,7 @@ static NSString * const kCookieBannerBlockEnabledDefaultsKey = @"CookieBannerBlo
 static NSString * const kCookieBannerAcceptPayWallsDefaultsKey = @"CookieBannerAcceptPayWalls";
 static NSString * const kRainbowGlowEnabledDefaultsKey = @"RainbowGlowEnabled";
 static NSString * const kLiquidGlassAnimationsEnabledDefaultsKey = @"LiquidGlassAnimationsEnabled";
+static NSString * const kGlowAnimationEnabledDefaultsKey = @"GlowAnimationEnabled";
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 static NSString * const kPointerSpeedDefaultsKey = @"PointerSpeed";
 static NSString * const kPointerGlideEnabledDefaultsKey = @"PointerGlideEnabled";
@@ -234,6 +235,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setRainbowGlowEnabled:(BOOL)rainbowGlowEnabled {
     [[self defaults] setBool:rainbowGlowEnabled forKey:kRainbowGlowEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)glowAnimationEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kGlowAnimationEnabledDefaultsKey];
+    return value ? value.boolValue : YES;
+}
+
+- (void)setGlowAnimationEnabled:(BOOL)glowAnimationEnabled {
+    [[self defaults] setBool:glowAnimationEnabled forKey:kGlowAnimationEnabledDefaultsKey];
     [[self defaults] synchronize];
 }
 

@@ -64,6 +64,13 @@ static BOOL BrowserMotionLogEnabled(void) {
     return [BrowserPreferencesStore new].liquidGlassAnimationsEnabled;
 }
 
++ (BOOL)glowAnimationEnabled {
+    if (UIAccessibilityIsReduceMotionEnabled()) {
+        return NO;
+    }
+    return [BrowserPreferencesStore new].glowAnimationEnabled;
+}
+
 + (BOOL)glassMaterialAvailable {
     static BOOL available;
     static dispatch_once_t once;
