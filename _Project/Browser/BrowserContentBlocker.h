@@ -35,6 +35,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSString *)exceptionKeyForURL:(nullable NSURL *)url;
 - (BOOL)isExceptionForURL:(nullable NSURL *)url;
 - (void)setException:(BOOL)exception forURL:(nullable NSURL *)url;
+/// Die Ausnahme dieser Seite stammt von der automatischen Adblock-Sperren-Erkennung (Liste adBlockAutoExceptionHosts).
+- (BOOL)isAutoExceptionForURL:(nullable NSURL *)url;
 
 @end
 
