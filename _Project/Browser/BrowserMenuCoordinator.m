@@ -1174,6 +1174,15 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)autoSubtitlesMenuItem {
+    BOOL enabled = self.preferencesStore.autoSubtitlesEnabled;
+    return [self advancedMenuItemWithTitle:@"Automatische Untertitel"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.autoSubtitlesEnabled = !enabled;
+    }];
+}
+
 - (BrowserAdvancedMenuItem *)autoOpenNativePlayerMenuItem {
     BOOL enabled = self.preferencesStore.autoOpenVideosInNativePlayer;
     return [self advancedMenuItemWithTitle:@"Native Player automatisch"
@@ -1191,6 +1200,7 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [self cookieBannerMenuItem],
         [self cookiePayWallMenuItem],
         [self autoOpenNativePlayerMenuItem],
+        [self autoSubtitlesMenuItem],
         [self cloudflareDNSMenuItem],
     ];
 }

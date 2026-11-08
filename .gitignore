@@ -69,3 +69,4 @@ vendor/tools-venv/
 vendor/*.log
 _Project/Browser/WhisperModels/*.bin
 _Project/Browser/WhisperModels/*.part
+build-sim-glow/
