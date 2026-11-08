@@ -61,6 +61,7 @@ static NSString *BrowserMenuSymbolForTitle(NSString *title) {
             @"Zeiger": @"cursorarrow",
             @"Zeigertempo": @"speedometer",
             @"Zeiger gleitet aus": @"cursorarrow.motionlines",
+            @"Zeigerbeschleunigung": @"gauge.with.dots.needle.67percent",
             @"Vollbild-Player": @"arrow.up.left.and.arrow.down.right",
             @"Seite an Breite anpassen": @"arrow.left.and.right",
             @"Browser-Kennung": @"desktopcomputer",
@@ -1657,6 +1658,15 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
 }
 
+- (BrowserAdvancedMenuItem *)pointerAccelerationMenuItem {
+    BOOL enabled = self.preferencesStore.pointerAccelerationEnabled;
+    return [self advancedMenuItemWithTitle:@"Zeigerbeschleunigung"
+                                    detail:enabled ? @"An" : @"Aus"
+                                   handler:^{
+        self.preferencesStore.pointerAccelerationEnabled = !enabled;
+    }];
+}
+
 /// Zeigerstil durchschalten: macOS dunkel → macOS hell → SF Symbols.
 - (BrowserAdvancedMenuItem *)cursorStyleMenuItem {
     NSUInteger style = self.preferencesStore.cursorStyle % 3;
@@ -1769,6 +1779,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             [self liquidGlassAnimationsMenuItem],
             [self cursorStyleMenuItem],
             [self pointerSpeedMenuItem],
+            [self pointerAccelerationMenuItem],
             [self pointerGlideMenuItem],
             [self fullscreenVideoPlaybackToggleMenuItem],
             [self pageScalingMenuItem],

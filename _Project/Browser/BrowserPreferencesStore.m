@@ -24,6 +24,7 @@ static NSString * const kGlowAnimationEnabledDefaultsKey = @"GlowAnimationEnable
 static NSString * const kCookieBannerExceptionHostsDefaultsKey = @"CookieBannerExceptionHosts";
 static NSString * const kPointerSpeedDefaultsKey = @"PointerSpeed";
 static NSString * const kPointerGlideEnabledDefaultsKey = @"PointerGlideEnabled";
+static NSString * const kPointerAccelerationDefaultsKey = @"PointerAcceleration";
 static NSString * const kAutoSubtitlesEnabledDefaultsKey = @"AutoSubtitlesEnabled";
 static NSString * const kAutoSubtitlesLanguageDefaultsKey = @"AutoSubtitlesLanguage";
 /// Einmalige Umstellung des alten Standards „en“ auf „auto“ erledigt (siehe autoSubtitlesLanguage).
@@ -310,6 +311,16 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setPointerGlideEnabled:(BOOL)pointerGlideEnabled {
     [[self defaults] setBool:pointerGlideEnabled forKey:kPointerGlideEnabledDefaultsKey];
+    [[self defaults] synchronize];
+}
+
+- (BOOL)pointerAccelerationEnabled {
+    NSNumber *value = [[self defaults] objectForKey:kPointerAccelerationDefaultsKey];
+    return value ? value.boolValue : NO;
+}
+
+- (void)setPointerAccelerationEnabled:(BOOL)pointerAccelerationEnabled {
+    [[self defaults] setBool:pointerAccelerationEnabled forKey:kPointerAccelerationDefaultsKey];
     [[self defaults] synchronize];
 }
 

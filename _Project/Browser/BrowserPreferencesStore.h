@@ -46,6 +46,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) double pointerSpeed;
 /// Zeiger gleitet nach schnellem Wischen kurz weiter und läuft sanft aus. Standard: an.
 @property (nonatomic) BOOL pointerGlideEnabled;
+/// Zeigerbeschleunigung (schnelles Wischen trägt weiter). Standard seit 9. November 2026: aus, testweise
+/// (Nutzer: Steuerung unzuverlässig). Aus: gleichbleibende Übersetzung Fingerweg → Zeigerweg. Schlüssel „PointerAcceleration“.
+@property (nonatomic) BOOL pointerAccelerationEnabled;
 /// Liquid-Glass-Animationen (Federn, Glas materialisiert, Standard: an); aus: schlichte Überblendungen, s. BrowserMotion.
 @property (nonatomic) BOOL liquidGlassAnimationsEnabled;
 

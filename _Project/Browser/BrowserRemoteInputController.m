@@ -25,12 +25,16 @@ static const CGFloat kSnapReleaseRadius = 80.0;
 /// Ist die Fingerposition so weit über den Rand eines kleinen Ziels hinaus, wechselt der Zeiger zum nächsten Ziel in
 /// Bewegungsrichtung (Lücke höchstens kSnapHandoffReach, Kegel ±60°) und steht dort in der Mitte; die im alten Ziel
 /// aufsummierte Bewegung verfällt. Ohne Nachbarn gilt kSnapReleaseRadius.
-static const CGFloat kSnapHandoffDistance = 28.0;
+static const CGFloat kSnapHandoffDistance = 48.0;
+/// Mindestweg seit dem Einrasten bzw. letzten Wechsel, bevor zum Nachbarn gewechselt wird (Zeiger-pt), unabhängig von
+/// der Zielgröße. Vorher genügten bei kleinen Links halbe Breite + 28 pt ≈ 50 pt (ein Hauch auf dem Clickpad); der
+/// Nutzer musste „sehr vorsichtig“ sein, um genau einen Knopf weiterzukommen (9. November 2026). Vorher 28 pt Übergabe.
+static const CGFloat kSnapHopMinTravel = 140.0;
 static const CGFloat kSnapHandoffReach = 220.0;
 /// Pro Wischgeste höchstens ein Wechsel. Ein weiterer nur bei langen, schnellen Wischern: Seit dem letzten Wechsel
 /// mindestens kSnapRepeatTravel pt Zeigerweg (nach Beschleunigung, also mit Zeigertempo) und gerade mindestens
 /// kSnapRepeatMinSpeed pt/s. Sonst hält das Ziel den Zeiger (höchstens kSnapHandoffDistance über den Rand).
-static const CGFloat kSnapRepeatTravel = 160.0;
+static const CGFloat kSnapRepeatTravel = 260.0;
 static const CGFloat kSnapRepeatMinSpeed = 1400.0;
 /// So stark zieht ein kleines Ziel den sichtbaren Zeiger zur Mitte (1 = genau Mitte), solange der Finger darin ist.
 static const CGFloat kSnapPull = 0.85;
@@ -64,6 +68,9 @@ static const CGFloat kGainMin = 0.8;
 static const CGFloat kGainMax = 1.9;
 static const CGFloat kGainSlowSpeed = 150.0;
 static const CGFloat kGainFastSpeed = 2200.0;
+/// Ohne Beschleunigung (Einstellung „Zeigerbeschleunigung“ aus, Standard): fester Faktor. 1,15 × 480 pt je Einheit:
+/// einmal quer über das Clickpad (2 Einheiten) ≈ 1100 pt, gut halber Bildschirm.
+static const CGFloat kGainFlat = 1.15;
 /// Zeitfenster für die Geschwindigkeit, aus der die Beschleunigung bestimmt wird (s). Ein Fenster statt Abstand
 /// zweier Proben: Proben kommen gebündelt an, sonst schwankt die Verstärkung von Probe zu Probe (Sprünge).
 static const CFTimeInterval kSpeedWindow = 0.035;
@@ -87,10 +94,12 @@ static const CGFloat kLiftOutlierFactor = 3.0;
 static const CFTimeInterval kTouchFallbackQuietTime = 0.3;
 /// Gleiten nach dem Loslassen: nur wenn der Finger in Fahrt abhebt (Bildschirm-pt/s, letzte Bewegung höchstens
 /// kGlideMaxRestBeforeLift s vor dem Abheben). Auslauf exponentiell mit kGlideTimeConstant, höchstens kGlideMaxDistance pt.
-static const CGFloat kGlideMinSpeed = 600.0;
+// Nachgleiten deutlich kürzer (Nutzer 9. November 2026: „Drift am Ende eines Swipes deutlich verringern“): vorher ab
+// 600 pt/s, Zeitkonstante 0,09 s, höchstens 100 pt (davor 140).
+static const CGFloat kGlideMinSpeed = 1000.0;
 static const CFTimeInterval kGlideMaxRestBeforeLift = 0.04;
-static const CFTimeInterval kGlideTimeConstant = 0.09;
-static const CGFloat kGlideMaxDistance = 100.0;
+static const CFTimeInterval kGlideTimeConstant = 0.06;
+static const CGFloat kGlideMaxDistance = 45.0;
 
 /// Glasartige Fläche für die Zielmarkierung: Tönung, Glanzverlauf, helle Lichtkante, dunkle Haarlinie außen.
 @interface BrowserGlassHighlightSurfaceView : UIView
@@ -773,6 +782,7 @@ static CGFloat BrowserMagneticDefaultRadius(CGFloat height) {
 @property (nonatomic) CFTimeInterval liftTime;
 @property (nonatomic) CGFloat pointerSpeedSetting;
 @property (nonatomic) BOOL glideEnabledSetting;
+@property (nonatomic) BOOL accelerationEnabledSetting;
 /// Ziele nur einmal pro Bild vom Host holen.
 @property (nonatomic, nullable) NSArray<NSValue *> *frameTargets;
 /// Zuletzt gezeigte Hervorhebung; unverändert = nicht neu aufbauen (Glow-Pfade, Schatten).
@@ -992,7 +1002,7 @@ enum { kHistoryCount = 32 };
         neighbor = [self neighborTargetOf:refreshed towardPoint:point];
     }
     if (!CGRectIsNull(neighbor)) {
-        if ([self snapHopAllowed]) {
+        if (self.snapTravelSinceHop >= kSnapHopMinTravel && [self snapHopAllowed]) {
             [self hopToTarget:neighbor];
             return neighbor;
         }
@@ -1121,6 +1131,10 @@ enum { kHistoryCount = 32 };
     CGRect current = self.snappedTarget;
     CGRect target = [self targetWithHysteresisFor:self.freePoint];
     BOOL targetChanged = !CGRectEqualToRect(target, current);
+    if (CGRectIsNull(current) && !CGRectIsNull(target)) {
+        // Frisch eingerastet: Der Weg bis hierher zählt nicht für den nächsten Wechsel.
+        self.snapTravelSinceHop = 0.0;
+    }
     self.snappedTarget = target;
     if (animated && targetChanged) {
         self.easingActive = YES;
@@ -2269,6 +2283,7 @@ static const NSTimeInterval kRightDoublePressWindow = 0.35;
     BrowserPreferencesStore *preferences = [BrowserPreferencesStore new];
     self.pointerSpeedSetting = preferences.pointerSpeed;
     self.glideEnabledSetting = preferences.pointerGlideEnabled;
+    self.accelerationEnabledSetting = preferences.pointerAccelerationEnabled;
     BOOL revealed = [self revealCursorIfIdle];
     self.revealOnlyTouch = revealed && kRevealConsumesFirstSwipe;
     memset(&_stats, 0, sizeof(_stats));
@@ -2422,6 +2437,9 @@ static const NSTimeInterval kRightDoublePressWindow = 0.35;
 
 /// Beschleunigung: langsames Wischen bleibt präzise, schnelles Wischen trägt weit.
 - (CGFloat)gainForSpeed:(CGFloat)pointsPerSecond {
+    if (!self.accelerationEnabledSetting) {
+        return kGainFlat * self.pointerSpeedSetting;
+    }
     CGFloat t = MIN(MAX((pointsPerSecond - kGainSlowSpeed) / (kGainFastSpeed - kGainSlowSpeed), 0.0), 1.0);
     t = t * t * (3.0 - 2.0 * t);
     return (kGainMin + (kGainMax - kGainMin) * t) * self.pointerSpeedSetting;
