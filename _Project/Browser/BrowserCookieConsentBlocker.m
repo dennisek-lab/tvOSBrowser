@@ -164,7 +164,8 @@ static BOOL BrowserConsentHostMatches(NSString *host, NSString *entry) {
     }
     id newScript = active ? [self makeUserScript] : nil;
     if (oldScript != nil || newScript != nil) {
-        NSArray *scripts = [((NSArray *(*)(id, SEL))objc_msgSend)(controller, scriptsGetter) copy];
+        // Echte Kopie: userScripts ist eine Live-Ansicht, die nach removeAllUserScripts leer wäre (copy gibt sie selbst zurück).
+        NSArray *scripts = [NSArray arrayWithArray:((NSArray *(*)(id, SEL))objc_msgSend)(controller, scriptsGetter)];
         ((void (*)(id, SEL))objc_msgSend)(controller, removeAll);
         for (id script in scripts) {
             if (script != oldScript) {

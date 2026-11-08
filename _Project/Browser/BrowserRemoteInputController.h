@@ -25,12 +25,18 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserRemoteInputControllerHandlePlayPauseLongPress;
 /// Einrastziele für den magnetischen Zeiger (Seitenelemente und Knöpfe der oberen Leiste), in Koordinaten von rootView.
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets;
+/// Clickpad links (Siri Remote, iPhone/iPad-Fernbedienung): über laufendem Video spulen, sonst voriges Element.
 - (void)browserRemoteInputControllerNavigateBack;
 /// Zweimal oben gedrückt: Adressleiste öffnen.
 - (void)browserRemoteInputControllerOpenAddressBar;
 /// Zweimal kurz unten: obere Leiste zur Kapsel verkleinern.
 - (void)browserRemoteInputControllerCompactTopBar;
+/// Clickpad rechts: über laufendem Video spulen, sonst nächstes Element.
 - (void)browserRemoteInputControllerNavigateForward;
+@optional
+/// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
+- (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
+@required
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
 

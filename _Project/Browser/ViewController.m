@@ -179,6 +179,9 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                     } else {
                         [self browserRemoteInputControllerNavigateForward];
                     }
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        NSLog(@"[SelfTest] Zeiger %@ scroll=%.0f", NSStringFromCGPoint(self.remoteInputController.cursorView.center), self.lastPageScrollOffset);
+                    });
                     return;
                 }
                 if ([step hasPrefix:@"fill:"]) {
@@ -272,6 +275,13 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
                 }
                 if ([step isEqualToString:@"guide"]) {
                     [self showHintsAlert];
+                    return;
+                }
+                if ([step isEqualToString:@"zoom"]) {
+                    UIScrollView *sv = [self.webview scrollView];
+                    id wk = [self.webview valueForKey:@"runtimeWebView"];
+                    NSNumber *viewScale = [wk respondsToSelector:NSSelectorFromString(@"_viewScale")] ? [wk valueForKey:@"_viewScale"] : nil;
+                    NSLog(@"[SelfTest] zoom zoomScale=%.3f min=%.3f max=%.3f viewScale=%@ content=%@ bounds=%@ pageZoomPref=%.2f", sv.zoomScale, sv.minimumZoomScale, sv.maximumZoomScale, viewScale, NSStringFromCGSize(sv.contentSize), NSStringFromCGRect(sv.bounds), self.webview.pageZoom);
                     return;
                 }
                 if ([step isEqualToString:@"state"]) {
@@ -1207,28 +1217,65 @@ static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGl
     return targets;
 }
 
+/// Clickpad links: über einem laufenden Video 10 s zurück, sonst zum vorigen Element (Links, Knöpfe, Videos).
+/// Seite zurück geht über die Zurück-Taste.
 - (void)browserRemoteInputControllerNavigateBack {
-    if ([self pointerIsOverVideo]) {
+    if ([self pointerIsOverVideo] && self.webview.videoPlaying) {
         [self.webview sendVideoCommand:@"seek:-10" atPoint:[self pointerPointInWebView]];
         return;
     }
-    if (self.webview.canGoBack) {
-        [self.webview goBack];
+    [self.remoteInputController stepTargetBy:-1];
+}
+
+/// Ziele für den Sprung: Zeigerziele der Seite plus Videos ohne eigene Bedienelemente;
+/// die obere Leiste nur am Seitenanfang, damit der Sprung nach oben sonst die Seite scrollt.
+- (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets {
+    NSArray<NSValue *> *pointerTargets = [self browserRemoteInputControllerPointerTargets];
+    BOOL atTop = self.lastPageScrollOffset < 24.0;
+    CGRect barFrame = [self topBarAcceptsPointer] ? [self.topMenuView convertRect:self.topMenuView.chromeFrame toView:self.view] : CGRectNull;
+    NSMutableArray<NSValue *> *targets = [NSMutableArray array];
+    for (NSValue *value in pointerTargets) {
+        CGRect rect = value.CGRectValue;
+        if (!atTop && !CGRectIsNull(barFrame) && CGRectIntersectsRect(rect, barFrame)) {
+            continue;
+        }
+        [targets addObject:value];
     }
+    BrowserWebView *webView = self.webview;
+    if (webView != nil) {
+        CGRect visible = [webView convertRect:webView.bounds toView:self.view];
+        for (NSValue *value in [webView videoRects]) {
+            CGRect video = CGRectIntersection([webView convertRect:value.CGRectValue toView:self.view], visible);
+            if (CGRectIsEmpty(video) || CGRectGetMidY(video) < CGRectGetMaxY(barFrame)) {
+                continue;
+            }
+            BOOL hasControls = NO;
+            for (NSValue *target in pointerTargets) {
+                CGRect r = target.CGRectValue;
+                if (CGRectContainsPoint(video, CGPointMake(CGRectGetMidX(r), CGRectGetMidY(r)))) {
+                    hasControls = YES;
+                    break;
+                }
+            }
+            if (!hasControls) {
+                [targets addObject:[NSValue valueWithCGRect:video]];
+            }
+        }
+    }
+    return targets;
 }
 
 - (void)browserRemoteInputControllerOpenAddressBar {
     [self showInputURLorSearchGoogle];
 }
 
+/// Clickpad rechts: über einem laufenden Video 10 s vor, sonst zum nächsten Element.
 - (void)browserRemoteInputControllerNavigateForward {
-    if ([self pointerIsOverVideo]) {
+    if ([self pointerIsOverVideo] && self.webview.videoPlaying) {
         [self.webview sendVideoCommand:@"seek:10" atPoint:[self pointerPointInWebView]];
         return;
     }
-    if (self.webview.canGoForward) {
-        [self.webview goForward];
-    }
+    [self.remoteInputController stepTargetBy:1];
 }
 
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled {

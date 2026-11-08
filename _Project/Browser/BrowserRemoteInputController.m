@@ -449,14 +449,20 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
 }
 
 - (void)scrollPageByFraction:(CGFloat)fraction {
+    [self scrollPageReturningDeltaByFraction:fraction];
+}
+
+/// Scrollt animiert und gibt die tatsächlich gescrollte Strecke zurück (0 am Seitenende).
+- (CGFloat)scrollPageReturningDeltaByFraction:(CGFloat)fraction {
     UIScrollView *scrollView = [self.host browserRemoteInputControllerActiveScrollView];
     if (scrollView == nil) {
-        return;
+        return 0.0;
     }
     CGFloat minOffsetY = -scrollView.contentInset.top;
     CGFloat maxOffsetY = MAX(minOffsetY, scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds) + scrollView.contentInset.bottom);
     CGFloat delta = (CGRectGetHeight(scrollView.bounds) - scrollView.contentInset.top) * fraction;
     CGPoint offset = scrollView.contentOffset;
+    CGFloat startOffsetY = offset.y;
     offset.y = MIN(MAX(offset.y + delta, minOffsetY), maxOffsetY);
     [self clearSnapAnimated:YES];
     [UIView animateWithDuration:0.28
@@ -467,6 +473,7 @@ static const NSTimeInterval kCursorIdleHideDelay = 4.0;
         [self.host browserRemoteInputControllerPersistSession];
         [self updatePointerAnimated:YES];
     }];
+    return offset.y - startOffsetY;
 }
 
 - (void)stopManualScrollInertia {
@@ -777,9 +784,11 @@ static const NSTimeInterval kPlayPauseDoublePressWindow = 0.3;
                 [self scrollPageByFraction:kPageScrollFraction];
                 return YES;
             case UIPressTypeLeftArrow:
+                [self revealCursorIfIdle];
                 [self.host browserRemoteInputControllerNavigateBack];
                 return YES;
             case UIPressTypeRightArrow:
+                [self revealCursorIfIdle];
                 [self.host browserRemoteInputControllerNavigateForward];
                 return YES;
             default:
@@ -1062,8 +1071,12 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
 }
 
 /// Zum nächsten (1) bzw. vorherigen (-1) Element in Leserichtung springen.
-- (void)stepTargetBy:(NSInteger)direction {
-    NSArray<NSValue *> *targets = [[self.host browserRemoteInputControllerPointerTargets] sortedArrayUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
+/// Sprungziele in Leserichtung (Zeilen à 24 pt, darin von links nach rechts).
+- (NSArray<NSValue *> *)sortedStepTargets {
+    NSArray<NSValue *> *candidates = [self.host respondsToSelector:@selector(browserRemoteInputControllerStepTargets)]
+        ? [self.host browserRemoteInputControllerStepTargets]
+        : [self.host browserRemoteInputControllerPointerTargets];
+    return [candidates sortedArrayUsingComparator:^NSComparisonResult(NSValue *a, NSValue *b) {
         CGRect ra = a.CGRectValue, rb = b.CGRectValue;
         CGFloat rowA = round(CGRectGetMidY(ra) / 24.0), rowB = round(CGRectGetMidY(rb) / 24.0);
         if (rowA != rowB) {
@@ -1071,7 +1084,19 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         }
         return CGRectGetMidX(ra) < CGRectGetMidX(rb) ? NSOrderedAscending : NSOrderedDescending;
     }];
+}
+
+- (void)stepTargetBy:(NSInteger)direction {
+    [self stepTargetBy:direction allowScroll:YES];
+}
+
+- (void)stepTargetBy:(NSInteger)direction allowScroll:(BOOL)allowScroll {
+    [self revealCursorIfIdle];
+    NSArray<NSValue *> *targets = [self sortedStepTargets];
     if (targets.count == 0) {
+        if (allowScroll) {
+            [self scrollThenStep:direction];
+        }
         return;
     }
     NSInteger index = NSNotFound;
@@ -1087,12 +1112,61 @@ static const CGFloat kRotationMaxTurnPerSegment = 1.3;
         }
     }
     BOOL onTarget = !CGRectIsNull(self.snappedTarget) && bestDistance < 2.0;
-    NSInteger next = onTarget ? index + direction : (direction > 0 ? index : index);
+    NSInteger next = onTarget ? index + direction : index;
+    if ((next < 0 || next >= (NSInteger)targets.count) && allowScroll) {
+        // Am Rand des sichtbaren Bereichs: Seite weiterscrollen und dort weiterspringen.
+        [self scrollThenStep:direction];
+        return;
+    }
     next = MIN(MAX(next, 0), (NSInteger)targets.count - 1);
     CGRect target = targets[next].CGRectValue;
     self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
     self.snappedTarget = CGRectNull;
     [self updatePointerAnimated:YES];
+}
+
+- (void)scrollThenStep:(NSInteger)direction {
+    CGPoint reference = CGRectIsNull(self.snappedTarget) ? self.freePoint
+        : CGPointMake(CGRectGetMidX(self.snappedTarget), CGRectGetMidY(self.snappedTarget));
+    NSArray<NSValue *> *before = [self sortedStepTargets];
+    CGFloat scrolled = [self scrollPageReturningDeltaByFraction:direction > 0 ? 0.6 : -0.6];
+    if (fabs(scrolled) < 1.0) {
+        return; // Seitenanfang oder -ende: Zeiger bleibt auf dem letzten Element.
+    }
+    // Wo das bisherige Element nach dem Scrollen steht; von dort aus das nächste in Leserichtung.
+    CGFloat anchorY = reference.y - scrolled;
+    CGFloat anchorX = reference.x;
+    // Neue Ziele meldet die Seite erst nach dem Scrollen.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // Erstes Ziel, das in Leserichtung hinter (bzw. vor) dem bisherigen Element liegt.
+        CGFloat anchorRow = round(anchorY / 24.0);
+        NSArray<NSValue *> *targets = [self sortedStepTargets];
+        if (targets.count > 0 && [targets isEqualToArray:before]) {
+            // Festes Overlay (z. B. Dialog): Ziele bewegen sich nicht mit, also am letzten Element bleiben.
+            self.freePoint = reference;
+            self.snappedTarget = CGRectNull;
+            [self updatePointerAnimated:YES];
+            return;
+        }
+        NSValue *chosen = nil;
+        for (NSValue *value in (direction > 0 ? targets : targets.reverseObjectEnumerator.allObjects)) {
+            CGRect rect = value.CGRectValue;
+            CGFloat row = round(CGRectGetMidY(rect) / 24.0);
+            BOOL beyond = row != anchorRow ? (row - anchorRow) * (CGFloat)direction > 0
+                                           : (CGRectGetMidX(rect) - anchorX) * (CGFloat)direction > 2.0;
+            if (beyond) {
+                chosen = value;
+                break;
+            }
+        }
+        if (chosen == nil) {
+            return;
+        }
+        CGRect target = chosen.CGRectValue;
+        self.freePoint = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+        self.snappedTarget = CGRectNull;
+        [self updatePointerAnimated:YES];
+    });
 }
 
 #if DEBUG

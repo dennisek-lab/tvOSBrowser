@@ -53,7 +53,7 @@
     NSArray<NSArray<NSString *> *> *items = @[
         @[@"hand.point.up.left", @"Zeigen und klicken", @"Über das Clickpad wischen, drücken zum Klicken. Der Zeiger rastet an Links ein."],
         @[@"arrow.up.arrow.down", @"Scrollen", @"Clickpad oben oder unten drücken. Zweimal oben öffnet die Adresse."],
-        @[@"arrow.left.arrow.right", @"Zurück und vor", @"Clickpad links oder rechts drücken. Über einem Video: 10 Sekunden spulen."],
+        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Clickpad links oder rechts drücken, auch zu Play-Knöpfen. Im laufenden Video: 10 Sekunden spulen."],
         @[@"playpause", @"Play/Pause", @"Startet und stoppt Videos. Gedrückt halten: suchen und sprechen."],
         @[@"ellipsis.circle", @"Mehr", @"Werbeblocker, Cookie-Ablehner und Einstellungen findest du oben rechts unter •••."],
     ];
@@ -62,7 +62,7 @@
     }
 
     UILabel *tips = [[UILabel alloc] init];
-    tips.text = @"Tipps: Am Clickpad-Ring kreisen springt von Link zu Link. Zweimal unten verkleinert die Leiste.";
+    tips.text = @"Zurück-Taste: vorige Seite. Zweimal unten verkleinert die Leiste. Geht auch mit der Fernbedienung auf iPhone und iPad.";
     tips.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightRegular];
     tips.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
     tips.textAlignment = NSTextAlignmentCenter;

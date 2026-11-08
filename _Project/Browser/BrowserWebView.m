@@ -304,6 +304,37 @@ static void BrowserConfigurePrivateMediaPreferences(id configuration) {
     BrowserSetBooleanSelectorIfAvailable(preferences, @"_setManagedMediaSourceEnabled:", YES);
     BrowserSetBooleanSelectorIfAvailable(preferences, @"_setMediaCapabilityGrantsEnabled:", YES);
     BrowserSetBooleanSelectorIfAvailable(preferences, @"_setVideoQualityIncludesDisplayCompositingEnabled:", YES);
+    // Feste Viewport-Breiten der Seiten (z. B. Wikipedia: width=1120) vergrößern unter tvOS zusätzlich zum
+    // eigenen Zoom (Faktor 3 statt 1,5). Der Browser bestimmt die Breite selbst, wie Safari auf dem Mac.
+    BrowserSetBooleanSelectorIfAvailable(preferences, @"_setShouldIgnoreMetaViewport:", YES);
+}
+
+/// Feste Viewport-Breiten (Wikipedia: width=1120) lässt WebKit unter tvOS zusätzlich zum eigenen Zoom
+/// vergrößern (Faktor 3 statt 1,75, Seite seitlich abgeschnitten). Solche Angaben werden auf die
+/// Gerätebreite umgeschrieben; die Breite bestimmt dann der Zoom des Browsers.
+static NSString *BrowserViewportNormalizerScript(void) {
+    return
+    @"(function(){"
+        "if (window.__browserViewportFix) { return; }"
+        "window.__browserViewportFix = true;"
+        "function fix(meta) {"
+            "if (!meta || meta.tagName !== 'META' || (meta.getAttribute('name') || '').toLowerCase() !== 'viewport') { return; }"
+            "var content = meta.getAttribute('content') || '';"
+            "if (/width\\s*=\\s*\\d/i.test(content) || /initial-scale\\s*=\\s*(?!1(\\.0*)?\\b)/i.test(content)) {"
+                "meta.setAttribute('content', 'width=device-width, initial-scale=1');"
+            "}"
+        "}"
+        "function scan() { var metas = document.querySelectorAll('meta[name=viewport i]'); for (var i = 0; i < metas.length; i++) { fix(metas[i]); } }"
+        "var observer = new MutationObserver(function(records) {"
+            "for (var i = 0; i < records.length; i++) {"
+                "var r = records[i];"
+                "if (r.type === 'attributes') { fix(r.target); continue; }"
+                "for (var j = 0; j < r.addedNodes.length; j++) { var n = r.addedNodes[j]; if (n.tagName === 'META') { fix(n); } else if (n.tagName === 'HEAD') { scan(); } }"
+            "}"
+        "});"
+        "observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] });"
+        "document.addEventListener('DOMContentLoaded', function() { scan(); setTimeout(function() { observer.disconnect(); }, 3000); });"
+    "})();";
 }
 
 static NSString *BrowserYouTubeRequestCaptureScript(void) {
@@ -500,6 +531,12 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     userScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(userScript, userScriptInitializer, BrowserYouTubeRequestCaptureScript(), 0, NO);
     if (userScript != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, userScript);
+    }
+
+    id viewportScript = ((id (*)(id, SEL))objc_msgSend)((id)userScriptClass, @selector(alloc));
+    viewportScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(viewportScript, userScriptInitializer, BrowserViewportNormalizerScript(), 0, YES);
+    if (viewportScript != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, viewportScript);
     }
 }
 
