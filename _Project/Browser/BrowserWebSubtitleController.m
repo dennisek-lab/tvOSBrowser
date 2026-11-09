@@ -5,6 +5,7 @@
 #import "BrowserSubtitleEngine.h"
 #import "BrowserSubtitleHLSAudioSource.h"
 #import "BrowserSubtitlePipeline.h"
+#import "BrowserSubtitleTranslator.h"
 #import "BrowserSubtitleProgressiveAudioSource.h"
 #import "BrowserWebView.h"
 #import "BrowserWhisperSpeechRecognizer.h"
@@ -353,7 +354,8 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
     self.directSource = nil;
     self.directURL = nil;
     [source stop];
-    NSLog(@"[WebSubs] Tonquelle %@ getrennt, Versatz: %@", source.kindName, BrowserSubtitleOffsetSummary(self.offsets));
+    NSLog(@"[WebSubs] Tonquelle %@ getrennt, Versatz: %@, %@", source.kindName, BrowserSubtitleOffsetSummary(self.offsets),
+          [BrowserSubtitleTranslator.sharedTranslator summary]);
 }
 
 - (void)directSource:(id<BrowserSubtitleAudioSource>)source didFailWithReason:(NSString *)reason {
@@ -575,7 +577,8 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
             capture.averageTransportMilliseconds, capture.averageDecodeMilliseconds, capture.bufferedDuration,
             (unsigned long)_windows, (unsigned long)self.pipeline.processedWindows, (unsigned long)self.pipeline.droppedWindows,
             _windows ? _recognitionSum / _windows : 0.0, _recognitionMax,
-            BrowserSubtitleOffsetSummary(self.offsets), (unsigned long)self.overlay.cueCount,
+            [NSString stringWithFormat:@"%@, %@", BrowserSubtitleOffsetSummary(self.offsets), [BrowserSubtitleTranslator.sharedTranslator summary]],
+            (unsigned long)self.overlay.cueCount,
             self.overlay.currentMediaTime, NSStringFromCGRect(capture.playbackState.videoRect),
             capture.playbackState.fullscreen ? @" Vollbild" : @"", self.overlay.layoutSummary];
 }

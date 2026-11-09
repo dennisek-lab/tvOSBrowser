@@ -8,6 +8,7 @@
 #import "BrowserSubtitleOverlayView.h"
 #import "BrowserSubtitlePipeline.h"
 #import "BrowserSubtitleProgressiveAudioSource.h"
+#import "BrowserSubtitleTranslator.h"
 
 #import <objc/runtime.h>
 
@@ -17,6 +18,8 @@ static NSString * const kSubtitleStartHoldReason = @"Untertitel";
 /// Höchstens so lange wartet der Start auf die ersten Untertitel (vorauslesende Quellen). Der Player puffert in der
 /// Zeit ohnehin; am Gerät waren die ersten 4 s nach 0,4–0,7 s fertig.
 static const NSTimeInterval kSubtitleStartHoldTimeout = 1.0;
+/// Zusätzlich, wenn Apple übersetzen könnte (feste Untertitelsprache): der erste Abschnitt wartet auf die Übersetzung.
+static const NSTimeInterval kSubtitleStartHoldTranslationExtra = 0.6;
 static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssociationKey;
 
 @interface BrowserSubtitleController ()
@@ -500,7 +503,12 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         return;
     }
     self.holdingStart = YES;
-    [(BrowserNativeVideoPlayerViewController *)playerViewController holdPlaybackStart:kSubtitleStartHoldReason timeout:kSubtitleStartHoldTimeout];
+    NSString *language = self.engine.language;
+    BOOL mayTranslate = language.length > 0 && ![language isEqualToString:@"auto"] &&
+                        ![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoAppleTranslation"] &&
+                        !BrowserSubtitleTranslator.sharedTranslator.suspended;
+    [(BrowserNativeVideoPlayerViewController *)playerViewController holdPlaybackStart:kSubtitleStartHoldReason
+                                                                              timeout:kSubtitleStartHoldTimeout + (mayTranslate ? kSubtitleStartHoldTranslationExtra : 0.0)];
 }
 
 - (void)releaseStartHold {
@@ -738,6 +746,10 @@ static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
 }
 
 - (NSString *)offsetSummary {
+    NSString *language = self.engine.language;
+    if (language.length > 0 && ![language isEqualToString:@"auto"]) {
+        return [NSString stringWithFormat:@"%@, %@", BrowserSubtitleOffsetSummary(self.offsets), [BrowserSubtitleTranslator.sharedTranslator summary]];
+    }
     return BrowserSubtitleOffsetSummary(self.offsets);
 }
 

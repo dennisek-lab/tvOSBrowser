@@ -25,6 +25,10 @@ typedef void (^BrowserSubtitlePipelineCueHandler)(NSArray<BrowserSubtitleCue *> 
 /// fertigen Satz, höchstens `liveMaxWindowSeconds`) neu erkannt. Segmente, die mehr als `liveHoldbackSeconds` vor dem
 /// Ende aufhören und nicht die letzten sind, gelten als fertig; der Rest ist vorläufig und wird beim nächsten
 /// Durchlauf ersetzt. So erscheint Text etwa 1–1,5 s nach dem Sprechen statt nach Abschnittslänge + Rechenzeit.
+///
+/// Übersetzung: Untertitel, die die Engine mit `translationTarget` markiert (gesprochene Sprache ≠ Untertitelsprache),
+/// gehen je Abschnitt bzw. Durchlauf als ein Stapel an Apple (BrowserSubtitleTranslator), der vorherige Originalsatz
+/// als Kontext. Vorauslesend werden die Abschnitte in ihrer Reihenfolge übernommen, sobald ihre Übersetzung da ist.
 @interface BrowserSubtitlePipeline : NSObject <BrowserSubtitleAudioSourceDelegate>
 
 - (instancetype)initWithTranscriber:(BrowserSubtitleTranscriber)transcriber NS_DESIGNATED_INITIALIZER;
@@ -51,6 +55,11 @@ typedef void (^BrowserSubtitlePipelineCueHandler)(NSArray<BrowserSubtitleCue *> 
 @property (nonatomic) NSTimeInterval liveStepSeconds;       // Standard 1,0
 @property (nonatomic) NSTimeInterval liveMaxWindowSeconds;  // Standard 8
 @property (nonatomic) NSTimeInterval liveHoldbackSeconds;   // Standard 1,0
+/// Apples Übersetzung (Untertitel mit `translationTarget`, siehe BrowserSubtitleTranslator): Frist vorauslesend
+/// (Standard 4 s; whisper rechnet derweil weiter, bei Fehler erkennt whisper den Abschnitt noch einmal und übersetzt
+/// selbst) bzw. beim Mithören und an der Live-Kante (Standard 0,5 s; danach Originaltext).
+@property (nonatomic) NSTimeInterval translationTimeout;
+@property (nonatomic) NSTimeInterval liveTranslationTimeout;
 
 @property (nonatomic, readonly) BOOL live;
 /// Kennzahlen (threadsicher gelesen).

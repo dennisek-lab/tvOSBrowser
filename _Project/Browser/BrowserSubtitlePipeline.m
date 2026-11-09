@@ -1,5 +1,7 @@
 #import "BrowserSubtitlePipeline.h"
 
+#import "BrowserSubtitleTranslator.h"
+
 static NSString * const kPipelineLogPrefix = @"[Subtitles]";
 static const double kPipelineSampleRate = 16000.0;
 static const NSTimeInterval kPipelineCoverageUnit = 0.1;   // Raster der Abdeckung (s)
@@ -14,6 +16,11 @@ static const NSTimeInterval kPipelineCoverageUnit = 0.1;   // Raster der Abdecku
 @property (nonatomic) BOOL final;
 @property (nonatomic) BOOL firstOfRun;
 @property (nonatomic) NSUInteger generation;
+/// An der Live-Kante abgeschnitten (Live-HLS): Übersetzung mit kurzer Frist wie beim Mithören.
+@property (nonatomic) BOOL atLiveEdge;
+/// Vorauslesend: Ergebnis liegt vor (erkannt und ggf. übersetzt), `cues` nil = nichts zu übernehmen.
+@property (nonatomic) BOOL ready;
+@property (nonatomic, strong, nullable) NSArray<BrowserSubtitleCue *> *cues;
 @end
 
 @implementation BrowserSubtitleWindow
@@ -57,6 +64,12 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 @property (nonatomic) BOOL liveFlushRequested;
 @property (nonatomic, readwrite) NSUInteger processedWindows;
 @property (nonatomic, readwrite) NSUInteger droppedWindows;
+/// Vorauslesend: erkannte Abschnitte in Reihenfolge, bis ihre Übersetzung da ist (whisper rechnet derweil weiter).
+@property (nonatomic, strong) NSMutableArray<BrowserSubtitleWindow *> *finishingWindows;
+/// Mithören: Übersetzung des letzten Durchlaufs läuft (kein neuer Durchlauf auf demselben Ton).
+@property (nonatomic) BOOL liveTranslating;
+/// Zuletzt erkannte Originalsätze (Kontext „vorheriger Satz“ für Apples Übersetzung).
+@property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *recentSourceCues;
 @end
 
 @implementation BrowserSubtitlePipeline
@@ -75,6 +88,10 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
         _liveStepSeconds = 1.0;
         _liveMaxWindowSeconds = 8.0;
         _liveHoldbackSeconds = 1.0;
+        _translationTimeout = 4.0;
+        _liveTranslationTimeout = 0.5;
+        _finishingWindows = [NSMutableArray array];
+        _recentSourceCues = [NSMutableArray array];
     }
     return self;
 }
@@ -88,8 +105,11 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
         self.firstWindowOfRun = YES;
         self.lastSubmitEnd = -INFINITY;
         self.liveFlushRequested = NO;
+        self.liveTranslating = NO;
         [self resetBuffer];
         [self.pendingWindows removeAllObjects];
+        [self.finishingWindows removeAllObjects];
+        [self.recentSourceCues removeAllObjects];
     });
     source.delegate = self;
 }
@@ -98,7 +118,9 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     dispatch_sync(self.queue, ^{
         self.source = nil;
         self.generation++;
+        self.liveTranslating = NO;
         [self.pendingWindows removeAllObjects];
+        [self.finishingWindows removeAllObjects];
         [self resetBuffer];
     });
 }
@@ -179,7 +201,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 - (NSTimeInterval)audioSourcePendingSeconds:(id<BrowserSubtitleAudioSource>)source {
     __block NSTimeInterval pending = 0.0;
     dispatch_sync(self.queue, ^{
-        pending = [self bufferedSeconds] + self.pendingWindows.count * (self.windowSeconds - self.overlapSeconds) +
+        pending = [self bufferedSeconds] + (self.pendingWindows.count + self.finishingWindows.count) * (self.windowSeconds - self.overlapSeconds) +
                   (self.engineBusy ? self.windowSeconds : 0.0);
     });
     return pending;
@@ -204,7 +226,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
         }
         NSUInteger length = self.buffer.length / sizeof(float);
         NSUInteger cut = [self quietCutBefore:length search:1.0];
-        [self submitAheadWindowOfLength:cut * sizeof(float) final:NO];
+        [self submitAheadWindowOfLength:cut * sizeof(float) final:NO atLiveEdge:YES];
         [self dropBufferedSeconds:MAX(0.5, (double)cut / kPipelineSampleRate - self.overlapSeconds)];
         self.firstWindowOfRun = NO;
     });
@@ -273,7 +295,12 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 }
 
 - (void)submitAheadWindowOfLength:(NSUInteger)length final:(BOOL)final {
+    [self submitAheadWindowOfLength:length final:final atLiveEdge:NO];
+}
+
+- (void)submitAheadWindowOfLength:(NSUInteger)length final:(BOOL)final atLiveEdge:(BOOL)atLiveEdge {
     BrowserSubtitleWindow *window = [BrowserSubtitleWindow new];
+    window.atLiveEdge = atLiveEdge;
     window.samples = [self.buffer subdataWithRange:NSMakeRange(0, length)];
     window.start = self.bufferStart;
     window.end = self.bufferStart + (double)(length / sizeof(float)) / kPipelineSampleRate;
@@ -311,13 +338,169 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     BrowserSubtitleWindow *window = self.pendingWindows.firstObject;
     [self.pendingWindows removeObjectAtIndex:0];
     [self runWindow:window completion:^(NSArray<BrowserSubtitleCue *> *cues) {
-        if (cues != nil) {
-            [self acceptAheadCues:cues fromWindow:window];
+        [self finishAheadWindow:window cues:cues];
+        [self pumpAhead];   // whisper rechnet den nächsten Abschnitt, während Apple diesen übersetzt
+    }];
+}
+
+/// Vorauslesend: übersetzen (falls nötig), Ergebnisse in Abschnittsreihenfolge übernehmen.
+- (void)finishAheadWindow:(BrowserSubtitleWindow *)window cues:(nullable NSArray<BrowserSubtitleCue *> *)cues {
+    [self.finishingWindows addObject:window];
+    if (cues == nil || ![self cuesNeedTranslation:cues]) {
+        [self rememberSourceCues:cues windowStart:window.start];
+        [self markWindow:window ready:cues];
+        return;
+    }
+    [self translateAheadWindow:window cues:cues attempt:1];
+}
+
+- (void)translateAheadWindow:(BrowserSubtitleWindow *)window cues:(NSArray<BrowserSubtitleCue *> *)cues attempt:(NSUInteger)attempt {
+    NSUInteger generation = self.generation;
+    NSTimeInterval timeout = window.atLiveEdge ? self.liveTranslationTimeout : self.translationTimeout;
+    [self translateCues:cues timeout:timeout completion:^(NSArray<BrowserSubtitleCue *> *translated, NSString *failure) {
+        if (generation != self.generation || self.source == nil) {
+            return;
         }
-        if (window.firstOfRun) {
-            [self reportFirstWindow:window];
+        if (translated != nil) {
+            [self markWindow:window ready:translated];
+            return;
         }
-        [self pumpAhead];
+        if (window.atLiveEdge) {
+            // Live-Kante: für einen zweiten whisper-Lauf ist keine Zeit, der Satz kommt im Original.
+            NSLog(@"%@ Rückfall whisper: Abschnitt %.1f–%.1f s im Originaltext (%@)", kPipelineLogPrefix, window.start, window.end, failure);
+            [self markWindow:window ready:[self untranslatedCues:cues]];
+            return;
+        }
+        if (attempt == 1 && !BrowserSubtitleTranslator.sharedTranslator.suspended) {
+            // Einzelne verpasste Frist (Apple nicht ausgesetzt): vorauslesend ist Zeit für einen zweiten Versuch.
+            NSLog(@"%@ Apple-Übersetzung: Abschnitt %.1f–%.1f s noch einmal (%@)", kPipelineLogPrefix, window.start, window.end, failure);
+            [self translateAheadWindow:window cues:cues attempt:2];
+            return;
+        }
+        // Vorauslesend ist Zeit: denselben Abschnitt noch einmal erkennen, Apple ist jetzt ausgesetzt, whisper
+        // übersetzt also selbst (bisheriger Weg). Kommt auch da nichts, bleibt der Originaltext.
+        NSLog(@"%@ Rückfall whisper: Abschnitt %.1f–%.1f s wird von whisper übersetzt (%@)", kPipelineLogPrefix, window.start, window.end, failure);
+        self.transcriber(window.samples, window.start, ^(NSArray<BrowserSubtitleCue *> *again) {
+            dispatch_async(self.queue, ^{
+                if (generation != self.generation || self.source == nil) {
+                    return;
+                }
+                BOOL usable = again != nil && ![self cuesNeedTranslation:again];
+                [self markWindow:window ready:usable ? again : [self untranslatedCues:cues]];
+            });
+        });
+    }];
+}
+
+- (void)markWindow:(BrowserSubtitleWindow *)window ready:(nullable NSArray<BrowserSubtitleCue *> *)cues {
+    window.cues = cues;
+    window.ready = YES;
+    while (self.finishingWindows.count > 0 && self.finishingWindows.firstObject.ready) {
+        BrowserSubtitleWindow *next = self.finishingWindows.firstObject;
+        [self.finishingWindows removeObjectAtIndex:0];
+        if (next.cues != nil) {
+            [self acceptAheadCues:next.cues fromWindow:next];
+        }
+        if (next.firstOfRun) {
+            [self reportFirstWindow:next];
+        }
+    }
+}
+
+#pragma mark Übersetzung (queue)
+
+- (BOOL)cuesNeedTranslation:(NSArray<BrowserSubtitleCue *> *)cues {
+    for (BrowserSubtitleCue *cue in cues) {
+        if (cue.translationTarget != nil) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+/// Originaltext anzeigen (Übersetzung gescheitert): Markierung entfernen, Text bleibt.
+- (NSArray<BrowserSubtitleCue *> *)untranslatedCues:(NSArray<BrowserSubtitleCue *> *)cues {
+    for (BrowserSubtitleCue *cue in cues) {
+        cue.translationTarget = nil;
+    }
+    return cues;
+}
+
+/// Originalsätze merken (für den Kontext des nächsten Stapels). Ältere Fassung desselben Bereichs ersetzen.
+- (void)rememberSourceCues:(nullable NSArray<BrowserSubtitleCue *> *)cues windowStart:(NSTimeInterval)windowStart {
+    if (cues.count == 0) {
+        return;
+    }
+    NSIndexSet *stale = [self.recentSourceCues indexesOfObjectsPassingTest:^BOOL(BrowserSubtitleCue *cue, NSUInteger index, BOOL *stop) {
+        return cue.start >= windowStart - 0.05;
+    }];
+    [self.recentSourceCues removeObjectsAtIndexes:stale];
+    for (BrowserSubtitleCue *cue in cues) {
+        BrowserSubtitleCue *original = [[BrowserSubtitleCue alloc] initWithStart:cue.start end:cue.end text:cue.originalText ?: cue.text];
+        original.language = cue.originalText != nil ? nil : cue.language;
+        [self.recentSourceCues addObject:original];
+    }
+    if (self.recentSourceCues.count > 12) {
+        [self.recentSourceCues removeObjectsInRange:NSMakeRange(0, self.recentSourceCues.count - 12)];
+    }
+}
+
+/// Vorheriger Satz vor `time` in `language` (höchstens 12 s alt, ≤ 200 Zeichen), sonst nil.
+- (nullable NSString *)sourceContextBeforeTime:(NSTimeInterval)time language:(NSString *)language {
+    for (BrowserSubtitleCue *cue in self.recentSourceCues.reverseObjectEnumerator) {
+        if (cue.end > time + 0.1) {
+            continue;
+        }
+        if (cue.end < time - 12.0 || ![cue.language isEqualToString:language] || cue.text.length > 200) {
+            return nil;
+        }
+        return cue.text;
+    }
+    return nil;
+}
+
+/// Übersetzt alle markierten Untertitel eines Abschnitts in einer Anfrage, mit dem vorherigen Satz als Kontext.
+/// `completion` auf queue: übersetzte Untertitel (gleiche Reihenfolge) oder nil mit Grund.
+- (void)translateCues:(NSArray<BrowserSubtitleCue *> *)cues timeout:(NSTimeInterval)timeout
+           completion:(void (^)(NSArray<BrowserSubtitleCue *> * _Nullable translated, NSString * _Nullable failure))completion {
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    NSMutableIndexSet *indexes = [NSMutableIndexSet indexSet];
+    NSString *language = nil, *target = nil;
+    NSTimeInterval firstStart = INFINITY;
+    for (NSUInteger i = 0; i < cues.count; i++) {
+        BrowserSubtitleCue *cue = cues[i];
+        if (cue.translationTarget == nil || cue.language == nil) {
+            continue;
+        }
+        if (language == nil) {
+            language = cue.language;
+            target = cue.translationTarget;
+        }
+        [texts addObject:cue.text];
+        [indexes addIndex:i];
+        firstStart = MIN(firstStart, cue.start);
+    }
+    if (language == nil) {
+        completion([self untranslatedCues:cues], nil);
+        return;
+    }
+    NSString *context = [self sourceContextBeforeTime:firstStart language:language];
+    [self rememberSourceCues:cues windowStart:cues.firstObject.start];
+    dispatch_queue_t queue = self.queue;
+    [BrowserSubtitleTranslator.sharedTranslator translateTexts:texts from:language to:target context:context timeout:timeout
+                                                    completion:^(NSArray<NSString *> *translated, NSString *failure) {
+        dispatch_async(queue, ^{
+            if (translated.count != texts.count) {
+                completion(nil, failure ?: @"keine Übersetzung");
+                return;
+            }
+            NSMutableArray<BrowserSubtitleCue *> *result = [cues mutableCopy];
+            __block NSUInteger k = 0;
+            [indexes enumerateIndexesUsingBlock:^(NSUInteger index, __unused BOOL *stop) {
+                result[index] = [cues[index] cueWithTranslatedText:translated[k++]];
+            }];
+            completion(result, nil);
+        });
     }];
 }
 
@@ -376,7 +559,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 #pragma mark Mithören (queue)
 
 - (void)pumpLive {
-    if (self.engineBusy || !self.hasBuffer) {
+    if (self.engineBusy || self.liveTranslating || !self.hasBuffer) {
         return;
     }
     NSTimeInterval buffered = [self bufferedSeconds];
@@ -405,10 +588,29 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     self.lastSubmitEnd = window.end;
     self.firstWindowOfRun = NO;
     [self runWindow:window completion:^(NSArray<BrowserSubtitleCue *> *cues) {
-        if (cues != nil && window.generation == self.generation) {
-            [self acceptLiveCues:cues fromWindow:window];
+        if (cues == nil || window.generation != self.generation) {
+            [self pumpLive];
+            return;
         }
-        [self pumpLive];
+        if (![self cuesNeedTranslation:cues]) {
+            [self rememberSourceCues:cues windowStart:window.start];
+            [self acceptLiveCues:cues fromWindow:window];
+            [self pumpLive];
+            return;
+        }
+        // Mithören: Apple bekommt höchstens liveTranslationTimeout (0,5 s), sonst Originaltext; der nächste
+        // Durchlauf wartet so lange (er würde denselben offenen Satz noch einmal rechnen).
+        self.liveTranslating = YES;
+        [self translateCues:cues timeout:self.liveTranslationTimeout completion:^(NSArray<BrowserSubtitleCue *> *translated, NSString *failure) {
+            self.liveTranslating = NO;
+            if (window.generation == self.generation && self.source != nil) {
+                if (translated == nil) {
+                    NSLog(@"%@ Rückfall whisper: Mithören %.1f–%.1f s im Originaltext (%@)", kPipelineLogPrefix, window.start, window.end, failure);
+                }
+                [self acceptLiveCues:translated ?: [self untranslatedCues:cues] fromWindow:window];
+            }
+            [self pumpLive];
+        }];
     }];
 }
 
