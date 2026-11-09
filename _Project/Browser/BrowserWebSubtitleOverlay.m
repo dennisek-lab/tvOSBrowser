@@ -210,6 +210,12 @@ static NSTimeInterval BrowserWebSubtitleMinimumDisplay(BrowserWebSubtitleCue *cu
             continue;
         }
         NSNumber *shown = [self.shownAt objectForKey:cue];
+        if (shown == nil && time > cue.end + self.holdDuration + 0.5) {
+            // Nie gezeigt und längst vorbei (verspätet angekommen, von neueren verdrängt, gespult): nicht mehr
+            // nachreichen, sonst taucht er Sekunden später außer der Reihe auf.
+            following = cue;
+            continue;
+        }
         NSTimeInterval since = shown != nil ? MAX(cue.start, shown.doubleValue) : time;
         if (since > time + 0.5) {
             since = time;   // zurückgespult

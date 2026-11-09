@@ -692,9 +692,11 @@ static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
         if (cue.start < time - 30.0) {
             break;
         }
-        if (isnan(cue.shownAt) && time > cue.visibleUntil) {
+        if (isnan(cue.shownAt) && (time > cue.visibleUntil || time > cue.end + 1.0)) {
+            // Nie gezeigt und schon vorbei (Spulen, verspätet, oder beim Mithören verspätet angekommen und von
+            // neueren Sätzen verdrängt): nicht mehr einblenden – sonst tauchte er Sekunden später außer der Reihe auf.
             following = cue;
-            continue;   // nie gezeigt und schon vorbei (Spulen, verspätet): nicht mehr einblenden
+            continue;
         }
         BOOL late = cue.visibleUntil > cue.end + 0.85;   // kam nach dem Sprechbeginn an
         NSTimeInterval shownSince = isnan(cue.shownAt) ? time : MAX(cue.start, cue.shownAt);
