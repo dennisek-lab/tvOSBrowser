@@ -26,15 +26,18 @@ static const CGFloat kSnapReleaseRadius = 80.0;
 /// Bewegungsrichtung (Lücke höchstens kSnapHandoffReach, Kegel ±60°) und steht dort in der Mitte; die im alten Ziel
 /// aufsummierte Bewegung verfällt. Ohne Nachbarn gilt kSnapReleaseRadius.
 static const CGFloat kSnapHandoffDistance = 48.0;
-/// Mindestweg seit dem Einrasten bzw. letzten Wechsel, bevor zum Nachbarn gewechselt wird (Zeiger-pt), unabhängig von
+/// Mindestweg seit dem Einrasten bzw. letzten Wechsel, bevor zum Nachbarn gewechselt wird, unabhängig von
 /// der Zielgröße. Vorher genügten bei kleinen Links halbe Breite + 28 pt ≈ 50 pt (ein Hauch auf dem Clickpad); der
 /// Nutzer musste „sehr vorsichtig“ sein, um genau einen Knopf weiterzukommen (9. November 2026). Vorher 28 pt Übergabe.
-static const CGFloat kSnapHopMinTravel = 140.0;
+/// Gemessen als Fingerweg auf dem Clickpad: 0,36 Einheiten = 18 % der Clickpad-Breite (Empfehlung aus der Recherche
+/// 9. November 2026: 15–25 %, unabhängig von der Zielgröße, nach dem Prinzip „semantic pointing“; tvOS veröffentlicht
+/// keine Zahl). Vorher 140 pt Zeigerweg ≈ 13 %, und davor ≈ 50 pt.
+static const CGFloat kSnapHopMinTravel = 173.0; // 0,36 × kPadPointsPerUnit (480)
 static const CGFloat kSnapHandoffReach = 220.0;
 /// Pro Wischgeste höchstens ein Wechsel. Ein weiterer nur bei langen, schnellen Wischern: Seit dem letzten Wechsel
-/// mindestens kSnapRepeatTravel pt Zeigerweg (nach Beschleunigung, also mit Zeigertempo) und gerade mindestens
+/// mindestens kSnapRepeatTravel Fingerweg (Rohpunkte, vor Verstärkung) und gerade mindestens
 /// kSnapRepeatMinSpeed pt/s. Sonst hält das Ziel den Zeiger (höchstens kSnapHandoffDistance über den Rand).
-static const CGFloat kSnapRepeatTravel = 260.0;
+static const CGFloat kSnapRepeatTravel = 288.0; // Fingerweg 0,6 × 480 = 30 % der Clickpad-Breite
 static const CGFloat kSnapRepeatMinSpeed = 1400.0;
 /// So stark zieht ein kleines Ziel den sichtbaren Zeiger zur Mitte (1 = genau Mitte), solange der Finger darin ist.
 static const CGFloat kSnapPull = 0.85;
@@ -1016,8 +1019,13 @@ enum { kHistoryCount = 32 };
     return refreshed;
 }
 
+/// Auch kurz nach dem Abheben: Die letzte Fingerbewegung erreicht den Zeiger nachabgetastet und geglättet noch einige
+/// Bilder später. Ohne Magnet rutschte er dabei ohne Wechselschwelle in den Nachbarknopf (Simulator, 9. November 2026).
+static const CFTimeInterval kSnapMagnetAfterLift = 0.15;
+
 - (BOOL)fingerOrGlideActive {
-    return self.padTouching || self.touchSourceActive || self.gliding;
+    return self.padTouching || self.touchSourceActive || self.gliding ||
+        (self.liftTime > 0 && CACurrentMediaTime() - self.liftTime < kSnapMagnetAfterLift);
 }
 
 /// Erster Wechsel einer Geste immer; weitere nur bei langem, schnellem Wischen (kSnapRepeatTravel, kSnapRepeatMinSpeed).
@@ -2579,7 +2587,9 @@ static CGFloat BrowserLowPassAlpha(CGFloat cutoff, CFTimeInterval dt) {
         }
         self.rawPoint = next;
         if (fingerDriven) {
-            self.snapTravelSinceHop += hypot(move.x, move.y);
+            // Fingerweg (Rohpunkte, vor Verstärkung): Die Schwelle für den Zielwechsel hängt so weder an Zeigertempo
+            // noch an Beschleunigung, sondern nur daran, wie weit der Finger auf dem Clickpad gewischt hat.
+            self.snapTravelSinceHop += hypot(raw.x, raw.y);
         }
         // Eingerastet in einem kleinen Ziel: die Rohlage höchstens bis zur Lösegrenze laufen lassen. Sonst sammelt sich
         // Bewegung an, und das nächste Bild überspringt Ziele.
