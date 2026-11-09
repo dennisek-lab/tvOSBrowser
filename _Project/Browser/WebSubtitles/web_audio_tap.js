@@ -6,9 +6,14 @@
 //
 // Nachrichten an die App (alle mit frame: 0 = Hauptframe, 1 = iframe):
 //   {type:'ready', url}                                      Hauptframe geladen (App startet erneut)
-//   {type:'state', state, reason, mode, inRate, ctx}         Zustand, siehe setState()
+//   {type:'state', state, reason, mode, inRate, ctx, [src, page, ua, sd]}   Zustand, siehe setState()
 //   {type:'block', seq, n, sr, t, te, rate, rms, peak, zero, data, ts, lag}
-//   {type:'time', t, paused, seeking, rate, rect:[x,y,w,h], w, h, fx, fs, ts}   alle 250 ms und bei Ereignissen
+//   {type:'time', t, paused, seeking, rate, rect:[x,y,w,h], w, h, fx, fs, ts, [sd], [src, page, ua]}
+//                                                            alle 250 ms und bei Ereignissen
+//   src/page/ua: Medienadresse (currentSrc), Adresse des Frames und User-Agent. Damit lädt die App den Ton selbst
+//   (MP4/HLS-Vorausquelle), wenn Web Audio nichts liefert (natives HLS, fremde Herkunft, Seite nutzt Web Audio
+//   selbst) – und auch sonst, weil sie dann vor der Abspielposition erkennen kann. In 'time' nur bei Änderung.
+//   sd: video.getStartDate() in ms seit 1970 (Live-HLS mit PROGRAM-DATE-TIME), sonst fehlt es.
 //
 // Wichtig:
 // - createMediaElementSource() geht pro Element nur einmal. Danach hört man das Video nur noch über den
@@ -17,7 +22,8 @@
 // - Die Quelle wird erst angelegt, wenn der AudioContext läuft, sonst wäre das Video stumm.
 // - Fremde Herkunft ohne CORS, natives HLS (kein MSE) und DRM liefern nur Stille. Das wird vorab geprüft
 //   und das Video dann gar nicht erst angefasst (sonst wäre es stumm). Mit force:true wird trotzdem
-//   angehängt (Test der Stille-Erkennung).
+//   angehängt (Test der Stille-Erkennung). Ohne DRM wird das Video trotzdem beobachtet („nur Zeit“): Zeit,
+//   Rechteck und Medienadresse gehen an die App, die den Ton dann selbst lädt.
 (function () {
   'use strict';
   if (window.__browserWebAudio) { return; }
@@ -121,7 +127,9 @@
     blocks: 0,
     encodeMs: 0,
     lastRms: 0,
-    lastPeak: 0
+    lastPeak: 0,
+    timeOnly: false,   // Video nur beobachten (Zeit, Adresse), kein Web Audio
+    sentSrc: ''        // zuletzt in 'time' gemeldete Adresse
   };
   var sources = new WeakMap();   // video -> MediaElementAudioSourceNode (nur einmal je Element möglich)
   var hooked = new WeakMap();    // video -> true (Ereignisse angehängt)
@@ -135,6 +143,37 @@
     var m = { type: 'state', state: state, reason: reason, mode: S.mode, inRate: S.ctx ? S.ctx.sampleRate : 0, ctx: S.ctx ? S.ctx.state : 'none' };
     if (extra) { for (var k in extra) { m[k] = extra[k]; } }
     post(m);
+  }
+
+  // Adresse, Frame und User-Agent fürs Laden in der App; Startdatum bei Live-HLS.
+  function mediaInfo(v, m) {
+    m = m || {};
+    if (!v) { return m; }
+    m.src = sourceURL(v).slice(0, 4000);
+    m.page = location.href.slice(0, 2000);
+    m.ua = navigator.userAgent;
+    var sd = startDate(v);
+    if (sd) { m.sd = sd; }
+    return m;
+  }
+
+  function startDate(v) {
+    try {
+      var d = v.getStartDate ? v.getStartDate() : null;
+      var ms = d ? d.getTime() : NaN;
+      return isFinite(ms) && ms > 0 ? ms : 0;
+    } catch (e) { return 0; }
+  }
+
+  // Video ohne Web Audio beobachten: Zeit und Adresse melden, Ton lädt die App selbst.
+  function observeOnly(v) {
+    if (S.video && S.video !== v) { detachTap(); }
+    hookVideo(v);
+    S.video = v;
+    S.timeOnly = true;
+    S.retryTap = false;
+    S.sentSrc = '';
+    reportTime();
   }
 
   function visibleArea(r) {
@@ -225,7 +264,7 @@
 
   function onBlock(samples, endCtxTime) {
     var v = S.video;
-    if (!S.active || !v || !S.ctx) { return; }
+    if (!S.active || !v || !S.ctx || S.timeOnly) { return; }
     var n = samples.length, sum = 0, peak = 0;
     for (var i = 0; i < n; i++) {
       var s = samples[i];
@@ -248,7 +287,7 @@
       S.zeroSec += dur;
       if (S.zeroSec >= S.opts.silence && !S.silentReported) {
         S.silentReported = true;
-        setState('silent', silenceReason(v), { seconds: Math.round(S.zeroSec * 10) / 10 });
+        setState('silent', silenceReason(v), mediaInfo(v, { seconds: Math.round(S.zeroSec * 10) / 10 }));
       }
     } else {
       S.zeroSec = 0;
@@ -339,6 +378,10 @@
     var r = v.getBoundingClientRect();
     var m = { type: 'time', t: v.currentTime, paused: v.paused || v.ended, seeking: v.seeking, rate: v.playbackRate,
               rect: [r.left, r.top, r.width, r.height], w: innerWidth, h: innerHeight, fx: fixedLike(v), fs: fullscreen(), ts: now() };
+    var sd = startDate(v);
+    if (sd) { m.sd = sd; }
+    var src = sourceURL(v);
+    if (src !== S.sentSrc) { S.sentSrc = src; mediaInfo(v, m); }
     sendTime(m);
   }
 
@@ -386,7 +429,8 @@
       } catch (e) {
         // Meist: Die Seite hat das Element schon selbst an Web Audio gehängt.
         failed.set(v, 'source:' + (e && e.name));
-        setState('error', 'source:' + (e && e.name));
+        setState('error', 'source:' + (e && e.name), mediaInfo(v));
+        observeOnly(v);
         return false;
       }
       sources.set(v, src);
@@ -394,8 +438,11 @@
     }
     if (S.video && S.video !== v) { detachTap(); }
     hookVideo(v);
-    if (S.video !== v) {
+    if (S.video !== v || S.timeOnly) {
       S.video = v;
+      S.timeOnly = false;
+      S.retryTap = false;
+      S.sentSrc = '';
       S.zeroSec = 0;
       S.silentReported = false;
       resetResampler();
@@ -427,26 +474,31 @@
     }
     // Nicht hin- und herspringen: nur wechseln, wenn das neue Video spielt und das bisherige nicht.
     if (S.video && v !== S.video && (!isPlaying(v) || isPlaying(S.video))) { v = S.video; }
-    if (v === S.video && S.tap) { return; }
+    // Schon angehängt bzw. bewusst nur beobachtet (retryTap: wartet nur auf den AudioContext, dann doch anhängen).
+    if (v === S.video && ((S.tap && !S.timeOnly) || (S.timeOnly && !S.retryTap))) { return; }
     var reason = blockReason(v);
     if (reason) {
-      setState('blocked', reason);
+      setState('blocked', reason, mediaInfo(v));
+      if (reason !== 'drm') { observeOnly(v); }
       return;
     }
     var ctx = ensureContext();
-    if (!ctx) { setState('unsupported', 'no-audiocontext'); return; }
+    if (!ctx) { setState('unsupported', 'no-audiocontext', mediaInfo(v)); observeOnly(v); return; }
     if (ctx.state !== 'running') {
       // Quelle erst anlegen, wenn der Kontext läuft, sonst wäre das Video stumm.
       armGesture();
       tryResume();
-      setState('suspended', 'gesture');
+      setState('suspended', 'gesture', mediaInfo(v));
+      // Bis zur Geste schon Zeit und Adresse melden: die App kann den Ton selbst laden.
+      if (S.video !== v) { observeOnly(v); }
+      S.retryTap = true;
       return;
     }
     ensureTap(function () {
       if (!S.active) { return; }
       if (attach(v)) {
         relay('stop');
-        setState('running', '', { fallback: S.fallbackReason, src: sourceURL(v).slice(0, 120) });
+        setState('running', '', mediaInfo(v, { fallback: S.fallbackReason }));
         reportTime();
       }
     });
@@ -456,6 +508,7 @@
     if (opts) {
       for (var k in opts) { if (Object.prototype.hasOwnProperty.call(opts, k)) { S.opts[k] = opts[k]; } }
     }
+    S.sentSrc = '';   // Adresse erneut melden (die App vergisst sie beim Start)
     if (!S.active) {
       S.active = true;
       S.lastState = '';
@@ -475,6 +528,9 @@
     clearInterval(S.timer);
     detachTap();
     S.video = null;
+    S.timeOnly = false;
+    S.retryTap = false;
+    S.sentSrc = '';
     relay('stop');
     S.lastState = '';
     setState('stopped', '');

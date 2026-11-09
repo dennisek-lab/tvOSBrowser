@@ -7,11 +7,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ton bei HLS: lädt die Audio-Segmente der Playlist selbst (mit Headern/Cookies der Seite),
 /// ein Stück vor der Abspielposition, und dekodiert sie zu 16 kHz mono.
 ///
-/// Unterstützt: VOD-Playlists (`#EXT-X-ENDLIST`), Master mit eigener Audio-Rendition
+/// Unterstützt: VOD-Playlists (`#EXT-X-ENDLIST`) und Live-Playlists (nachladen nach Zielzeit, neue Segmente
+/// anhängen; Zeitachse `#EXT-X-PROGRAM-DATE-TIME` → `usesDateTimeline`, sonst geschätzt), Master mit eigener Audio-Rendition
 /// (`#EXT-X-MEDIA:TYPE=AUDIO,URI=…`, bevorzugt AAC) oder gemuxtem Ton (kleinste Variante),
 /// Segmente als MPEG-TS (AAC/ADTS, MP3, AC-3), gepacktes Audio (.aac/.mp3/.ac3 mit ID3)
 /// und fMP4 (`#EXT-X-MAP`), `#EXT-X-BYTERANGE`, AES-128.
-/// Nicht: Live-Playlists ohne ENDLIST, SAMPLE-AES/FairPlay, LATM-AAC.
+/// Nicht: SAMPLE-AES/FairPlay (Kopierschutz), LATM-AAC.
 @interface BrowserSubtitleHLSAudioSource : NSObject <BrowserSubtitleAudioSource>
 - (instancetype)initWithPlaylistURL:(NSURL *)playlistURL
                      requestHeaders:(nullable NSDictionary<NSString *, NSString *> *)requestHeaders

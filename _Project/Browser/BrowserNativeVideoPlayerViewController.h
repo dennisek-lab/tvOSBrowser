@@ -73,6 +73,12 @@ extern NSNotificationName const BrowserNativePlayerWillEndSessionNotification;
 /// Läuft das Video gerade im Bild-in-Bild-Fenster?
 @property (nonatomic, readonly, getter=isPictureInPictureActive) BOOL pictureInPictureActive;
 
+/// Startfenster: Der Player wartet mit dem ersten `play` (beim Erscheinen bzw. nach dem Sprung zur Startposition),
+/// bis alle Erweiterungen freigeben oder `timeout` (höchstens 3 s) abläuft. Nur vor dem ersten `play` wirksam,
+/// z. B. aus `BrowserNativePlayerDidCreatePlayerItemNotification`. Für Untertitel, die ab der ersten Sekunde stehen sollen.
+- (void)holdPlaybackStart:(NSString *)reason timeout:(NSTimeInterval)timeout;
+- (void)releasePlaybackStartHold:(NSString *)reason;
+
 /// Beendet die Sitzung (auch im Bild-in-Bild): Position melden, pausieren, Player lösen.
 - (void)endSession;
 /// Eine Zeile Zustand für Logs und Selbsttest (`nplayer`).

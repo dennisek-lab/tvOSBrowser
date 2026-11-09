@@ -4,6 +4,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class BrowserSubtitleCue;
+
 /// whisper.cpp-Erkennung für die Web-Untertitel (Weg B). Dünner Adapter um `BrowserSubtitleEngine` (Weg A):
 /// gleiche Modelle (`WhisperModels/`, Wahl nach Sprache), gleiche Parameter, Stille- und Rauschfilter.
 ///
@@ -39,6 +41,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Echtzeitfaktor (Rechenzeit / Audiodauer) seit dem Anlegen, über Neuladen hinweg.
 @property (nonatomic, readonly) double averageRealTimeFactor;
+
+/// Für die gemeinsame Pipeline (BrowserSubtitlePipeline, Vorausquelle oder Mithören): rechnet einen Abschnitt
+/// (16 kHz mono float) ohne die Überlappungsbehandlung von `transcribeSamples:…` und liefert die Cues der Engine
+/// (Satzstücke mit Token-Zeitmarken). `completion` genau einmal auf der whisper-Queue, nil bei Abbruch (`reset`).
+- (void)transcribeEngineSamples:(NSData *)samples startTime:(NSTimeInterval)startTime
+                     completion:(void (^)(NSArray<BrowserSubtitleCue *> * _Nullable cues))completion;
 
 @end
 

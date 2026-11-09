@@ -779,6 +779,76 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     }
                     return;
                 }
+                // Menü „Automatische Untertitel“ im nativen Player: nsubs (Zustand), nsubs:an / nsubs:aus (Eintrag
+                // auslösen wie mit der Fernbedienung). Loggt Häkchen im Menü und den sichtbaren Untertiteltext.
+                if ([step isEqualToString:@"nsubs"] || [step hasPrefix:@"nsubs:"]) {
+                    BrowserNativeVideoPlayerViewController *player = [self.videoPlaybackCoordinator currentNativePlayer];
+                    NSString *wanted = step.length > 6 ? [step substringFromIndex:6] : nil;
+                    NSMutableArray<NSString *> *menuState = [NSMutableArray array];
+                    for (UIMenuElement *element in player.transportBarCustomMenuItems ?: @[]) {
+                        if (![element isKindOfClass:UIMenu.class]) {
+                            continue;
+                        }
+                        UIMenu *menu = (UIMenu *)element;
+                        NSMutableArray<UIMenuElement *> *flat = [NSMutableArray array];
+                        for (UIMenuElement *child in menu.children) {
+                            BOOL inlineGroup = [child isKindOfClass:UIMenu.class] && (((UIMenu *)child).options & UIMenuOptionsDisplayInline);
+                            [flat addObjectsFromArray:inlineGroup ? ((UIMenu *)child).children : @[child]];
+                        }
+                        for (UIMenuElement *child in flat) {
+                            if (![child isKindOfClass:UIAction.class]) {
+                                continue;
+                            }
+                            UIAction *action = (UIAction *)child;
+                            if (action.state == UIMenuElementStateOn) {
+                                [menuState addObject:[NSString stringWithFormat:@"%@: %@ ✓", menu.title, action.title]];
+                            }
+                            if (wanted != nil && [menu.title isEqualToString:@"Automatische Untertitel"] &&
+                                [action.title.lowercaseString isEqualToString:wanted.lowercaseString] &&
+                                [action respondsToSelector:NSSelectorFromString(@"performWithSender:target:")]) {
+                                NSLog(@"[SelfTest] nsubs löst „%@“ aus", action.title);
+                                ((void (*)(id, SEL, id, id))objc_msgSend)(action, NSSelectorFromString(@"performWithSender:target:"), nil, nil);
+                            }
+                        }
+                    }
+                    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+                    NSMutableArray<UIView *> *queue = player.contentOverlayView != nil ? [NSMutableArray arrayWithObject:player.contentOverlayView] : [NSMutableArray array];
+                    while (queue.count > 0) {
+                        UIView *view = queue.firstObject;
+                        [queue removeObjectAtIndex:0];
+                        [queue addObjectsFromArray:view.subviews];
+                        BOOL shown = YES;   // sichtbar nur, wenn keine der Ebenen darüber ausgeblendet ist
+                        for (UIView *up = view; up != nil && up != player.contentOverlayView.superview; up = up.superview) {
+                            shown = shown && !up.hidden && (up.layer.presentationLayer ?: up.layer).opacity > 0.01 && up.alpha > 0.01;
+                        }
+                        if ([view isKindOfClass:UILabel.class] && shown && ((UILabel *)view).text.length > 0) {
+                            [texts addObject:[((UILabel *)view).text stringByReplacingOccurrencesOfString:@"\n" withString:@" / "]];
+                        }
+                    }
+                    NSLog(@"[SelfTest] nsubs pref=%d Menü [%@] sichtbar [%@]", self.preferencesStore.autoSubtitlesEnabled,
+                          [menuState componentsJoinedByString:@"; "], [texts componentsJoinedByString:@" | "]);
+                    return;
+                }
+                // Eigene Untertitel des Videos wählen wie im Untertitel-Menü des Players: nlegible:en, nlegible:aus
+                if ([step hasPrefix:@"nlegible:"]) {
+                    BrowserNativeVideoPlayerViewController *player = [self.videoPlaybackCoordinator currentNativePlayer];
+                    AVPlayerItem *item = player.player.currentItem;
+                    AVMediaSelectionGroup *group = [item.asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
+                    NSString *wanted = [step substringFromIndex:9];
+                    AVMediaSelectionOption *pick = nil;
+                    for (AVMediaSelectionOption *option in group.options) {
+                        NSString *language = option.extendedLanguageTag ?: option.locale.languageCode;
+                        if (pick == nil && [language hasPrefix:wanted] &&
+                            ![option hasMediaCharacteristic:AVMediaCharacteristicContainsOnlyForcedSubtitles]) {
+                            pick = option;
+                        }
+                    }
+                    if (group != nil) {
+                        [item selectMediaOption:pick inMediaSelectionGroup:group];
+                    }
+                    NSLog(@"[SelfTest] nlegible %@ → %@ (%lu Spuren)", wanted, pick.displayName ?: @"aus", (unsigned long)group.options.count);
+                    return;
+                }
                 if ([step isEqualToString:@"websubs"] || [step hasPrefix:@"websubs:"]) {
                     // Untertitel-Abgriff (Weg B) fürs aktuelle Video: websubs (whisper, Sprache aus der Einstellung),
                     // websubs:en / websubs:auto (Sprache für diesen Test), websubs:stub (Platzhalter), websubs:sp,force

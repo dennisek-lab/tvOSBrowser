@@ -21,6 +21,7 @@ static const NSTimeInterval kHLSMaxPending = 25.0;     // höchstens so viel una
 @property (nonatomic, strong, nullable) NSURL *keyURL;   // AES-128
 @property (nonatomic, strong, nullable) NSData *keyIV;
 @property (nonatomic) uint64_t sequence;
+@property (nonatomic) BOOL hasDate;                // Start aus #EXT-X-PROGRAM-DATE-TIME (Sekunden seit 1970)
 @end
 
 @implementation BrowserHLSSegment
@@ -90,16 +91,24 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
 @property (nonatomic) NSUInteger nextIndex;
 @property (nonatomic) NSTimeInterval runStart;
 @property (nonatomic) BOOL pendingDiscontinuity;
+@property (nonatomic) BOOL edgeReported;   // Kante seit dem letzten Segment schon gemeldet
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL ready;
 @property (nonatomic) BOOL running;
 @property (nonatomic) BOOL failed;
 @property (nonatomic) NSUInteger decodedSegments;
 @property (nonatomic) double decodeSeconds;
+// Live (ohne #EXT-X-ENDLIST): Playlist nachladen, neue Segmente anhängen.
+@property (nonatomic) BOOL live;
+@property (nonatomic, strong, nullable) NSURL *mediaPlaylistURL;
+@property (nonatomic) NSTimeInterval targetDuration;
+@property (nonatomic) NSUInteger reloads;
+@property (nonatomic, readwrite) BOOL usesDateTimeline;
 @end
 
 @implementation BrowserSubtitleHLSAudioSource {
     _Atomic(double) _playbackTime;
+    _Atomic(double) _playbackDate;
 }
 
 @synthesize delegate = _delegate;
@@ -121,6 +130,8 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         _dataCache = [NSMutableDictionary dictionary];
         _nextIndex = NSNotFound;
         atomic_store(&_playbackTime, 0.0);
+        atomic_store(&_playbackDate, NAN);
+        _targetDuration = 6.0;
     }
     return self;
 }
@@ -157,6 +168,11 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         NSLog(@"%@ gestoppt: %lu Segmente dekodiert, %.2f s Dekodierzeit", kHLSLogPrefix,
               (unsigned long)self.decodedSegments, self.decodeSeconds);
     });
+}
+
+- (void)updatePlaybackTime:(NSTimeInterval)time date:(NSTimeInterval)date rate:(float)rate {
+    atomic_store(&_playbackDate, date);
+    [self updatePlaybackTime:time rate:rate];
 }
 
 - (void)updatePlaybackTime:(NSTimeInterval)time rate:(float)rate {
@@ -325,10 +341,31 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
     return [NSURL URLWithString:variant[@"URI"] relativeToURL:baseURL].absoluteURL;
 }
 
+static NSTimeInterval BrowserHLSParseDate(NSString *value) {
+    static NSISO8601DateFormatter *fractional = nil;
+    static NSISO8601DateFormatter *plain = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        fractional = [NSISO8601DateFormatter new];
+        fractional.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
+        plain = [NSISO8601DateFormatter new];
+        plain.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+    });
+    NSString *trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    NSDate *date = [fractional dateFromString:trimmed] ?: [plain dateFromString:trimmed];
+    if (date == nil && trimmed.length > 5 && ([trimmed hasSuffix:@"+0000"] || [trimmed hasSuffix:@"-0000"])) {
+        trimmed = [[trimmed substringToIndex:trimmed.length - 5] stringByAppendingString:@"Z"];
+        date = [fractional dateFromString:trimmed] ?: [plain dateFromString:trimmed];
+    }
+    return date != nil ? date.timeIntervalSince1970 : NAN;
+}
+
 - (void)parseMediaPlaylist:(NSString *)text baseURL:(NSURL *)baseURL {
     NSMutableArray<BrowserHLSSegment *> *segments = [NSMutableArray array];
     NSTimeInterval time = 0.0;
     NSTimeInterval pendingDuration = -1.0;
+    NSTimeInterval pendingDate = NAN;
+    NSTimeInterval runningDate = NAN;    // Datum des nächsten Segments (fortgeschrieben)
     NSRange pendingRange = NSMakeRange(0, 0);
     NSUInteger previousRangeEnd = 0;
     NSURL *mapURL = nil;
@@ -338,6 +375,9 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
     uint64_t sequence = 0;
     BOOL endList = NO;
     BOOL unsupportedKey = NO;
+    NSTimeInterval targetDuration = 6.0;
+    NSUInteger datedSegments = 0;
+    NSUInteger discontinuities = 0;
     for (NSString *rawLine in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
         NSString *line = [rawLine stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
         if (line.length == 0) {
@@ -345,6 +385,12 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         }
         if ([line hasPrefix:@"#EXTINF:"]) {
             pendingDuration = [[line substringFromIndex:8] doubleValue];
+        } else if ([line hasPrefix:@"#EXT-X-TARGETDURATION:"]) {
+            targetDuration = MAX(1.0, [[line substringFromIndex:22] doubleValue]);
+        } else if ([line hasPrefix:@"#EXT-X-PROGRAM-DATE-TIME:"]) {
+            pendingDate = BrowserHLSParseDate([line substringFromIndex:25]);
+        } else if ([line hasPrefix:@"#EXT-X-DISCONTINUITY"] && ![line hasPrefix:@"#EXT-X-DISCONTINUITY-SEQUENCE"]) {
+            discontinuities++;
         } else if ([line hasPrefix:@"#EXT-X-MEDIA-SEQUENCE:"]) {
             sequence = (uint64_t)[[line substringFromIndex:22] longLongValue];
         } else if ([line hasPrefix:@"#EXT-X-BYTERANGE:"]) {
@@ -378,6 +424,15 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
             segment.keyURL = keyURL;
             segment.keyIV = keyIV;
             segment.sequence = sequence;
+            if (isfinite(pendingDate)) {
+                runningDate = pendingDate;
+            }
+            if (isfinite(runningDate)) {
+                segment.hasDate = YES;
+                segment.start = runningDate;   // vorläufig das Datum; unten je nach Zeitachse übernommen oder ersetzt
+                datedSegments++;
+                runningDate += pendingDuration;
+            }
             if (segment.URL != nil) {
                 [segments addObject:segment];
             }
@@ -387,6 +442,7 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
             time += pendingDuration;
             sequence++;
             pendingDuration = -1.0;
+            pendingDate = NAN;
             pendingRange = NSMakeRange(0, 0);
         }
     }
@@ -394,19 +450,99 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         [self failWithReason:@"HLS: verschlüsselt (SAMPLE-AES/FairPlay), Ton nicht lesbar"];
         return;
     }
-    if (!endList) {
-        [self failWithReason:@"HLS: Live-Streams werden noch nicht unterstützt"];
-        return;
-    }
-    if (segments.count == 0) {
+    BOOL firstLoad = !self.ready;
+    if (segments.count == 0 && firstLoad) {
         [self failWithReason:@"HLS: Playlist ohne Segmente"];
         return;
     }
-    self.segments = segments;
-    self.ready = YES;
-    NSLog(@"%@ Audio-Playlist %@: %lu Segmente, %.1f s, fMP4=%d, AES=%d", kHLSLogPrefix, baseURL.lastPathComponent,
-          (unsigned long)segments.count, time, segments.firstObject.mapURL != nil, segments.firstObject.keyURL != nil);
+    self.targetDuration = targetDuration;
+    if (firstLoad) {
+        self.live = !endList;
+        self.mediaPlaylistURL = baseURL;
+        // VOD: Medienzeit = Summe der EXTINF ab Playlist-Anfang (so zählt AVPlayer.currentTime und video.currentTime).
+        // Live: Datum aus PROGRAM-DATE-TIME (AVPlayerItem.currentDate bzw. video.getStartDate() + currentTime).
+        // Live ohne Datum: Zeit ab dem ersten Segment der ersten Playlist (Player lädt sie fast gleichzeitig; geschätzt).
+        self.usesDateTimeline = self.live && segments.count > 0 && datedSegments == segments.count;
+    }
+    NSUInteger added = 0;
+    if (firstLoad) {
+        double offset = 0.0;
+        for (BrowserHLSSegment *segment in segments) {
+            if (!self.usesDateTimeline) {
+                segment.start = offset;
+            }
+            offset += segment.duration;
+        }
+        self.segments = segments;
+        added = segments.count;
+    } else if (self.live) {
+        // Nachladen: nur Segmente mit neuer Sequenznummer anhängen; Zeit fortschreiben bzw. Datum übernehmen.
+        NSMutableArray<BrowserHLSSegment *> *merged = [self.segments mutableCopy];
+        BrowserHLSSegment *last = merged.lastObject;
+        for (BrowserHLSSegment *segment in segments) {
+            if (last != nil && segment.sequence <= last.sequence) {
+                continue;
+            }
+            if (!self.usesDateTimeline || !segment.hasDate) {
+                segment.start = last != nil ? last.start + last.duration : 0.0;
+            }
+            [merged addObject:segment];
+            last = segment;
+            added++;
+        }
+        // Live läuft beliebig lange: alte Segmente vergessen (Planung zählt in Indizes).
+        if (merged.count > 400) {
+            NSUInteger drop = merged.count - 400;
+            [merged removeObjectsInRange:NSMakeRange(0, drop)];
+            if (self.nextIndex != NSNotFound) {
+                self.nextIndex = self.nextIndex > drop ? self.nextIndex - drop : 0;
+            }
+        }
+        self.segments = merged;
+        if (endList) {
+            self.live = NO;  // Sendung beendet
+        }
+    }
+    if (firstLoad) {
+        self.ready = YES;
+        NSString *timeline = !self.live ? @"VOD, Zeit = Summe EXTINF"
+            : (self.usesDateTimeline ? @"Live, Zeitachse PROGRAM-DATE-TIME" : @"Live ohne PROGRAM-DATE-TIME, Zeitbezug geschätzt");
+        NSLog(@"%@ Audio-Playlist %@: %lu Segmente, %.1f s, Ziel %.0f s, fMP4=%d, AES=%d, Brüche %lu, %@", kHLSLogPrefix,
+              baseURL.lastPathComponent, (unsigned long)segments.count, time, targetDuration,
+              segments.firstObject.mapURL != nil, segments.firstObject.keyURL != nil, (unsigned long)discontinuities, timeline);
+    } else if (added > 0 && (self.reloads <= 3 || self.reloads % 20 == 0)) {
+        BrowserHLSSegment *last = self.segments.lastObject;
+        NSLog(@"%@ Live-Playlist #%lu: +%lu Segmente, Kante %.1f", kHLSLogPrefix, (unsigned long)self.reloads,
+              (unsigned long)added, last.start + last.duration);
+    }
+    if (self.live) {
+        // Wie ein Player: nach einer Zielzeit neu laden, ohne Neues nach der halben (RFC 8216, 6.3.4).
+        [self scheduleReloadAfter:added > 0 ? targetDuration : targetDuration / 2.0];
+    }
     [self tick];
+}
+
+- (void)scheduleReloadAfter:(NSTimeInterval)delay {
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MAX(1.0, delay) * NSEC_PER_SEC)), self.queue, ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf == nil || !strongSelf.running || strongSelf.failed || strongSelf.mediaPlaylistURL == nil) {
+            return;
+        }
+        strongSelf.reloads++;
+        [strongSelf fetchURL:strongSelf.mediaPlaylistURL range:NSMakeRange(0, 0) completion:^(NSData *data, NSString *error) {
+            if (!strongSelf.running) {
+                return;
+            }
+            NSString *text = data != nil ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+            if (![text hasPrefix:@"#EXTM3U"]) {
+                NSLog(@"%@ Live-Playlist nicht lesbar (%@), neuer Versuch", kHLSLogPrefix, error ?: @"kein #EXTM3U");
+                [strongSelf scheduleReloadAfter:strongSelf.targetDuration];
+                return;
+            }
+            [strongSelf parseMediaPlaylist:text baseURL:strongSelf.mediaPlaylistURL];
+        }];
+    });
 }
 
 #pragma mark Planung
@@ -426,7 +562,12 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         return;
     }
     NSArray<BrowserHLSSegment *> *segments = self.segments;
-    NSTimeInterval time = atomic_load(&_playbackTime);
+    NSTimeInterval time = self.usesDateTimeline ? atomic_load(&_playbackDate) : atomic_load(&_playbackTime);
+    if (!isfinite(time)) {
+        // Datum der Wiedergabe noch unbekannt: dort anfangen, wo AVPlayer/Safari live einsteigen (drei Zielzeiten vor der Kante).
+        BrowserHLSSegment *last = segments.lastObject;
+        time = last != nil ? last.start + last.duration - 3.0 * self.targetDuration : 0.0;
+    }
     NSTimeInterval nextStart = self.nextIndex < segments.count ? segments[self.nextIndex].start : INFINITY;
     if (self.nextIndex == NSNotFound || time < self.runStart - 0.5 || (self.nextIndex < segments.count && time > nextStart + 3.0)) {
         NSUInteger index = [self segmentIndexAtTime:time];
@@ -447,6 +588,10 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         self.pendingDiscontinuity = YES;
     }
     if (self.nextIndex >= segments.count) {
+        if (self.live && !self.edgeReported && [delegate respondsToSelector:@selector(audioSourceDidReachLiveEdge:)]) {
+            self.edgeReported = YES;
+            [delegate audioSourceDidReachLiveEdge:self];
+        }
         return;
     }
     BrowserHLSSegment *segment = segments[self.nextIndex];
@@ -467,6 +612,7 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
             BOOL discontinuity = self.pendingDiscontinuity;
             self.pendingDiscontinuity = NO;
             [self.delegate audioSource:self didProduceSamples:samples atTime:segment.start discontinuity:discontinuity];
+            self.edgeReported = NO;
         } else {
             NSLog(@"%@ Segment %lu (%.1f s) ohne Ton: %@", kHLSLogPrefix, (unsigned long)index, segment.start, error ?: @"leer");
             self.pendingDiscontinuity = YES;

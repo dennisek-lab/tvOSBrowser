@@ -18,6 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSTimeInterval)audioSourcePendingSeconds:(id<BrowserSubtitleAudioSource>)source;
 /// YES, wenn der Zeitbereich schon ausgewertet ist (Quelle kann ihn überspringen).
 - (BOOL)audioSource:(id<BrowserSubtitleAudioSource>)source isRangeCoveredFrom:(NSTimeInterval)start to:(NSTimeInterval)end;
+/// Live-Quelle hat alles bis zur Kante geliefert und wartet auf neue Segmente: Angefangenes jetzt auswerten, statt
+/// auf einen vollen 12-s-Abschnitt zu warten (der Vorsprung vor der Wiedergabe ist live nur wenige Sekunden).
+- (void)audioSourceDidReachLiveEdge:(id<BrowserSubtitleAudioSource>)source;
 @end
 
 /// Tonquelle für die automatischen Untertitel. Umsetzungen:
@@ -27,11 +30,19 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak, nullable) id<BrowserSubtitleAudioSourceDelegate> delegate;
 /// YES: liefert vor der Abspielposition (größere Abschnitte sinnvoll). NO: liefert, was gerade läuft.
 @property (nonatomic, readonly) BOOL deliversAhead;
-/// Kurzname für Logs („tap“, „hls“).
+/// Kurzname für Logs („tap“, „hls“, „mp4“).
 @property (nonatomic, copy, readonly) NSString *kindName;
+@optional
+/// YES: Zeiten sind Datum in Sekunden seit 1970 (`#EXT-X-PROGRAM-DATE-TIME` bei Live-HLS), nicht die Medienzeit.
+/// Dann bekommt die Quelle auch die Abspielposition als Datum (`AVPlayerItem.currentDate`, im Web `getStartDate()`),
+/// und die Untertitel tragen Datumszeiten. Wird erst nach dem Lesen der Playlist YES (vorher Medienzeit).
+@property (nonatomic, readonly) BOOL usesDateTimeline;
+/// Wie `updatePlaybackTime:rate:`, zusätzlich mit dem Datum der Position (NAN = unbekannt). Wird bevorzugt gerufen.
+- (void)updatePlaybackTime:(NSTimeInterval)time date:(NSTimeInterval)date rate:(float)rate;
+@required
 - (void)start;
 - (void)stop;
-/// Aktuelle Abspielposition (vom Hauptthread, etwa alle 0,25 s).
+/// Aktuelle Abspielposition (vom Hauptthread, etwa alle 0,25 s), bei `usesDateTimeline` als Datum.
 - (void)updatePlaybackTime:(NSTimeInterval)time rate:(float)rate;
 @end
 
