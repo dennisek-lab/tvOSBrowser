@@ -91,6 +91,7 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
 @property (nonatomic) NSUInteger nextIndex;
 @property (nonatomic) NSTimeInterval runStart;
 @property (nonatomic) BOOL pendingDiscontinuity;
+@property (nonatomic) BOOL edgeReported;   // Kante seit dem letzten Segment schon gemeldet
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL ready;
 @property (nonatomic) BOOL running;
@@ -587,6 +588,10 @@ static NSTimeInterval BrowserHLSParseDate(NSString *value) {
         self.pendingDiscontinuity = YES;
     }
     if (self.nextIndex >= segments.count) {
+        if (self.live && !self.edgeReported && [delegate respondsToSelector:@selector(audioSourceDidReachLiveEdge:)]) {
+            self.edgeReported = YES;
+            [delegate audioSourceDidReachLiveEdge:self];
+        }
         return;
     }
     BrowserHLSSegment *segment = segments[self.nextIndex];
@@ -607,6 +612,7 @@ static NSTimeInterval BrowserHLSParseDate(NSString *value) {
             BOOL discontinuity = self.pendingDiscontinuity;
             self.pendingDiscontinuity = NO;
             [self.delegate audioSource:self didProduceSamples:samples atTime:segment.start discontinuity:discontinuity];
+            self.edgeReported = NO;
         } else {
             NSLog(@"%@ Segment %lu (%.1f s) ohne Ton: %@", kHLSLogPrefix, (unsigned long)index, segment.start, error ?: @"leer");
             self.pendingDiscontinuity = YES;

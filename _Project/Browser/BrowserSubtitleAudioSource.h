@@ -18,6 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSTimeInterval)audioSourcePendingSeconds:(id<BrowserSubtitleAudioSource>)source;
 /// YES, wenn der Zeitbereich schon ausgewertet ist (Quelle kann ihn überspringen).
 - (BOOL)audioSource:(id<BrowserSubtitleAudioSource>)source isRangeCoveredFrom:(NSTimeInterval)start to:(NSTimeInterval)end;
+/// Live-Quelle hat alles bis zur Kante geliefert und wartet auf neue Segmente: Angefangenes jetzt auswerten, statt
+/// auf einen vollen 12-s-Abschnitt zu warten (der Vorsprung vor der Wiedergabe ist live nur wenige Sekunden).
+- (void)audioSourceDidReachLiveEdge:(id<BrowserSubtitleAudioSource>)source;
 @end
 
 /// Tonquelle für die automatischen Untertitel. Umsetzungen:

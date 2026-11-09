@@ -323,6 +323,14 @@ static NSString *BrowserSubtitleNormalizedText(NSString *text) {
 /// Wortfolge aus 2–8 Wörtern, die direkt hintereinander mehrfach steht, bleibt einmal stehen; ein einzelnes Wort ab
 /// drei Wiederholungen. Gibt den gekürzten Text zurück (unverändert, wenn nichts wiederholt wird).
 static NSString *BrowserSubtitleCollapseRepeats(NSString *text) {
+    // Mit Bindestrich verkettete Schleifen („Palästinenserflagge-Palästinenserflagge-…“) auf ein Wort kürzen.
+    static NSRegularExpression *hyphenLoop;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        hyphenLoop = [NSRegularExpression regularExpressionWithPattern:@"(\\p{L}+)(?:-\\1){2,}"
+                                                               options:NSRegularExpressionCaseInsensitive error:NULL];
+    });
+    text = [hyphenLoop stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0, text.length) withTemplate:@"$1"] ?: text;
     NSMutableArray<NSString *> *words = [[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet] mutableCopy];
     [words removeObject:@""];
     if (words.count < 3) {
@@ -520,7 +528,12 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
     // (Tears of Steel, englisch, Untertitel Deutsch): mit Kontext verfiel whisper in Schleifen („… nicht mehr hier“,
     // dann nur „Und“) und ließ ganze Sätze aus; ohne Kontext kamen deutlich mehr und vollständigere Sätze.
     NSString *decoding = [self decodingLanguage];
-    if (![decoding isEqualToString:@"auto"] && self.lockedLanguage == nil) {
+    if ([decoding isEqualToString:@"auto"]) {
+        // Sprache noch nicht festgelegt: kein Kontext. Sonst trägt er eine Fehlerkennung des Anfangs weiter (Live-HLS
+        // im Simulator: erster kurzer Abschnitt über Musik „Thank you.“, danach jeder Abschnitt „Thank you.“).
+        return @"";
+    }
+    if (self.lockedLanguage == nil) {
         NSString *spoken = self.spokenLanguage;
         if (spoken == nil || ![spoken isEqualToString:decoding]) {
             return @"";
@@ -537,6 +550,11 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         }
         [parts insertObject:cue.text atIndex:0];
         length += cue.text.length + 1;
+    }
+    // Lauter gleiche Sätze (typisch erfundenes „Thank you.“, „Vielen Dank.“ über Musik): nicht weitergeben.
+    NSSet *distinct = [NSSet setWithArray:[parts valueForKey:@"lowercaseString"]];
+    if (parts.count >= 2 && distinct.count == 1) {
+        return @"";
     }
     return [parts componentsJoinedByString:@" "];
 }
@@ -683,7 +701,21 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         t0 = MIN(t0, t1 - 0.2);
         [cues addObjectsFromArray:[self cuesForSegment:i text:text start:t0 end:t1 windowStart:startTime]];
     }
-    cues = [BrowserSubtitleMergeShortCues(BrowserSubtitleRemoveRepeats(cues), kBrowserSubtitleMaxCueCharacters) mutableCopy];
+    if (context.length > 0) {
+        // whisper schreibt gern den Kontext ab („Ich bin der Nal, das war schön“ in jedem Abschnitt): Sätze, die
+        // vollständig im Kontext stehen, verwerfen (auch die Wiederholung des Überlappungsstücks).
+        NSString *normalizedContext = BrowserSubtitleNormalizedText(context);
+        NSIndexSet *copied = [cues indexesOfObjectsPassingTest:^BOOL(BrowserSubtitleCue *cue, NSUInteger index, BOOL *stop) {
+            NSString *normalized = BrowserSubtitleNormalizedText(cue.text);
+            return normalized.length >= 8 && [normalizedContext containsString:normalized];
+        }];
+        for (BrowserSubtitleCue *cue in [cues objectsAtIndexes:copied]) {
+            NSLog(@"%@ aus dem Kontext abgeschrieben, verworfen: %@", kSubtitleLogPrefix, cue.text);
+        }
+        [cues removeObjectsAtIndexes:copied];
+    }
+    // Nach dem Zusammenlegen noch einmal: aus einzelnen „Wir.“-Segmenten wird sonst „Wir. Wir. Wir. …“.
+    cues = [BrowserSubtitleRemoveRepeats(BrowserSubtitleMergeShortCues(BrowserSubtitleRemoveRepeats(cues), kBrowserSubtitleMaxCueCharacters)) mutableCopy];
     [self rememberCues:cues windowStart:startTime];
     if (windowLanguage != nil && cues.count > 0 && seconds >= 2.5) {
         // nur Abschnitte mit Sprache zählen (nicht Musik/Stille) und nicht die kurzen Teilabschnitte des Mithörens

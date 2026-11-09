@@ -195,6 +195,21 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     return covered;
 }
 
+- (void)audioSourceDidReachLiveEdge:(id<BrowserSubtitleAudioSource>)source {
+    dispatch_async(self.queue, ^{
+        // Ab 3 s Angefangenes auswerten (Satzpause in der letzten Sekunde suchen), das Ende überlappt wie sonst. Live
+        // liegt die Kante nur ~3 Zielzeiten vor der Wiedergabe; mit 4 s kamen Abschnitte im Simulator ~1 s zu spät.
+        if (source != self.source || self.live || !self.hasBuffer || [self bufferedSeconds] < 3.0) {
+            return;
+        }
+        NSUInteger length = self.buffer.length / sizeof(float);
+        NSUInteger cut = [self quietCutBefore:length search:1.0];
+        [self submitAheadWindowOfLength:cut * sizeof(float) final:NO];
+        [self dropBufferedSeconds:MAX(0.5, (double)cut / kPipelineSampleRate - self.overlapSeconds)];
+        self.firstWindowOfRun = NO;
+    });
+}
+
 - (void)flushPartial {
     dispatch_async(self.queue, ^{
         if (self.source == nil || !self.hasBuffer) {
