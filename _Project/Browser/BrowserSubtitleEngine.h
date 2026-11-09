@@ -13,7 +13,16 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL tentative;
 /// Medienzeit, zu der der Untertitel zum ersten Mal sichtbar wurde (NAN = noch nie). Für die Versatzmessung.
 @property (nonatomic) NSTimeInterval shownAt;
+/// Sprache, in der whisper den Text erkannt hat (nil = unbekannt, z. B. Weg B ohne Engine).
+@property (nonatomic, copy, nullable) NSString *language;
+/// Gesetzt, wenn whisper in der gesprochenen Sprache erkannt hat und der Text noch per Apple in diese Sprache
+/// übersetzt werden soll (BrowserSubtitleTranslator, in der Pipeline). nil = Text ist fertig.
+@property (nonatomic, copy, nullable) NSString *translationTarget;
+/// Bei übersetzten Untertiteln der erkannte Originaltext (Logs, Kontext), sonst nil.
+@property (nonatomic, copy, nullable) NSString *originalText;
 - (instancetype)initWithStart:(NSTimeInterval)start end:(NSTimeInterval)end text:(NSString *)text;
+/// Gleiche Zeiten und Zustände, neuer Text; `originalText` = bisheriger Text, `translationTarget` nil.
+- (BrowserSubtitleCue *)cueWithTranslatedText:(NSString *)text;
 @end
 
 /// Dünne Hülle um whisper.cpp. Nicht threadsicher: alle Aufrufe auf derselben (Hintergrund-)Queue.
