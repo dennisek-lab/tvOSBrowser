@@ -33,6 +33,8 @@
 		A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A652D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m */; };
 		A1B49A682D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A672D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m */; };
 		A1B49A6C2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A6B2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m */; };
+		C0FFEE0A0000000000000001 /* BrowserYouTubeHDBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0A0000000000000002 /* BrowserYouTubeHDBridge.m */; };
+		C0FFEE0A0000000000000004 /* YouTubeHD in Resources */ = {isa = PBXBuildFile; fileRef = C0FFEE0A0000000000000005 /* YouTubeHD */; };
 		A1B49A722D6B7000001D58A1 /* BrowserYouTubeExtractor.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A712D6B7000001D58A1 /* BrowserYouTubeExtractor.m */; };
 		A1B49A742D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A732D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m */; };
 		A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A832D6D2000001D58A1 /* BrowserDOMInteractionService.m */; };
@@ -137,6 +139,9 @@
 		A1B49A672D6AD500001D58A1 /* UIApplication+BrowserSelectPressForwarding.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UIApplication+BrowserSelectPressForwarding.m"; sourceTree = "<group>"; };
 		A1B49A692D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserNativeVideoPlayerViewController.h; sourceTree = "<group>"; };
 		A1B49A6B2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserNativeVideoPlayerViewController.m; sourceTree = "<group>"; };
+		C0FFEE0A0000000000000003 /* BrowserYouTubeHDBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserYouTubeHDBridge.h; sourceTree = "<group>"; };
+		C0FFEE0A0000000000000002 /* BrowserYouTubeHDBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserYouTubeHDBridge.m; sourceTree = "<group>"; };
+		C0FFEE0A0000000000000005 /* YouTubeHD */ = {isa = PBXFileReference; lastKnownFileType = folder; path = YouTubeHD; sourceTree = "<group>"; };
 		A1B49A702D6B7000001D58A1 /* BrowserYouTubeExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserYouTubeExtractor.h; sourceTree = "<group>"; };
 		A1B49A712D6B7000001D58A1 /* BrowserYouTubeExtractor.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserYouTubeExtractor.m; sourceTree = "<group>"; };
 		A1B49A732D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserNativeVideoAssetLoader.m; sourceTree = "<group>"; };
@@ -489,6 +494,8 @@
 			children = (
 				A1B49A752D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.h */,
 				A1B49A732D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m */,
+				C0FFEE0A0000000000000003 /* BrowserYouTubeHDBridge.h */,
+				C0FFEE0A0000000000000002 /* BrowserYouTubeHDBridge.m */,
 				A1B49A702D6B7000001D58A1 /* BrowserYouTubeExtractor.h */,
 				A1B49A712D6B7000001D58A1 /* BrowserYouTubeExtractor.m */,
 			);
@@ -553,6 +560,7 @@
 				02AB7C306633303A188E18EE /* Reader */,
 				A1B2C3D4E5F6A7B8C9D0E1F6 /* PageTranslation */,
 				5DC453250BE8BA6BD64CDA80 /* WebSubtitles */,
+				C0FFEE0A0000000000000005 /* YouTubeHD */,
 				8652E9B7A8FD897D903A8958 /* Autoconsent */,
 				59E0D9A2C1BCC6D87C153C0B /* ContentBlocker */,
 				B002B8731BAE420500C744AF /* Info.plist */,
@@ -632,6 +640,7 @@
 				A1B2C3D4E5F6A7B8C9D0E1F5 /* PageTranslation in Resources */,
 				3DD82A479AC80C0FC07DA853 /* AppShortcuts.xcstrings in Resources */,
 				33B9140B9ADB84E7543B7C84 /* WebSubtitles in Resources */,
+				C0FFEE0A0000000000000004 /* YouTubeHD in Resources */,
 				40D782F4DA5F0DCB599D9390 /* Autoconsent in Resources */,
 				BE83CB83573CB940551E1FAE /* ContentBlocker in Resources */,
 				B002B8701BAE420500C744AF /* Main.storyboard in Resources */,
@@ -698,6 +707,7 @@
 				A1B49A582D6828D4001D58A1 /* BrowserSessionStore.m in Sources */,
 				A1B49A5B2D684000001D58A1 /* BrowserTopBarView.m in Sources */,
 				A1B49A6C2D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.m in Sources */,
+				C0FFEE0A0000000000000001 /* BrowserYouTubeHDBridge.m in Sources */,
 				A1B49A722D6B7000001D58A1 /* BrowserYouTubeExtractor.m in Sources */,
 				A1B49A742D6C1000001D58A1 /* BrowserNativeVideoAssetLoader.m in Sources */,
 				A1B49A662D6A7500001D58A1 /* AVPlayerViewController+BrowserFullscreenBlock.m in Sources */,

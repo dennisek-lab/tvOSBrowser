@@ -48,6 +48,10 @@ extern NSNotificationName const BrowserNativePlayerWillEndSessionNotification;
 /// passende Stream-Untertitel (HLS) ausgewählt. Leer: Auswahl nach den Systemeinstellungen.
 @property (nonatomic, copy, nullable) NSString *preferredSubtitleLanguage;
 
+/// Erzeugte Playlists (absolute https-Adresse → Inhalt), die der Asset-Loader ohne Netz ausliefert, z. B. YouTube in HD
+/// (Abschnitt 10.5). Die Video-Adresse ist dann die Hauptplaylist darin.
+@property (nonatomic, copy, nullable) NSDictionary<NSString *, NSData *> *generatedPlaylists;
+
 /// Einmalig beim Ende der Sitzung mit der letzten Position in Sekunden (`NAN` bei Livestreams).
 /// Das Ende ist das Schließen des Players oder, nach einem Wechsel in Bild-in-Bild, das Schließen des Bild-in-Bild-Fensters.
 @property (nonatomic, copy, nullable) void (^dismissHandler)(NSTimeInterval playbackTime);

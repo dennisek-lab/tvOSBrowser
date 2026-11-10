@@ -7,6 +7,7 @@
 #import "BrowserScriptletInjector.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebAudioCapture.h"
+#import "BrowserYouTubeHDBridge.h"
 #import "BrowserPerf.h"
 
 #import <dlfcn.h>
@@ -541,6 +542,16 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
     userScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(userScript, userScriptInitializer, BrowserYouTubeRequestCaptureScript(), 0, NO);
     if (userScript != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, userScript);
+    }
+
+    // YouTube-HD-Brücke (MediaSource-Ersatz, Abschnitt 10.5): Hauptframe, document-start, prüft den Host selbst.
+    if ([BrowserYouTubeHDBridge isEnabled]) {
+        NSString *bridgeSource = [BrowserYouTubeHDBridge userScriptSource];
+        id bridgeScript = bridgeSource.length > 0 ? [userScriptClass alloc] : nil;
+        bridgeScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(bridgeScript, userScriptInitializer, bridgeSource, 0, YES);
+        if (bridgeScript != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, bridgeScript);
+        }
     }
 
     id viewportScript = [userScriptClass alloc];

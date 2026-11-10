@@ -143,8 +143,9 @@ static NSString *BrowserNativePlayerPressPhaseString(UIPressPhase phase) {
     }
 
     AVURLAsset *asset = nil;
-    if (self.streamingPlaylist && (self.requestHeaders.count > 0 || self.requestCookies.count > 0)) {
+    if (self.streamingPlaylist && (self.requestHeaders.count > 0 || self.requestCookies.count > 0 || self.generatedPlaylists.count > 0)) {
         self.assetLoader = [[BrowserNativeVideoAssetLoader alloc] initWithRequestHeaders:self.requestHeaders cookies:self.requestCookies];
+        self.assetLoader.generatedResources = self.generatedPlaylists;
         NSURL *assetURL = [self.assetLoader assetURLForPlaybackURL:self.videoURL];
         asset = [AVURLAsset URLAssetWithURL:assetURL options:assetOptions];
         [self.assetLoader attachToAsset:asset];
@@ -820,8 +821,11 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
     for (UIMenuElement *element in self.transportBarCustomMenuItems ?: @[]) {
         [menus addObject:element.title ?: @"?"];
     }
-    return [NSString stringWithFormat:@"t=%.1f dur=%.1f rate=%.1f status=%@ live=%d hls=%d loader=%d pipAllowed=%d pipSupported=%d pip=%d legible=%lu/%@ audible=%lu sidecar=%@ cues=%lu meta=%lu art=%d fokus=%@ menüs=[%@] oben=%@",
-            CMTimeGetSeconds(self.player.currentTime), CMTimeGetSeconds(item.duration), self.player.rate, status, self.live,
+    AVPlayerItemAccessLogEvent *access = item.accessLog.events.lastObject;
+    NSString *network = access != nil ? [NSString stringWithFormat:@" bitrate=%.0f/%.0f kbit/s", access.indicatedBitrate / 1000.0, access.observedBitrate / 1000.0] : @"";
+    return [NSString stringWithFormat:@"t=%.1f dur=%.1f rate=%.1f tcs=%ld size=%.0fx%.0f%@ status=%@ live=%d hls=%d loader=%d pipAllowed=%d pipSupported=%d pip=%d legible=%lu/%@ audible=%lu sidecar=%@ cues=%lu meta=%lu art=%d fokus=%@ menüs=[%@] oben=%@",
+            CMTimeGetSeconds(self.player.currentTime), CMTimeGetSeconds(item.duration), self.player.rate,
+            (long)self.player.timeControlStatus, item.presentationSize.width, item.presentationSize.height, network, status, self.live,
             self.streamingPlaylist, self.assetLoader != nil, self.allowsPictureInPicturePlayback,
             [AVPictureInPictureController isPictureInPictureSupported], self.pictureInPictureActive,
             (unsigned long)group.options.count, legible.displayName ?: @"-",

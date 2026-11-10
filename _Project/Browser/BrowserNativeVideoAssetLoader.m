@@ -351,6 +351,23 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
     return [data subdataWithRange:NSMakeRange((NSUInteger)startOffset, length)];
 }
 
+/// Erzeugte Playlist ausliefern (kein Netz). Läuft auf der Loader-Queue.
+- (void)respondWithGeneratedData:(NSData *)data playbackURL:(NSURL *)playbackURL loadingRequest:(AVAssetResourceLoadingRequest *)loadingRequest {
+    NSData *playlist = [self rewrittenPlaylistDataFromData:data responseURL:playbackURL];
+    AVAssetResourceLoadingContentInformationRequest *contentInformationRequest = loadingRequest.contentInformationRequest;
+    if (contentInformationRequest != nil) {
+        contentInformationRequest.contentType = [UTType typeWithMIMEType:@"application/vnd.apple.mpegurl"].identifier ?: @"public.m3u-playlist";
+        contentInformationRequest.contentLength = (long long)playlist.length;
+        contentInformationRequest.byteRangeAccessSupported = NO;
+    }
+    NSData *dataForRequest = [self responseDataForLoadingRequest:loadingRequest data:playlist];
+    if (dataForRequest.length > 0) {
+        [loadingRequest.dataRequest respondWithData:dataForRequest];
+    }
+    [loadingRequest finishLoading];
+    [self log:@"erzeugte Playlist %@ (%lu Bytes)", playbackURL.lastPathComponent ?: @"", (unsigned long)playlist.length];
+}
+
 - (void)dealloc {
     // Ohne Invalidieren bleibt die Session (samt Verbindungen) nach jedem Player im Speicher.
     [_session invalidateAndCancel];
@@ -364,6 +381,12 @@ static NSString * const kBrowserNativeVideoHTTPSProxyScheme = @"browserhttps";
         NSError *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadURL userInfo:nil];
         [loadingRequest finishLoadingWithError:error];
         return NO;
+    }
+
+    NSData *generated = self.generatedResources[playbackURL.absoluteString];
+    if (generated != nil) {
+        [self respondWithGeneratedData:generated playbackURL:playbackURL loadingRequest:loadingRequest];
+        return YES;
     }
 
     NSMutableURLRequest *request = [self requestForPlaybackURL:playbackURL loadingRequest:loadingRequest];

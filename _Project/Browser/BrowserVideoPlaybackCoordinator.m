@@ -5,6 +5,9 @@
 #import "BrowserPreferencesStore.h"
 #import "BrowserWebView.h"
 #import "BrowserYouTubeExtractor.h"
+#import "BrowserYouTubeHDBridge.h"
+
+#import <QuartzCore/QuartzCore.h>
 
 static NSString * const kUserAgentDefaultsKey = @"UserAgent";
 static BOOL const kBrowserYouTubeNativeExtractionEnabled = NO;
@@ -24,6 +27,14 @@ static BOOL const kBrowserYouTubeNativeExtractionEnabled = NO;
 @property (nonatomic, copy, nullable) NSString *reportedDASH;
 @property (nonatomic, copy, nullable) NSDictionary *frameVideo;
 @property (nonatomic, nullable) NSDate *frameVideoDate;
+/// YouTube in HD (Abschnitt 10.5): baut HLS aus den getrennten Spuren, die der Seitenplayer über die MSE-Brücke abruft.
+@property (nonatomic) BrowserYouTubeHDBridge *youTubeHDBridge;
+/// Zeitpunkt, zu dem der native Player eines YouTube-HD-Videos zuletzt geschlossen wurde (kein sofortiges Wiederöffnen).
+@property (nonatomic, nullable) NSDate *youTubeHDClosedDate;
+/// Seite, für die die Brücke schon auf 360p zurückgefallen ist (nur einmal neu laden).
+@property (nonatomic, copy, nullable) NSString *youTubeHDFallbackPage;
+/// Zähler für den Wächter „Seitenplayer ruft nichts ab“ (gilt nur für das letzte attach).
+@property (nonatomic) NSUInteger youTubeHDAttachGeneration;
 
 @end
 
@@ -329,6 +340,8 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             self.reportedDASH = URLString;
         }
         NSLog(@"[NativeVideoPlayer] Manifest %@ %@ top=%@", event[@"kind"], URLString, event[@"top"]);
+    } else if ([type isEqualToString:@"youtubehd"]) {
+        [self handleYouTubeHDEvent:event];
     } else if ([type isEqualToString:@"framevideo"] || [type isEqualToString:@"framefullscreen"]) {
         [self discardReportsOfOtherPages];
         self.reportedPageURL = [self currentPageKey];
@@ -533,6 +546,18 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             }
             return;
         }
+        // YouTube mit MSE-Brücke: das Seitenvideo hat eine Ersatz-blob-Adresse, HLS kommt aus der Brücke.
+        NSString *probePage = [probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @"";
+        NSString *probeSource = [probe[@"cs"] isKindOfClass:[NSString class]] ? probe[@"cs"] : @"";
+        // Auch ohne Quelle (Seitenplayer noch nicht angehängt, etwa nach dem Wechsel per yt-navigate): Die von YouTube
+        // gemeldete HLS-Adresse (manifest.googlevideo.com/…/hls_variant) spielt AVPlayer nicht. Nur ein echtes MP4
+        // (Brücke unscharf, 360p in der Seite) geht den gewohnten Weg.
+        if ([BrowserYouTubeHDBridge isEnabled] && [strongSelf isYouTubePage:probePage] &&
+            ([probeSource hasPrefix:@"blob:"] || probeSource.length == 0)) {
+            strongSelf.handoverInProgress = NO;
+            [strongSelf openYouTubeHDWithTrigger:trigger];
+            return;
+        }
         NSString *reason = nil;
         NSURL *videoURL = [strongSelf nativeURLFromProbe:probe unsupportedReason:&reason];
         if (videoURL == nil) {
@@ -682,6 +707,185 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     player.pageTextTracks = tracks;
     NSString *showing = [probe[@"showing"] isKindOfClass:[NSString class]] ? probe[@"showing"] : @"";
     player.preferredSubtitleLanguage = showing.length > 0 ? showing : nil;
+}
+
+#pragma mark - YouTube in HD (MSE-Brücke)
+
+- (BrowserYouTubeHDBridge *)youTubeHDBridge {
+    if (_youTubeHDBridge == nil) {
+        _youTubeHDBridge = [BrowserYouTubeHDBridge new];
+    }
+    return _youTubeHDBridge;
+}
+
+/// Meldungen von `youtube_hd_bridge.js`: attach (Seitenplayer hängt die Ersatz-MediaSource an), capture (erste
+/// Medienanfrage eines Player-Response), play (Seite will abspielen).
+- (void)handleYouTubeHDEvent:(NSDictionary *)event {
+    NSString *name = [event[@"event"] isKindOfClass:[NSString class]] ? event[@"event"] : @"";
+    NSString *videoID = [event[@"videoId"] isKindOfClass:[NSString class]] ? event[@"videoId"] : @"";
+    if ([name isEqualToString:@"capture"]) {
+        NSLog(@"[YouTubeHD] Seite ruft ab: itag=%@ %@ range=%@ ump=%@ pot=%@ nach %@ ms (Video %@)", event[@"itag"], event[@"method"],
+              event[@"range"], event[@"ump"], event[@"pot"], event[@"ms"], videoID);
+    } else if ([name isEqualToString:@"reload"]) {
+        // Videowechsel per yt-navigate: Die Seite lädt neu, damit das neue Video wieder über die Brücke läuft.
+        NSLog(@"[YouTubeHD] Videowechsel %@ → %@, Seite lädt neu", event[@"from"], videoID);
+        return;
+    } else if ([name isEqualToString:@"disarm"]) {
+        // Player-Response ohne Formatadressen (nur SABR): Seite spielt wie ohne Brücke das MP4 mit 360p.
+        NSLog(@"[YouTubeHD] Brücke unscharf (%@), Seite nimmt 360p (Video %@)", event[@"reason"], videoID);
+        return;
+    } else if ([name isEqualToString:@"attach"]) {
+        NSLog(@"[YouTubeHD] Ersatz-MediaSource am Video (Video %@)", videoID);
+        if (videoID.length > 0) {
+            [self armYouTubeHDCaptureWatchdog];
+        }
+        return;
+    }
+    if (videoID.length == 0 || !([name isEqualToString:@"capture"] || [name isEqualToString:@"play"])) {
+        return;
+    }
+    // Unabhängig von „Videos automatisch im Player öffnen“: Mit der Brücke kann die Seite selbst nichts abspielen,
+    // der native Player ist der Player. Wer YouTube in der Seite (360p) will, schaltet YouTubeHDBridge aus.
+    if (self.youTubeHDClosedDate != nil && -[self.youTubeHDClosedDate timeIntervalSinceNow] < 2.0) {
+        NSLog(@"[YouTubeHD] eben geschlossen, nicht wieder öffnen");
+        return;
+    }
+    [self openYouTubeHDWithTrigger:BrowserPageVideoTriggerAutomatic];
+}
+
+/// Ruft der Seitenplayer nach dem Anhängen 15 s lang nichts ab, ist die Brücke kaputt (YouTube geändert): 360p.
+- (void)armYouTubeHDCaptureWatchdog {
+    NSUInteger generation = ++self.youTubeHDAttachGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        BrowserWebView *webView = strongSelf.host.browserWebView;
+        if (strongSelf == nil || webView == nil || generation != strongSelf.youTubeHDAttachGeneration) {
+            return;
+        }
+        NSString *script = @"(function(){ var s=window.__browserYouTubeHD; if (!s) { return -1; } var v=document.querySelector('video'); return (v && v.__bythd) ? Object.keys(s.captures).length : -1; })()";
+        [webView evaluateJavaScriptAsync:script completion:^(id result) {
+            if ([result respondsToSelector:@selector(integerValue)] && [result integerValue] == 0) {
+                NSLog(@"[YouTubeHD] Wächter: Seitenplayer hat nach 15 s nichts abgerufen");
+                [weakSelf fallBackFromYouTubeHDWithReason:@"keine Medienanfrage"];
+            }
+        }];
+    });
+}
+
+/// Brücke für diese Seite abschalten und neu laden: YouTube liefert dann wieder das MP4 mit 360p (itag 18).
+- (void)fallBackFromYouTubeHDWithReason:(NSString *)reason {
+    BrowserWebView *webView = self.host.browserWebView;
+    NSString *page = [self currentPageKey];
+    if (webView == nil || [self.youTubeHDFallbackPage isEqualToString:page]) {
+        NSLog(@"[YouTubeHD] kein erneuter Rückfall für %@ (%@)", page, reason);
+        return;
+    }
+    self.youTubeHDFallbackPage = page;
+    NSLog(@"[YouTubeHD] Rückfall auf 360p (%@): Seite ohne Brücke neu laden", reason);
+    // Merkt sich die Video-ID: Das nächste Video (neu geladen) bekommt die Brücke wieder.
+    [webView evaluateJavaScriptAsync:@"try { var m = /[?&]v=([\\w-]{11})/.exec(location.search) || /\\/(?:shorts|live|embed)\\/([\\w-]{11})/.exec(location.pathname); sessionStorage.setItem('__browserYouTubeHDOff', m ? m[1] : '1'); } catch(e) {} location.reload();"];
+}
+
+- (void)openYouTubeHDWithTrigger:(BrowserPageVideoTrigger)trigger {
+    BrowserWebView *webView = self.host.browserWebView;
+    BOOL automatic = trigger == BrowserPageVideoTriggerAutomatic;
+    UIViewController *presented = self.host.browserPresentedViewController;
+    if (webView == nil || self.handoverInProgress || self.activePlayer != nil ||
+        (presented != nil && (automatic || [presented isKindOfClass:[BrowserNativeVideoPlayerViewController class]]))) {
+        NSLog(@"[YouTubeHD] Öffnen übergangen (läuft=%d Player=%d Dialog=%@)", self.handoverInProgress, self.activePlayer != nil,
+              presented != nil ? NSStringFromClass(presented.class) : @"-");
+        return;
+    }
+    NSLog(@"[YouTubeHD] öffne (%@)", automatic ? @"automatisch" : @"Menü");
+    self.handoverInProgress = YES;
+    CFTimeInterval started = CACurrentMediaTime();
+    __weak typeof(self) weakSelf = self;
+    __weak BrowserWebView *weakWebView = webView;
+    // Automatisch: bis 20 s auf die Anfrage zum Hauptvideo warten (davor kann Werbung laufen).
+    [self.youTubeHDBridge preparePresentationForWebView:webView waitSeconds:automatic ? 20.0 : 6.0
+                                             completion:^(BrowserYouTubeHDPresentation *presentation, NSError *error) {
+        typeof(self) strongSelf = weakSelf;
+        BrowserWebView *strongWebView = weakWebView;
+        if (strongSelf == nil) {
+            return;
+        }
+        if (presentation == nil || strongWebView == nil || strongWebView != strongSelf.host.browserWebView) {
+            strongSelf.handoverInProgress = NO;
+            if (presentation == nil) {
+                NSLog(@"[YouTubeHD] nicht bereit: %@", error.localizedDescription);
+                if (error.code == BrowserYouTubeHDErrorIndex || error.code == BrowserYouTubeHDErrorNoFormat) {
+                    [strongSelf fallBackFromYouTubeHDWithReason:error.localizedDescription];
+                } else if (!automatic) {
+                    [strongSelf presentNativePlayerNoticeWithMessage:@"Das YouTube-Video ist noch nicht bereit."];
+                }
+            }
+            return;
+        }
+        NSLog(@"[YouTubeHD] Playlist nach %.2f s", CACurrentMediaTime() - started);
+        [strongSelf presentYouTubeHD:presentation webView:strongWebView];
+    }];
+}
+
+- (void)presentYouTubeHD:(BrowserYouTubeHDPresentation *)presentation webView:(BrowserWebView *)webView {
+    __weak typeof(self) weakSelf = self;
+    __weak BrowserWebView *weakWebView = webView;
+    [webView evaluateJavaScriptAsync:@"window.__browserYouTubeHD ? window.__browserYouTubeHD.pausePage() : -1" completion:^(id result) {
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf == nil) {
+            return;
+        }
+        double time = [result respondsToSelector:@selector(doubleValue)] ? [result doubleValue] : -1.0;
+        if (time < 0.0 || !isfinite(time)) {
+            time = presentation.pageTime;
+        }
+        if (time < 1.0 || (presentation.duration > 0.0 && time >= presentation.duration - 2.0)) {
+            time = 0.0;
+        }
+        if (strongSelf.host.browserPresentedViewController != nil || strongSelf.activePlayer != nil) {
+            NSLog(@"[YouTubeHD] Übergabe abgebrochen, Dialog offen");
+            strongSelf.handoverInProgress = NO;
+            return;
+        }
+        BrowserNativeVideoPlayerViewController *player = [[BrowserNativeVideoPlayerViewController alloc] initWithURL:presentation.masterURL
+                                                                                                              title:presentation.title
+                                                                                                     requestHeaders:presentation.requestHeaders
+                                                                                                            cookies:@[]];
+        player.generatedPlaylists = presentation.playlists;
+        player.videoSubtitle = presentation.author.length > 0 ? presentation.author : @"YouTube";
+        player.artworkURL = presentation.artworkURL;
+        player.initialPlaybackTime = time;
+        __block BOOL failed = NO;
+        player.dismissHandler = ^(NSTimeInterval playbackTime) {
+            typeof(self) innerSelf = weakSelf;
+            innerSelf.activePlayer = nil;
+            innerSelf.handoverInProgress = NO;
+            innerSelf.youTubeHDClosedDate = [NSDate date];
+            if (failed || !isfinite(playbackTime)) {
+                return;
+            }
+            NSLog(@"[NativeVideoPlayer] Position zurück in die Seite: %.1f", playbackTime);
+            [weakWebView evaluateJavaScriptAsync:[NSString stringWithFormat:@"window.__browserYouTubeHD && window.__browserYouTubeHD.seekPage(%f)", playbackTime]];
+            [weakWebView refreshClickTargets];
+        };
+        player.failureHandler = ^(NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) innerSelf = weakSelf;
+                failed = YES;
+                NSLog(@"[YouTubeHD] Wiedergabe fehlgeschlagen: %@", error);
+                BrowserNativeVideoPlayerViewController *failedPlayer = innerSelf.activePlayer;
+                innerSelf.activePlayer = nil;
+                innerSelf.handoverInProgress = NO;
+                innerSelf.youTubeHDClosedDate = [NSDate date];
+                [failedPlayer dismissViewControllerAnimated:YES completion:^{
+                    [innerSelf fallBackFromYouTubeHDWithReason:error.localizedDescription ?: @"AVPlayer"];
+                }];
+            });
+        };
+        NSLog(@"[YouTubeHD] nativer Player: %@ ab %.1f s", presentation.masterURL.absoluteString, time);
+        strongSelf.activePlayer = player;
+        [strongSelf.host browserPresentViewController:player];
+    }];
 }
 
 #pragma mark - Videos in eingebetteten Frames
