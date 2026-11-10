@@ -48,8 +48,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable UIColor *)browserRemoteInputControllerGlowColorForTarget:(CGRect)target;
 /// Form eines Seitenziels (Koordinaten von rootView) für die Hervorhebung: Eckenradius des sichtbaren Elements in pt,
 /// eigene sichtbare Fläche (Hintergrund, Rahmen, Schatten, Bild) und reines Textziel (Textlink, Link im Fließtext).
+/// image: das Ziel ist ein Bild (dann Linse mit Kantenbrechung und leichtem Zoom).
 /// NO = keine Angabe (z. B. Knöpfe der oberen Leiste), dann gilt die Vorgabe-Rundung.
-- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text;
+- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text image:(BOOL *)image;
 /// Ziele für den Sprung von Element zu Element (links/rechts, Ring). Ohne Umsetzung: die Zeigerziele.
 - (NSArray<NSValue *> *)browserRemoteInputControllerStepTargets;
 /// Adressleiste im Bearbeiten-Zustand mit Aufklapp-Bereich: Pfeiltasten springen räumlich zwischen den Zielen,

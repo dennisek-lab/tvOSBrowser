@@ -383,18 +383,27 @@ static NSString *BrowserClickTargetScript(void) {
         "for (var k=0;k<4;k++){ var bc=rgba(s['border'+nm[k]+'Color']); if (parseFloat(s['border'+nm[k]+'Width'])>0.4 && s['border'+nm[k]+'Style']!=='none' && bc && bc[3]>0.1) { sides++; } }"
         "return sides>=3 ? 1 : 0;"
     "}"
+    // Bild als sichtbares Element (Feld 10): img/picture/canvas, ein Bild, das das Element fast ganz füllt, oder ein
+    // Hintergrundbild (url, cover/contain), mindestens 48 px. Dann zeigt die Hervorhebung Linse und leichten Zoom.
+    "function imgLike(el,s,r){"
+        "if (r.width<48||r.height<48) { return 0; }"
+        "var t=el.tagName; if (t==='IMG'||t==='PICTURE'||t==='CANVAS') { return 1; }"
+        "var bi=s.backgroundImage||'none'; if (bi.indexOf('url(')>=0 && (s.backgroundSize==='cover'||s.backgroundSize==='contain')) { return 1; }"
+        "var im=el.querySelector('img,picture,canvas'); if (!im) { return 0; }"
+        "var ir=im.getBoundingClientRect(); return ir.width*ir.height>=r.width*r.height*0.8 ? 1 : 0;"
+    "}"
     // Sichtbarer Knopf zum Ziel: das Element selbst, sonst ein eng anliegender Vorfahre mit Fläche, der kein anderes
     // Ziel enthält (z. B. <li class=chip><a>), sonst ein Nachfahre mit Fläche, der das Ziel fast ganz ausfüllt
     // (z. B. Vorschaubild in einem Link). Ergebnis {r: Rechteck, s: Stil, f: Fläche 0/1}.
     "function visual(el,r,s){"
-        "if (surf(el,s)) { return {r:r,s:s,f:1}; }"
+        "if (surf(el,s)) { return {r:r,s:s,f:1,e:el}; }"
         "for (var n=el.parentElement, i=0; n && i<3 && n!==document.body && n!==document.documentElement; n=n.parentElement, i++){"
             "var nr=n.getBoundingClientRect();"
             "if (nr.left>r.left+1||nr.top>r.top+1||nr.right<r.right-1||nr.bottom<r.bottom-1) { continue; }"
             "if (nr.width-r.width>32||nr.height-r.height>24||nr.height>120) { break; }"
             "var ns=getComputedStyle(n); if (!surf(n,ns)) { continue; }"
             "if (n.querySelectorAll(SEL).length!==1+el.querySelectorAll(SEL).length) { break; }"
-            "return {r:nr,s:ns,f:1};"
+            "return {r:nr,s:ns,f:1,e:n};"
         "}"
         "var kids=el.querySelectorAll('*'), a=r.width*r.height;"
         "for (var k=0;k<kids.length && k<16;k++){"
@@ -407,9 +416,9 @@ static NSString *BrowserClickTargetScript(void) {
                 "var pr=p.getBoundingClientRect(); if (pr.width*pr.height>kr.width*kr.height*1.25) { break; }"
                 "kRad=Math.max(kRad,rad(getComputedStyle(p),kr));"
             "}"
-            "return {r:kr,s:ks,f:1,rd:kRad};"
+            "return {r:kr,s:ks,f:1,rd:kRad,e:kids[k]};"
         "}"
-        "return {r:r,s:s,f:0};"
+        "return {r:r,s:s,f:0,e:el};"
     "}"
     "function collect(){"
         "pending=false;"
@@ -426,7 +435,7 @@ static NSString *BrowserClickTargetScript(void) {
             "}"
             "var vis=visual(el,r,cs), vr=vis.r, txt=vis.f ? 0 : textLike(el,cs);"
             "seen.set(el,out.length);"
-            "out.push([Math.round(vr.left),Math.round(vr.top),Math.round(vr.width),Math.round(vr.height),fixedLike(el),glow(vis.f?vis.s:cs),txt,vis.rd!==undefined?vis.rd:rad(vis.s,vr),vis.f]);"
+            "out.push([Math.round(vr.left),Math.round(vr.top),Math.round(vr.width),Math.round(vr.height),fixedLike(el),glow(vis.f?vis.s:cs),txt,vis.rd!==undefined?vis.rd:rad(vis.s,vr),vis.f,imgLike(vis.e,vis.s,vr)]);"
         "}"
         "var vids=[], playing=false, vs=document.querySelectorAll('video');"
         "for (var j=0; j<vs.length && vids.length<20; j++){"
@@ -785,7 +794,7 @@ static NSString *BrowserBridgeSafeArgument(NSString *value) {
     return best;
 }
 
-- (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
+- (BOOL)shapeForViewRect:(CGRect)rect viewWidth:(CGFloat)viewWidth cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text image:(BOOL *)image {
     NSArray<NSValue *> *rects = [self rectsFromRaw:self.rawTargets viewWidth:viewWidth];
     CGRect probe = CGRectInset(rect, 2.0, 2.0); // Rundung der Umrechnung
     if (CGRectIsEmpty(probe)) {
@@ -814,6 +823,9 @@ static NSString *BrowserBridgeSafeArgument(NSString *value) {
     }
     if (text != NULL) {
         *text = entry.count >= 7 && entry[6].integerValue == 1;
+    }
+    if (image != NULL) {
+        *image = entry.count >= 10 && entry[9].integerValue == 1;
     }
     return YES;
 }

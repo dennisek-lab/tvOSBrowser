@@ -38,7 +38,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Leuchtfarbe des Elements am Punkt (Koordinaten dieser Ansicht), nil = keine eigene Farbe (Grau, Weiß, Schwarz).
 - (nullable UIColor *)glowColorAtPoint:(CGPoint)point;
 /// Form des Klickziels, aus dem `rect` stammt (Koordinaten dieser Ansicht), s. BrowserClickTargetTracker; NO = unbekannt.
-- (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat * _Nullable)cornerRadius surface:(BOOL * _Nullable)surface text:(BOOL * _Nullable)text;
+/// image: das sichtbare Element ist ein Bild (img, picture, canvas, Hintergrundbild), mindestens 48 px groß.
+- (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat * _Nullable)cornerRadius surface:(BOOL * _Nullable)surface text:(BOOL * _Nullable)text image:(BOOL * _Nullable)image;
 /// Sichtbare Videos der Seite, in Koordinaten dieser Ansicht.
 - (NSArray<NSValue *> * _Nonnull)videoRects;
 /// Läuft auf der Seite gerade ein Video?

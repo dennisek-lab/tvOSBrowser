@@ -577,7 +577,8 @@ typedef struct {
     BrowserMagneticMark mark;
 } BrowserMagneticStyle;
 
-/// Standard für alle Ziele (Variante B, Nutzerwunsch 8. November 2026): keine Refraktion, kein Zoom, Lichtkante.
+/// Standard für alle Ziele außer Bildern (Variante B, Nutzerwunsch 8. November 2026): keine Refraktion, kein Zoom, Lichtkante.
+/// Bilder bekommen Linse und Zoom (BrowserMagneticStyleForTarget).
 /// Die Linse verdoppelte am Rand Inhalte (im Fließtext „iiTunes“, bei Google-Treffern ein doppelter schmaler Streifen
 /// am linken Rand). `padding` ist die Vorgabe für Ziele unbekannter Form; Knöpfe mit eigener Fläche liegen enger an
 /// (showHighlightForTarget:).
@@ -600,10 +601,20 @@ static BOOL BrowserMagneticVariantIsTextOnly(NSString *variant) {
 }
 #endif
 
-static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text) {
+static BrowserMagneticStyle BrowserMagneticStyleForTarget(BOOL text, BOOL image) {
     BrowserMagneticStyle style = BrowserMagneticStyleStandard();
     if (text) {
         style.padding = 3.0; // Textlinks eng (früher Variante F)
+    }
+    if (image) {
+        // Bilder (Nutzerwunsch 10. November 2026): wieder Linse mit Kantenbrechung und leichtem Zoom der Mitte
+        // (1,04-fach wie die frühere Variante Z). Bei Text und Knöpfen verdoppelte die Linse Inhalte am Rand, bei
+        // Bildern wirkt das wie Glas. Aus mit pref MagneticImageLens=NO.
+        NSNumber *enabled = [NSUserDefaults.standardUserDefaults objectForKey:@"MagneticImageLens"];
+        if (enabled == nil || enabled.boolValue) {
+            style.lens = YES;
+            style.lensCenterScale = 1.04;
+        }
     }
 #if DEBUG
     NSString *variant = BrowserMagneticVariant();
@@ -1269,11 +1280,13 @@ static const CFTimeInterval kSnapMagnetAfterLift = 0.15;
     CGFloat elementRadius = -1.0;
     BOOL surface = NO;
     BOOL textTarget = NO;
+    BOOL imageTarget = NO;
     BOOL shapeKnown = NO;
-    if (appRadius < 0.0 && [self.host respondsToSelector:@selector(browserRemoteInputControllerShapeForTarget:cornerRadius:surface:text:)]) {
-        shapeKnown = [self.host browserRemoteInputControllerShapeForTarget:target cornerRadius:&elementRadius surface:&surface text:&textTarget];
+    if (appRadius < 0.0 && [self.host respondsToSelector:@selector(browserRemoteInputControllerShapeForTarget:cornerRadius:surface:text:image:)]) {
+        shapeKnown = [self.host browserRemoteInputControllerShapeForTarget:target cornerRadius:&elementRadius surface:&surface
+                                                                       text:&textTarget image:&imageTarget];
     }
-    BrowserMagneticStyle style = BrowserMagneticStyleForTarget(shapeKnown && textTarget);
+    BrowserMagneticStyle style = BrowserMagneticStyleForTarget(shapeKnown && textTarget, shapeKnown && imageTarget);
     CGFloat padding = style.padding;
     // Seitenziele: Hat das Element eine eigene Rundung (border-radius), übernimmt die Hervorhebung sie (Radius plus
     // Abstand: Pille bleibt Pille, Kreis bleibt Kreis, 4-px-Ecken bleiben fast eckig). Ohne eigene Rundung gilt der
@@ -1301,10 +1314,10 @@ static const CFTimeInterval kSnapMagnetAfterLift = 0.15;
     static CGRect loggedTarget;
     if (!CGRectEqualToRect(loggedTarget, target)) {
         loggedTarget = target;
-        NSLog(@"[Magnet] Ziel %.0f,%.0f %.0f×%.0f Form %@ Radius %.1f Fläche %d Text %d → Rand %.1f Ecken %.1f",
+        NSLog(@"[Magnet] Ziel %.0f,%.0f %.0f×%.0f Form %@ Radius %.1f Fläche %d Text %d Bild %d → Rand %.1f Ecken %.1f Linse %d Zoom %.2f",
               CGRectGetMinX(target), CGRectGetMinY(target), CGRectGetWidth(target), CGRectGetHeight(target),
               appRadius >= 0.0 ? @"App" : (shapeKnown ? @"Seite" : @"unbekannt"), appRadius >= 0.0 ? appRadius : elementRadius,
-              surface, textTarget, padding, radius);
+              surface, textTarget, imageTarget, padding, radius, style.lens, style.lensCenterScale);
     }
 #endif
     BrowserGlowView *glow = highlight.glowView;
@@ -1359,7 +1372,7 @@ static const CFTimeInterval kSnapMagnetAfterLift = 0.15;
 }
 
 /// Linse nur bei neuer Lage oder Größe neu aufnehmen (nicht pro Frame): Seite unter dem Ziel als Snapshot,
-/// Mitte ohne Zoom (1,0, ausgeblendet; nur DEBUG-Variante Z vergrößert 1,04-fach), Randband 1,13-fach (Kantenbrechung), feiner heller Saum.
+/// Mitte ohne Zoom (1,0, ausgeblendet; bei Bildern 1,04-fach), Randband 1,13-fach (Kantenbrechung), feiner heller Saum.
 - (void)updateLensForFrame:(CGRect)frame radius:(CGFloat)radius style:(BrowserMagneticStyle)style {
     BrowserMagneticHighlightView *highlight = self.highlightView;
     UIView *container = highlight.lensContainer;

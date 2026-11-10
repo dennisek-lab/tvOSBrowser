@@ -2878,7 +2878,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     return [webView glowColorAtPoint:center];
 }
 
-- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
+- (BOOL)browserRemoteInputControllerShapeForTarget:(CGRect)target cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text image:(BOOL *)image {
     BrowserWebView *webView = self.webview;
     if (self.addressPanel != nil || webView == nil || webView.window == nil) {
         return NO;
@@ -2887,7 +2887,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     if (!CGRectContainsPoint(webView.bounds, center) || ![self browserRemoteInputControllerLensAllowedForTarget:target]) {
         return NO; // Knöpfe der oberen Leiste: eigene Form, Vorgabe-Rundung
     }
-    return [webView clickTargetShapeForRect:[webView convertRect:target fromView:self.view] cornerRadius:cornerRadius surface:surface text:text];
+    return [webView clickTargetShapeForRect:[webView convertRect:target fromView:self.view] cornerRadius:cornerRadius surface:surface text:text image:image];
 }
 
 - (NSArray<NSValue *> *)browserRemoteInputControllerPointerTargets {

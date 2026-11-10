@@ -755,10 +755,10 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
                                                viewWidth:CGRectGetWidth(self.bounds)];
 }
 
-- (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text {
+- (BOOL)clickTargetShapeForRect:(CGRect)rect cornerRadius:(CGFloat *)cornerRadius surface:(BOOL *)surface text:(BOOL *)text image:(BOOL *)image {
     return [self.clickTargetTracker shapeForViewRect:CGRectOffset(rect, 0.0, -self.topObscuredInset)
                                            viewWidth:CGRectGetWidth(self.bounds)
-                                        cornerRadius:cornerRadius surface:surface text:text];
+                                        cornerRadius:cornerRadius surface:surface text:text image:image];
 }
 
 - (NSArray<NSValue *> *)videoRects {
