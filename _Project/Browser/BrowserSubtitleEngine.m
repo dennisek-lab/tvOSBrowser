@@ -114,8 +114,10 @@ static bool BrowserWhisperAbort(void *userData) {
                          @"ggml-tiny.en-q5_1.bin", @"ggml-tiny.en-q8_0.bin", @"ggml-tiny.en.bin"];
     NSArray *multilingual = @[@"ggml-base-q5_1.bin", @"ggml-base-q8_0.bin", @"ggml-base.bin",
                               @"ggml-small-q5_1.bin", @"ggml-tiny-q5_1.bin", @"ggml-tiny.bin"];
-    // pref SubtitlesModel=small: genauer (WER ≈ 3,7 % statt 5,4 %), ≈ 3× Rechenzeit und +150 MB.
-    if ([[NSUserDefaults.standardUserDefaults stringForKey:@"SubtitlesModel"] isEqualToString:@"small"]) {
+    // small zuerst, wenn im Paket: am Apple TV (Tears of Steel, Deutsch über Apple-Übersetzung) 14/14 Sätze statt 13/14,
+    // Text näher am Original („Solltest du nicht da unten sein?“ statt „Sollen wir da runtergehen?“), RTF ≈ 0,08 mit
+    // Metal, Speicher ≈ 360 statt 150 MB. pref SubtitlesModel=base nimmt wieder base (Vergleich, wenig Speicher).
+    if (![[NSUserDefaults.standardUserDefaults stringForKey:@"SubtitlesModel"] isEqualToString:@"base"]) {
         NSArray *small = [language isEqualToString:@"en"]
             ? @[@"ggml-small.en-q5_1.bin", @"ggml-small-q5_1.bin"] : @[@"ggml-small-q5_1.bin"];
         english = [small arrayByAddingObjectsFromArray:english];

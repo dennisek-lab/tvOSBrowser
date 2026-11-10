@@ -888,7 +888,16 @@ Gemessen im Simulator (2026-11-08, „tagesschau in 100 Sekunden“, `base-q5_1`
 | base.en + Silero 0,35 | 13 / 13 | 0,27 s | 12 | 0,05 (9 Abschnitte übersprungen) | ≈ 500 MB |
 | small + Silero 0,5 | 13 / 13 | 0,29 s | 11 | 0,20 | ≈ 950 MB |
 
-small hört manches richtig („This is pretty freaky.“, „Shouldn't you be down there?“), anderes falsch („freed out“ statt „freaked out“), bei vierfacher Rechenzeit. Standard bleibt base; Gerätemessung (Deutsch, base gegen small, Apple SpeechTranscriber 10.10) steht aus.
+small hört manches richtig („This is pretty freaky.“, „Shouldn't you be down there?“), anderes falsch („freed out“ statt „freaked out“), bei vierfacher Rechenzeit. Am Apple TV (A15, 10. November 2026, Tears of Steel HLS, Weg B, bis 140 s, `compare.py`):
+
+| Lauf | Treffer | \|Δ\| Median / max | ≤ 1 s | RTF | Speicher |
+|:--|:--|:--|:--|:--|:--|
+| Deutsch, base + Silero (vorher ohne Silero: 11/14, 0,46 / 6,3 s) | 13 / 14 | 0,35 / 1,5 s | 11 | 0,03 | 151 MB |
+| Deutsch, small + Silero | **14 / 14** | **0,29** / 1,6 s | **12** | 0,07–0,09 | 362 MB |
+| Englisch, Apple SpeechTranscriber (10.10) | 12 / 13 | 0,28 / 1,6 s | 9 | 0,01–0,04 | 183 MB |
+| Deutsch, Apple SpeechTranscriber + Apple-Übersetzung | 12 / 14 | 0,24 / 1,6 s | 9 | 0,01–0,04 | – |
+
+small trifft die Sätze am genauesten („Solltest du nicht da unten sein?“, „Es ist nicht meine Schuld, weißt du?“; base: „Sollen wir da runtergehen?“, „Es ist nicht durch Fehler“), ohne Speicherwarnung. **small ist deshalb Standard, wenn es im Paket liegt** (`pref:SubtitlesModel=base` nimmt base). Apple ist am schnellsten und braucht wenig Speicher, verhört aber Namen („Tom“ → „dumb“, übersetzt „Dummkopf“) und klebt Satzstücke zusammen („You're a jerk, dumb. Look“); bleibt Prototyp.
 6. **Zeiten und Teilen:** Untertitel beginnen am Segmentanfang laut whisper. Segmente über 84 Zeichen (zwei Zeilen) oder 7 s werden an Satzenden (ab 24 Zeichen), sonst an Kommas oder Wortgrenzen geteilt, jedes Stück mit eigener Zeit aus den Token-Zeitmarken; ein Satz wird nicht mitten im Wort getrennt. **Zeilen auffüllen:** kurze Stücke (< 2 s oder < 28 Zeichen) werden mit dem nächsten zusammengelegt, solange beides in zwei Zeilen passt und höchstens 8 s dauert; das zweite Stück steht dadurch höchstens ≈ 2 s vor seinem Sprechbeginn da, der Anfang bleibt exakt.
 7. Anzeige (Zeitbeobachter alle 0,05 s): ein Untertitel erscheint, sobald `start ≤ t + 0,05`, und steht bis zum Ende + 0,8 s, mindestens aber 2–4 s (1 s + 0,05 s je Zeichen). **Rollend wie Live-Untertitel:** Beginnt der nächste, rückt er unten ein und der vorige bleibt darüber stehen, bis seine Mindestdauer um ist; höchstens zwei Untertitel und zusammen ≤ 120 Zeichen (drei Zeilen), sonst nur der neue. Kommt ein Untertitel zu spät (Mithören), bleibt er ab Ankunft mindestens eine Lesezeit (1,2–4 s). Pause und Spulen ergeben sich aus dem Zeitbeobachter, Untertitel bleiben gespeichert.
 
@@ -1065,7 +1074,7 @@ Im Rückfall ist whisper also auf dem mehrsprachigen `base` statt `base.en` (etw
 4. Deutsch: wie 2. mit `pref:AutoSubtitlesLanguage=de`, dann 3. Erwartet `[AppleSpeech] Apple übersetzt en → de`, `(en_US → de)` in den Abschnittszeilen, `[Subtitles] Apple-Übersetzung en→de: …`; Vergleich gegen `TOS-de.srt`.
 5. Zurück: `pref:SubtitlesRecognizer=` (whisper).
 
-**Offen.** Qualität und Zeiten am Gerät (Ziel: Treffer und |Δ| besser als whisper `base`), Rechenzeit je Abschnitt mit neuem `SpeechAnalyzer` (Mithören rechnet jede Sekunde bis 8 s neu; ggf. einen Analyzer weiterverwenden), Speicher, ob `reserve`/Laden aus der App ohne Nutzerdialog geht und wie viele Sprachen reserviert werden dürfen, Verhalten ohne Netz (Paket fehlt → whisper), Musik/Geräusche (Apple hat keinen eigenen Rauschfilter wie whisper), ob Apple an Abschnittsgrenzen Satzanfänge verliert (12-s-Abschnitte mit 1,5 s Überlappung; im Mac-Prüfstand fehlte ein Wort an einer harten Grenze ohne Überlappung).
+**Gerät (2026-11-10).** `speechprobe`: `isAvailable=true`, 45 Sprachen, `maximumReservedLocales` = 1 (nur eine Sprache gleichzeitig), Paket `en_US` ohne Dialog in 21,5 s geladen, Testsatz fehlerfrei mit Wortzeiten. Tears of Steel: Englisch 12/13, |Δ| Median 0,28 s; Deutsch (Apple-Übersetzung) 12/14, 0,24 s; RTF 0,01–0,04, Speicher 183 MB. Schwächen: Namen („Tom“ → „dumb“), Sätze über Abschnittsgrenzen zusammengeklebt bzw. doppelt („by my robe on hand. I'm not freaked out“). Vergleich mit whisper small siehe 10.x (Silero-VAD und whisper small). **Offen.** Rechenzeit je Abschnitt mit neuem `SpeechAnalyzer` (Mithören rechnet jede Sekunde bis 8 s neu; ggf. einen Analyzer weiterverwenden), Speicher, ob `reserve`/Laden aus der App ohne Nutzerdialog geht und wie viele Sprachen reserviert werden dürfen, Verhalten ohne Netz (Paket fehlt → whisper), Musik/Geräusche (Apple hat keinen eigenen Rauschfilter wie whisper), ob Apple an Abschnittsgrenzen Satzanfänge verliert (12-s-Abschnitte mit 1,5 s Überlappung; im Mac-Prüfstand fehlte ein Wort an einer harten Grenze ohne Überlappung).
 
 ### 10.6 Untertitel für Videos in der Webseite (Weg B: Tonabgriff per Web Audio)
 **Zweck.** Untertitel für Videos, die in der Seite bleiben (eigener Player der Seite, DASH/MSE, „Native Player automatisch“ aus), als native Ebene über der WebView. Zwei Tonquellen (Stand 2026-11-09):
