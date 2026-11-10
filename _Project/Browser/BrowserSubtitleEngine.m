@@ -74,6 +74,8 @@ static bool BrowserWhisperAbort(void *userData) {
     /// Höchstlänge eines Stücks beim Teilen: 84 (zwei Zeilen); folgt Apples Übersetzung, ganze Sätze bis 150 Zeichen,
     /// sonst übersetzt Apple Satzhälften einzeln („… dass du ausgeflippt bist“ / „Von meiner Roboterhand raus?“).
     NSUInteger _splitCharacters;
+    NSString *_vadModelPath;   // Silero-VAD (ggml-silero-*.bin), nil = aus
+    struct whisper_vad_context *_vad;
 #endif
     _Atomic(bool) _abortFlag;
     double _totalCompute;
@@ -112,6 +114,13 @@ static bool BrowserWhisperAbort(void *userData) {
                          @"ggml-tiny.en-q5_1.bin", @"ggml-tiny.en-q8_0.bin", @"ggml-tiny.en.bin"];
     NSArray *multilingual = @[@"ggml-base-q5_1.bin", @"ggml-base-q8_0.bin", @"ggml-base.bin",
                               @"ggml-small-q5_1.bin", @"ggml-tiny-q5_1.bin", @"ggml-tiny.bin"];
+    // pref SubtitlesModel=small: genauer (WER ≈ 3,7 % statt 5,4 %), ≈ 3× Rechenzeit und +150 MB.
+    if ([[NSUserDefaults.standardUserDefaults stringForKey:@"SubtitlesModel"] isEqualToString:@"small"]) {
+        NSArray *small = [language isEqualToString:@"en"]
+            ? @[@"ggml-small.en-q5_1.bin", @"ggml-small-q5_1.bin"] : @[@"ggml-small-q5_1.bin"];
+        english = [small arrayByAddingObjectsFromArray:english];
+        multilingual = [small arrayByAddingObjectsFromArray:multilingual];
+    }
     if ([language isEqualToString:@"en"]) {
         return [english arrayByAddingObjectsFromArray:multilingual];
     }
@@ -187,6 +196,10 @@ static bool BrowserWhisperAbort(void *userData) {
 
 - (void)dealloc {
 #if BROWSER_HAS_WHISPER
+    if (_vad != NULL) {
+        whisper_vad_free(_vad);
+        _vad = NULL;
+    }
     if (_context != NULL) {
         whisper_free(_context);
         _context = NULL;
@@ -276,12 +289,45 @@ static bool BrowserWhisperAbort(void *userData) {
     // DTW-Wortzeiten: whisper.cpp kann sie nicht mit Flash Attention. Ohne DTW bekam am Apple TV das erste Wort eines
     // Segments dessen ganze Dauer, die übrigen Sätze landeten am Abschnittsende und wurden als Überlappung verworfen.
     // Rechenzeit reicht: base läuft mit Metal bei RTF 0,02–0,04. Vergleich ohne DTW: pref SubtitlesNoDTW=YES.
-    BOOL baseModel = [self.modelName hasPrefix:@"base"];
-    _usesDTW = baseModel && ![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoDTW"];
+    BOOL english = [self.modelName containsString:@".en"];
+    enum whisper_alignment_heads_preset preset = WHISPER_AHEADS_NONE;
+    if ([self.modelName hasPrefix:@"tiny"]) {
+        preset = english ? WHISPER_AHEADS_TINY_EN : WHISPER_AHEADS_TINY;
+    } else if ([self.modelName hasPrefix:@"base"]) {
+        preset = english ? WHISPER_AHEADS_BASE_EN : WHISPER_AHEADS_BASE;
+    } else if ([self.modelName hasPrefix:@"small"]) {
+        preset = english ? WHISPER_AHEADS_SMALL_EN : WHISPER_AHEADS_SMALL;
+    }
+    _usesDTW = preset != WHISPER_AHEADS_NONE && ![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoDTW"];
     params.flash_attn = !_usesDTW;
     if (_usesDTW) {
         params.dtw_token_timestamps = true;
-        params.dtw_aheads_preset = [self.modelName containsString:@".en"] ? WHISPER_AHEADS_BASE_EN : WHISPER_AHEADS_BASE;
+        params.dtw_aheads_preset = preset;
+    }
+    // Silero-VAD als Prüfer: Abschnitte ohne Sprache überspringen, Untertitel ohne Sprache darunter verwerfen. Gegen
+    // erfundene Sätze in Musik und Geräuschen („Ich bin mir nicht sicher, ob ich es bekommen kann.“). whisper bekommt
+    // weiter den ganzen Abschnitt: mit params.vad (Ton zusammengeschnitten) fielen kurze Sätze am Abschnittsrand weg
+    // (< 1 s Ton übrig) und Wörter in den Schnittlücken bekamen falsche Zeiten (bis 6,7 s). Aus: pref SubtitlesNoVAD=YES.
+    _vadModelPath = nil;
+    if (![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoVAD"]) {
+        NSString *directory = [self.modelPath stringByDeletingLastPathComponent];
+        for (NSString *file in [[NSFileManager.defaultManager contentsOfDirectoryAtPath:directory error:NULL]
+                                sortedArrayUsingSelector:@selector(compare:)].reverseObjectEnumerator) {
+            if ([file hasPrefix:@"ggml-silero"] && [file hasSuffix:@".bin"]) {
+                _vadModelPath = [directory stringByAppendingPathComponent:file];
+                break;
+            }
+        }
+    }
+    if (_vadModelPath != nil && _vad == NULL) {
+        struct whisper_vad_context_params vadParams = whisper_vad_default_context_params();
+        vadParams.n_threads = 2;
+        vadParams.use_gpu = false;
+        _vad = whisper_vad_init_from_file_with_params(_vadModelPath.fileSystemRepresentation, vadParams);
+        if (_vad == NULL) {
+            NSLog(@"%@ Silero-VAD konnte nicht geladen werden: %@", kSubtitleLogPrefix, _vadModelPath.lastPathComponent);
+            _vadModelPath = nil;
+        }
     }
     _context = whisper_init_from_file_with_params(self.modelPath.fileSystemRepresentation, params);
     atomic_store(&gBrowserWhisperVerboseLog, 0);
@@ -292,8 +338,9 @@ static bool BrowserWhisperAbort(void *userData) {
         }
         return NO;
     }
-    NSLog(@"%@ Modell %@ geladen in %.2f s, Sprache %@, DTW-Wortzeiten %d, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
+    NSLog(@"%@ Modell %@ geladen in %.2f s, Sprache %@, DTW-Wortzeiten %d, VAD %@, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
           kSubtitleLogPrefix, self.modelName, CFAbsoluteTimeGetCurrent() - begin, self.language, _usesDTW,
+          _vadModelPath.lastPathComponent ?: @"aus",
           whisper_is_multilingual(_context), memoryBefore, [BrowserSubtitleEngine currentMemoryFootprintMB],
           whisper_print_system_info());
     if (![self.language isEqualToString:@"auto"] && whisper_is_multilingual(_context)) {
@@ -596,11 +643,16 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         if (piece[0] == ' ' && bytes.length > 0) {
             finishWord();
         }
-        double tokenTime = _usesDTW && data.t_dtw >= 0 ? data.t_dtw / 100.0 : data.t0 / 100.0;
+        // Unter VAD liegen die Token-Zeiten auf der gekürzten Zeitachse. whisper_full_get_token_t0/t1 rechnen sie zurück,
+        // t_dtw nicht: dessen Versatz ist innerhalb eines Sprachstücks derselbe wie der von t0.
+        int64_t t0 = whisper_full_get_token_t0(_context, segment, k);
+        int64_t t1 = whisper_full_get_token_t1(_context, segment, k);
+        int64_t offset = t0 - data.t0;
+        BOOL dtw = _usesDTW && data.t_dtw >= 0;
         if (bytes.length == 0) {
-            wordStart = windowStart + tokenTime;
+            wordStart = windowStart + (dtw ? data.t_dtw + offset : t0) / 100.0;
         }
-        wordEnd = windowStart + (_usesDTW && data.t_dtw >= 0 ? data.t_dtw / 100.0 : data.t1 / 100.0);
+        wordEnd = windowStart + (dtw ? data.t_dtw + offset : t1) / 100.0;
         [bytes appendBytes:piece length:strlen(piece)];
     }
     if (bytes.length > 0) {
@@ -792,6 +844,34 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         return @[];
     }
 
+    // Silero: Stücke mit Sprache (Zeiten im Video). Keins → whisper gar nicht erst rechnen lassen.
+    NSMutableArray<NSArray<NSNumber *> *> *speech = nil;
+    if (_vad != NULL) {
+        CFAbsoluteTime vadBegin = CFAbsoluteTimeGetCurrent();
+        struct whisper_vad_params vadParams = whisper_vad_default_params();
+        // Schwelle 0,35 statt 0,5: gerufene Sätze über Musik („Go! Move your asses!“) hört Silero sonst nicht.
+        double threshold = [NSUserDefaults.standardUserDefaults doubleForKey:@"SubtitlesVADThreshold"];
+        vadParams.threshold = threshold > 0.0 ? (float)threshold : 0.35f;
+        vadParams.min_speech_duration_ms = 150;
+        vadParams.min_silence_duration_ms = 200;
+        vadParams.speech_pad_ms = 200;
+        struct whisper_vad_segments *segments = whisper_vad_segments_from_samples(_vad, vadParams, samples, (int)count);
+        if (segments != NULL) {
+            speech = [NSMutableArray array];
+            int n = whisper_vad_segments_n_segments(segments);
+            for (int i = 0; i < n; i++) {
+                [speech addObject:@[@(startTime + whisper_vad_segments_get_segment_t0(segments, i) / 100.0),
+                                    @(startTime + whisper_vad_segments_get_segment_t1(segments, i) / 100.0)]];
+            }
+            whisper_vad_free_segments(segments);
+            if (n == 0) {
+                NSLog(@"%@ Abschnitt %.1f s @ %.1f s: Silero hört keine Sprache (%.2f s), übersprungen", kSubtitleLogPrefix,
+                      seconds, startTime, CFAbsoluteTimeGetCurrent() - vadBegin);
+                return @[];
+            }
+        }
+    }
+
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.n_threads = (int)MIN(4, MAX(1, (NSInteger)NSProcessInfo.processInfo.activeProcessorCount - 2));
     params.print_progress = false;
@@ -889,6 +969,20 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         t0 = MIN(t0, t1 - 0.2);
         [cues addObjectsFromArray:[self cuesForSegment:i text:text start:t0 end:t1 windowStart:startTime windowEnd:startTime + seconds]];
     }
+    if (speech.count > 0) {
+        // Untertitel, unter denen Silero keine Sprache hört (Musik, Geräusche), sind erfunden.
+        NSIndexSet *silent = [cues indexesOfObjectsPassingTest:^BOOL(BrowserSubtitleCue *cue, NSUInteger index, BOOL *stop) {
+            double overlap = 0.0;
+            for (NSArray<NSNumber *> *range in speech) {
+                overlap += MAX(0.0, MIN(cue.end, range[1].doubleValue) - MAX(cue.start, range[0].doubleValue));
+            }
+            return overlap < MIN(0.3, 0.25 * (cue.end - cue.start));
+        }];
+        for (BrowserSubtitleCue *cue in [cues objectsAtIndexes:silent]) {
+            NSLog(@"%@ Silero: keine Sprache unter %.2f–%.2f s, verworfen: %@", kSubtitleLogPrefix, cue.start, cue.end, cue.text);
+        }
+        [cues removeObjectsAtIndexes:silent];
+    }
     if (context.length > 0) {
         // whisper schreibt gern den Kontext ab („Ich bin der Nal, das war schön“ in jedem Abschnitt): Sätze, die
         // vollständig im Kontext stehen, verwerfen (auch die Wiederholung des Überlappungsstücks).
@@ -913,9 +1007,9 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         // nur Abschnitte mit Sprache zählen (nicht Musik/Stille) und nicht die kurzen Teilabschnitte des Mithörens
         [self voteForDetectedLanguage:windowLanguage];
     }
-    NSLog(@"%@ Abschnitt %.1f s @ %.1f s: %lu Segmente in %.2f s (RTF %.2f, Schnitt %.2f), ctx %d, Kontext %lu Z., Sprache %@%@, Speicher %.0f MB%@%@",
+    NSLog(@"%@ Abschnitt %.1f s @ %.1f s: %lu Segmente in %.2f s (RTF %.2f, Schnitt %.2f), ctx %d, Silero %ld Stücke, Kontext %lu Z., Sprache %@%@, Speicher %.0f MB%@%@",
           kSubtitleLogPrefix, seconds, startTime, (unsigned long)cues.count, compute, compute / seconds,
-          self.averageRealTimeFactor, params.audio_ctx, (unsigned long)context.length, self.detectedLanguage,
+          self.averageRealTimeFactor, params.audio_ctx, speech != nil ? (long)speech.count : -1L, (unsigned long)context.length, self.detectedLanguage,
           translateFrom != nil ? [NSString stringWithFormat:@" (erkannt %@, Apple-Übersetzung folgt)", translateFrom] : @"",
           [BrowserSubtitleEngine currentMemoryFootprintMB],
           cues.count > 0 ? @" – " : @"", cues.count > 0 ? [[cues valueForKey:@"text"] componentsJoinedByString:@" | "] : @"");
