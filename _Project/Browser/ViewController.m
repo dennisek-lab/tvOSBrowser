@@ -105,6 +105,9 @@ static NSString * const kBrowserSiriCommandNotification = @"BrowserSiriCommandNo
 @end
 
 #import <mach/mach.h>
+#import <sys/resource.h>
+extern int proc_pid_rusage(int pid, int flavor, rusage_info_t *buffer); // libproc, im tvOS-SDK ohne Header
+#import <os/proc.h>
 
 /// Eigener Speicher (phys_footprint wie `footprint`/Jetsam) in MB, -1 bei Fehler.
 static double BrowserSelfTestFootprintMB(void) {
@@ -999,6 +1002,44 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
               [alive componentsJoinedByString:@","], (unsigned long)proxySessionCount,
               (unsigned long)processes, (unsigned long)active,
               NSStringFromClass(self.presentedViewController.class), self.webview.request.URL.host ?: @"-");
+        return YES;
+    }
+    if ([step isEqualToString:@"memsys"]) {
+        // Systemspeicher (alle Prozesse) und Speicher der Seitenprozesse je Tab, soweit die Sandbox es erlaubt.
+        vm_statistics64_data_t vm;
+        mach_msg_type_number_t vmCount = HOST_VM_INFO64_COUNT;
+        vm_size_t pageSize = 0;
+        host_page_size(mach_host_self(), &pageSize);
+        double mb = pageSize / (1024.0 * 1024.0);
+        NSString *system = @"-";
+        if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm, &vmCount) == KERN_SUCCESS) {
+            system = [NSString stringWithFormat:@"frei %.0f aktiv %.0f inaktiv %.0f fest %.0f komprimiert %.0f spekulativ %.0f MB",
+                      vm.free_count * mb, vm.active_count * mb, vm.inactive_count * mb, vm.wire_count * mb,
+                      vm.compressor_page_count * mb, vm.speculative_count * mb];
+        }
+        NSMutableArray<NSString *> *pages = [NSMutableArray array];
+        NSDictionary *webViews = [self.tabCoordinator valueForKey:@"webViewsByTabIdentifier"];
+        for (NSUInteger index = 0; index < self.viewModel.tabs.count; index++) {
+            BrowserTabViewModel *tab = self.viewModel.tabs[index];
+            BrowserWebView *webView = webViews[tab.identifier];
+            id runtimeWebView = [webView valueForKey:@"runtimeWebView"];
+            SEL pidSelector = NSSelectorFromString(@"_webProcessIdentifier");
+            pid_t pid = [runtimeWebView respondsToSelector:pidSelector] ? ((pid_t (*)(id, SEL))objc_msgSend)(runtimeWebView, pidSelector) : 0;
+            NSString *footprint = @"?";
+            if (pid > 0) {
+                struct rusage_info_v4 usage;
+                if (proc_pid_rusage(pid, RUSAGE_INFO_V4, (rusage_info_t *)&usage) == 0) {
+                    footprint = [NSString stringWithFormat:@"%.0f MB", usage.ri_phys_footprint / (1024.0 * 1024.0)];
+                } else {
+                    footprint = [NSString stringWithFormat:@"errno %d", errno];
+                }
+            }
+            [pages addObject:[NSString stringWithFormat:@"%lu:%@ %@ pid %d %@", (unsigned long)index,
+                              (NSInteger)index == self.viewModel.activeTabIndex ? @"*" : @"",
+                              webView == nil ? @"entladen" : (webView.request.URL.host ?: @"-"), pid, footprint]];
+        }
+        NSLog(@"[SelfTest] memsys App %.1f MB, Reserve App %.0f MB, System %@ | Tabs %@", BrowserSelfTestFootprintMB(),
+              os_proc_available_memory() / (1024.0 * 1024.0), system, [pages componentsJoinedByString:@" | "]);
         return YES;
     }
     if ([step isEqualToString:@"memwarn"]) {
