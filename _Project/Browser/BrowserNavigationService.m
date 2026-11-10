@@ -94,6 +94,11 @@ static NSUInteger const kMaximumHistoryCount = 100;
     if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) {
         return YES;
     }
+    // 102 (WebKitErrorDomain): Navigation per Richtlinie abgebrochen, z. B. beim Kennungswechsel für YouTube
+    // (BrowserWebView switchUserAgentIfNeededForRequest:), der dieselbe Adresse sofort neu lädt.
+    if ([error.domain isEqualToString:@"WebKitErrorDomain"] && error.code == 102) {
+        return YES;
+    }
     return error.code == 204;
 }
 

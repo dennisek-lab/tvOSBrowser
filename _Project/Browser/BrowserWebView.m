@@ -1596,6 +1596,59 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     return ((NSInteger (*)(id, SEL))objc_msgSend)(navigationAction, navigationTypeSelector);
 }
 
+/// YouTube-Hauptseiten (youtube.com samt Subdomains, youtu.be).
+static BOOL BrowserIsYouTubeHost(NSString *host) {
+    NSString *lower = host.lowercaseString;
+    if (lower.length == 0) {
+        return NO;
+    }
+    return [lower isEqualToString:@"youtube.com"] || [lower hasSuffix:@".youtube.com"] || [lower isEqualToString:@"youtu.be"];
+}
+
+/// Kennung, mit der eine Hauptseite geladen werden soll. YouTube spielt im Web nur über Media Source Extensions ab;
+/// die fehlen in WebKit unter tvOS (`MediaSource` und `ManagedMediaSource` sind undefiniert, die privaten Prefs
+/// `_setMediaSourceEnabled:` wirken nicht). Mit Mac-Kennung meldet YouTube deshalb „Dieses Video kann in deinem Browser
+/// nicht abgespielt werden“. Mit iPhone-Kennung liefert m.youtube.com eine fertige MP4-Datei (itag 18, 360p), die
+/// WebKit und der native Player abspielen (Gerätetest 10. November 2026). Abschalten: `YouTubeMobileUserAgent` = NO.
+- (NSString *)effectiveUserAgentForURL:(NSURL *)url {
+    NSNumber *enabled = [NSUserDefaults.standardUserDefaults objectForKey:@"YouTubeMobileUserAgent"];
+    if ((enabled == nil || enabled.boolValue) && BrowserIsYouTubeHost(url.host)) {
+        return BrowserPreferencesStore.mobileUserAgent;
+    }
+    return self.userAgent ?: @"";
+}
+
+/// Passt die Kennung der WebView vor einer Hauptseiten-Navigation an (YouTube rein oder raus). Gibt YES zurück, wenn die
+/// Navigation abgebrochen und mit der neuen Kennung neu gestartet wird. Nur für GET ohne Inhalt; Formulare laufen mit
+/// der bisherigen Kennung weiter.
+- (BOOL)switchUserAgentIfNeededForRequest:(NSURLRequest *)request {
+    NSString *scheme = request.URL.scheme.lowercaseString;
+    if (!([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])) {
+        return NO;
+    }
+    if ((request.HTTPMethod.length > 0 && ![request.HTTPMethod.uppercaseString isEqualToString:@"GET"]) ||
+        request.HTTPBody != nil || request.HTTPBodyStream != nil) {
+        return NO;
+    }
+    SEL getter = NSSelectorFromString(@"customUserAgent");
+    SEL setter = NSSelectorFromString(@"setCustomUserAgent:");
+    if (![self.runtimeWebView respondsToSelector:getter] || ![self.runtimeWebView respondsToSelector:setter]) {
+        return NO;
+    }
+    NSString *current = ((id (*)(id, SEL))objc_msgSend)(self.runtimeWebView, getter) ?: @"";
+    NSString *wanted = [self effectiveUserAgentForURL:request.URL];
+    if ([current isEqualToString:wanted]) {
+        return NO;
+    }
+    ((void (*)(id, SEL, id))objc_msgSend)(self.runtimeWebView, setter, wanted.length > 0 ? wanted : nil);
+    NSLog(@"[UserAgent] %@: %@ (lade neu)", request.URL.host ?: @"-",
+          BrowserIsYouTubeHost(request.URL.host) ? @"iPhone-Kennung für YouTube (kein MSE unter tvOS)" : @"normale Kennung");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self loadRequest:request];
+    });
+    return YES;
+}
+
 - (void)webView:(id)webView decidePolicyForNavigationAction:(id)navigationAction decisionHandler:(void (^)(NSInteger policy))decisionHandler {
     NSURLRequest *request = [self requestFromNavigationAction:navigationAction];
     NSInteger navigationType = [self navigationTypeFromNavigationAction:navigationAction];
@@ -1615,6 +1668,12 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
         shouldAllow = [self.delegate webView:self shouldStartLoadWithRequest:request navigationType:navigationType];
     }
 
+    if (shouldAllow && isMainFrameRequest && request != nil && [self switchUserAgentIfNeededForRequest:request]) {
+        if (decisionHandler != nil) {
+            decisionHandler(0);
+        }
+        return;
+    }
     if (shouldAllow && isMainFrameRequest && request != nil) {
         self.lastRequest = request;
         // Werbeblocker: Regelsätze für Seiten mit Ausnahme wegnehmen bzw. wieder anhängen, bevor geladen wird

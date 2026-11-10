@@ -1032,6 +1032,15 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
               NSStringFromClass(self.presentedViewController.class), self.webview.request.URL.host ?: @"-");
         return YES;
     }
+    if ([step hasPrefix:@"ua:"]) {
+        // Kennung nur für die aktive WebView setzen (customUserAgent); „{sc}“ steht für ein Semikolon, das sonst die
+        // Schritte trennt. Leer = zurück auf die Standardkennung.
+        NSString *userAgent = [[step substringFromIndex:3] stringByReplacingOccurrencesOfString:@"{sc}" withString:@";"];
+        id runtimeWebView = [self.webview valueForKey:@"runtimeWebView"];
+        [runtimeWebView setValue:userAgent.length > 0 ? userAgent : self.preferencesStore.userAgent forKey:@"customUserAgent"];
+        NSLog(@"[SelfTest] ua %@", [runtimeWebView valueForKey:@"customUserAgent"]);
+        return YES;
+    }
     if ([step isEqualToString:@"memsys"]) {
         // Systemspeicher (alle Prozesse) und Speicher der Seitenprozesse je Tab, soweit die Sandbox es erlaubt.
         vm_statistics64_data_t vm;
