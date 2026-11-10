@@ -1,3 +1,6 @@
 Whisper-Modelle (ggml-*.bin) für die automatischen Untertitel.
-Nicht im Git; laden mit tools/fetch_whisper_model.sh (Standard: ggml-base-q5_1.bin, mehrsprachig;
-für bessere englische Untertitel zusätzlich base.en-q5_1).
+Nicht im Git; laden mit tools/fetch_whisper_model.sh:
+  small-q5_1      Standard, wenn vorhanden (genauer, ~181 MB; pref SubtitlesModel=base nimmt base)
+  base-q5_1       mehrsprachig, Rückfall (~57 MB)
+  base.en-q5_1    nur Englisch (~57 MB)
+  silero-v6.2.0   Silero-VAD (~0,9 MB): überspringt Stücke ohne Sprache, verwirft erfundene Untertitel

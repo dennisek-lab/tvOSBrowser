@@ -44,6 +44,7 @@
 #import "BrowserWhisperSpeechRecognizer.h"
 #import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
+#import "BrowserFilterListUpdater.h"
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
 /// Spike Siri-Steuerung: BrowserAppIntents.swift schickt Befehle über diese Notification (siehe docs/SIRI_STEUERUNG.md).
@@ -484,6 +485,17 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     BrowserWebView *previous = self.webview;
                     [self.tabCoordinator switchToTabAtIndex:index];
                     [self activeWebViewChangedFrom:previous];
+                    return;
+                }
+                if ([step isEqualToString:@"filtercheck"]) {
+                    // Wie Seitenleiste → „Filterlisten aktualisieren“ (Menüeintrag ruft dasselbe auf), Meldung statt Dialog.
+                    BrowserFilterListUpdater *updater = [BrowserFilterListUpdater sharedUpdater];
+                    NSLog(@"[SelfTest] filtercheck Stand %@, prüft=%d", [BrowserFilterListUpdater displayStringForDate:updater.activeListsDate],
+                          updater.isChecking);
+                    [updater checkNowWithCompletion:^(BOOL updated, NSString *message) {
+                        NSLog(@"[SelfTest] filtercheck fertig: neu=%d, Meldung „%@“, Stand jetzt %@", updated, message,
+                              [BrowserFilterListUpdater displayStringForDate:updater.activeListsDate]);
+                    }];
                     return;
                 }
                 if ([step isEqualToString:@"tabexpire"]) {

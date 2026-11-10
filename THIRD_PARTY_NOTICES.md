@@ -45,3 +45,15 @@
   Peter Lowes Liste und URLhaus nach den Bedingungen der jeweiligen Anbieter.
 
 Hinweis: Die GPL-3.0-Bestandteile verlangen bei Weitergabe der App die Weitergabe des Quelltexts unter GPL-3.0.
+
+## whisper.cpp 1.9.5 (ggml)
+
+- Zweck: Spracherkennung der automatischen Untertitel (`vendor/whisper.xcframework`, statisch gelinkt, mit Metal-Kernen `vendor/whisper-metal`).
+- Quelle: https://github.com/ggml-org/whisper.cpp (Tag v1.9.5, gebaut mit `tools/build_whisper.sh`)
+- Lizenz: MIT, Text in `vendor/licenses/whisper.cpp-LICENSE-MIT.txt`
+
+## Whisper-Modelle (OpenAI) und Silero VAD
+
+- Zweck: Modelle im App-Paket (`_Project/Browser/WhisperModels/`, nicht im Git, `tools/fetch_whisper_model.sh`): `ggml-small-q5_1.bin` (Standard), `ggml-base-q5_1.bin`, `ggml-base.en-q5_1.bin`; `ggml-silero-v6.2.0.bin` erkennt, wo gesprochen wird.
+- Quellen: https://github.com/openai/whisper (ggml-Umwandlung https://huggingface.co/ggerganov/whisper.cpp), https://github.com/snakers4/silero-vad (ggml-Umwandlung https://huggingface.co/ggml-org/whisper-vad)
+- Lizenz: jeweils MIT, Texte in `vendor/licenses/whisper-models-LICENSE-MIT.txt` und `vendor/licenses/silero-vad-LICENSE-MIT.txt`

@@ -1328,6 +1328,7 @@ Nur **DEBUG**-Builds (`#if DEBUG` in `ViewController.m`, `runPointerSelfTestIfRe
 | `steporder` | Reihenfolge der Sprungziele (Zeilen) ausgeben | `steporder <Rechtecke in Sprungreihenfolge>` |
 | `tabinfo` | Tabs mit `benutzt`, Alter, Titel, Adresse; Ablaufzeit und Einblendung | `tabinfo N Tabs, aktiv i, Ablauf s, Einblendung …` |
 | `tab:N`, `closetab` | zu Tab *N* wechseln (zählt als benutzt) bzw. aktiven Tab schließen | `wechsle zu Tab N`, `closetab tabs=N` |
+| `filtercheck` | Filterlisten sofort prüfen wie Seitenleiste → „Filterlisten aktualisieren“ (Meldung ins Log statt Dialog) | `filtercheck Stand …`, `[FilterLists] …`, `filtercheck fertig: neu=0/1, Meldung „…“` |
 | `tabexpire` | Ablaufprüfung sofort ausführen | `[Tabs] unbenutzten Tab automatisch geschlossen …` |
 | `popuppoint`, `popupjump` | Zeiger auf die Pop-up-Einblendung setzen (danach `click`) bzw. direkt zum Pop-up-Tab springen | `popuppoint {{x, y}, {w, h}}`, `[Popup] Sprung zum Hintergrund-Tab N` |
 | `cmd:<name>[\|<arg>]` | Befehl direkt über den Router (alle Namen aus `BrowserCommand`, z. B. `cmd:reader\|on`, `cmd:seek\|-10`, `cmd:open\|heise.de`) | `cmd …`, `[Command] <name> arg=… quelle=selbsttest ok\|nicht möglich\|unbekannt („Rückmeldung“)` |
