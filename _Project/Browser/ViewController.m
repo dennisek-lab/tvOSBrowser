@@ -40,6 +40,7 @@
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "BrowserSpeechRecognizerStub.h"
+#import "BrowserAppleSpeechTranscriber.h"
 #import "BrowserWhisperSpeechRecognizer.h"
 #import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
@@ -723,6 +724,12 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                         [defaults removeObjectForKey:key];
                     }
                     NSLog(@"[SelfTest] pref %@ = %@ (%@)", key, value ?: @"(gelöscht)", value != nil ? NSStringFromClass([value class]) : @"–");
+                    return;
+                }
+                if ([step isEqualToString:@"speechprobe"]) {
+                    // Apples Spracherkennung für Untertitel (BrowserAppleSpeechTranscriber, 10.10): Verfügbarkeit,
+                    // Sprachen, Pakete (lädt en bei Bedarf), 5 s Testton erkennen. Log [AppleSpeech] speechprobe …
+                    [BrowserAppleSpeechTranscriber runProbeWithCompletion:nil];
                     return;
                 }
                 if ([step isEqualToString:@"speech"]) {
@@ -2403,11 +2410,18 @@ static NSString *BrowserDisplayHost(NSString *host) {
         self.webSubtitleRecognizerHint = nil;
         return;
     }
+    // Apples Spracherkennung (SubtitlesRecognizer=apple): whisper läuft auf „auto“ (nur Sprache, Rückfall).
+    NSString *whisperWanted = [BrowserAppleSpeechTranscriber whisperLanguageForSubtitleLanguage:wanted];
     if ([current isKindOfClass:BrowserWhisperSpeechRecognizer.class]
-        && [((BrowserWhisperSpeechRecognizer *)current).language isEqualToString:wanted]) {
+        && [((BrowserWhisperSpeechRecognizer *)current).language isEqualToString:whisperWanted]) {
+        BrowserAppleSpeechTranscriber *apple = controller.appleSpeech;
+        BOOL usable = [BrowserAppleSpeechTranscriber isUsable];
+        if (usable ? (apple == nil || ![apple.subtitleLanguage isEqualToString:wanted]) : apple != nil) {
+            [self attachAppleSpeechToWebSubtitleController:controller language:wanted whisper:(BrowserWhisperSpeechRecognizer *)current];
+        }
         return;
     }
-    BrowserWhisperSpeechRecognizer *whisper = [[BrowserWhisperSpeechRecognizer alloc] initWithLanguage:wanted];
+    BrowserWhisperSpeechRecognizer *whisper = [[BrowserWhisperSpeechRecognizer alloc] initWithLanguage:whisperWanted];
     if (whisper == nil) {
         NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: @"nicht verfügbar";
         NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@): Platzhalter-Erkennung, zeigt nur den Pegel", reason, wanted);
@@ -2429,6 +2443,18 @@ static NSString *BrowserDisplayHost(NSString *host) {
         [controller stop];
     }
     controller.recognizer = whisper;
+    [self attachAppleSpeechToWebSubtitleController:controller language:wanted whisper:whisper];
+}
+
+/// Weg B: Apples Spracherkennung vor whisper schalten (nil, wenn nicht eingestellt oder nicht verfügbar).
+- (void)attachAppleSpeechToWebSubtitleController:(BrowserWebSubtitleController *)controller language:(NSString *)language
+                                         whisper:(BrowserWhisperSpeechRecognizer *)whisper {
+    BrowserAppleSpeechTranscriber *apple = [BrowserAppleSpeechTranscriber transcriberForSubtitleLanguage:language];
+    __weak BrowserWhisperSpeechRecognizer *weakWhisper = whisper;
+    apple.spokenLanguageProvider = ^NSString *{
+        return weakWhisper.lockedLanguage;
+    };
+    controller.appleSpeech = apple;
 }
 
 /// Hinweis, wenn statt whisper nur der Platzhalter läuft (einmal je Einschalten).

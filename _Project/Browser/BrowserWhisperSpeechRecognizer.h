@@ -39,6 +39,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// Wird auf dem Hauptthread gerufen, wenn das Laden fertig ist (`message` deutsch, für einen Hinweis).
 @property (nonatomic, copy, nullable) void (^loadHandler)(BOOL loaded, NSString *message);
 
+/// Bei „auto“: von whisper festgelegte gesprochene Sprache (Engine-`lockedLanguage`), sonst nil. Threadsicher.
+/// Für Apples Spracherkennung (BrowserAppleSpeechTranscriber), die whisper nur die Sprache bestimmen lässt.
+@property (nonatomic, readonly, nullable) NSString *lockedLanguage;
+
 /// Echtzeitfaktor (Rechenzeit / Audiodauer) seit dem Anlegen, über Neuladen hinweg.
 @property (nonatomic, readonly) double averageRealTimeFactor;
 

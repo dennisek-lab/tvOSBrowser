@@ -94,6 +94,8 @@
 		B6187A3DDA79B2A1F2FF8855 /* BrowserIntelligence.m in Sources */ = {isa = PBXBuildFile; fileRef = 6687C8C05FB1D21CAAB76E03 /* BrowserIntelligence.m */; };
 		8FFB577CAA8EACB8C4191E1A /* BrowserIntelligenceController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */; };
 		A8F4F24798AE6D03A09DCC13 /* BrowserSpeechProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */; };
+		AA5E0C11A2D94F3E8C6B1A01 /* BrowserAppleSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5E0C11A2D94F3E8C6B1A02 /* BrowserAppleSpeechRecognizer.swift */; };
+		AA5E0C11A2D94F3E8C6B1A05 /* BrowserAppleSpeechTranscriber.m in Sources */ = {isa = PBXBuildFile; fileRef = AA5E0C11A2D94F3E8C6B1A04 /* BrowserAppleSpeechTranscriber.m */; };
 		B7A1C0DE5E1F000A0B0001B1 /* BrowserPerfProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */; };
 		B7A1C0DE5E1F000A0B0001C1 /* BrowserSetupViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */; };
 		41121CB5A9779EEE09249717 /* BrowserFilterListUpdater.m in Sources */ = {isa = PBXBuildFile; fileRef = 68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */; };
@@ -250,6 +252,9 @@
 		FD9D1B2F0C5D6753C240B6AF /* BrowserIntelligenceController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserIntelligenceController.h; sourceTree = "<group>"; };
 		2CD19F83298E91A9D0B28900 /* BrowserIntelligenceController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserIntelligenceController.m; sourceTree = "<group>"; };
 		18F956227AA125DE192081EB /* BrowserSpeechProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSpeechProbe.swift; sourceTree = "<group>"; };
+		AA5E0C11A2D94F3E8C6B1A02 /* BrowserAppleSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAppleSpeechRecognizer.swift; sourceTree = "<group>"; };
+		AA5E0C11A2D94F3E8C6B1A03 /* BrowserAppleSpeechTranscriber.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAppleSpeechTranscriber.h; sourceTree = "<group>"; };
+		AA5E0C11A2D94F3E8C6B1A04 /* BrowserAppleSpeechTranscriber.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAppleSpeechTranscriber.m; sourceTree = "<group>"; };
 		B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPerfProbe.m; sourceTree = "<group>"; };
 		B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserSetupViewController.m; sourceTree = "<group>"; };
 		B7A1C0DE5E1F00F0A0B00F12 /* BrowserSetupViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSetupViewController.h; sourceTree = "<group>"; };
@@ -424,6 +429,9 @@
 				D2926EB22449E26DFD3DA52B /* BrowserSubtitlePipeline.m */,
 				5B7E0C11A2D94F3E8C6B1A02 /* BrowserSubtitleTranslator.h */,
 				5B7E0C11A2D94F3E8C6B1A03 /* BrowserSubtitleTranslator.m */,
+				AA5E0C11A2D94F3E8C6B1A03 /* BrowserAppleSpeechTranscriber.h */,
+				AA5E0C11A2D94F3E8C6B1A04 /* BrowserAppleSpeechTranscriber.m */,
+				AA5E0C11A2D94F3E8C6B1A02 /* BrowserAppleSpeechRecognizer.swift */,
 				6667D3AD6471CF9FA5795A21 /* BrowserSubtitleOverlayView.h */,
 				835800490609130CADA87A53 /* BrowserSubtitleOverlayView.m */,
 				C1754F1779B9A4E553C67233 /* BrowserSubtitleController.h */,
@@ -711,6 +719,8 @@
 				E01CCF2A23F3C37ABE810405 /* BrowserSubtitleProgressiveAudioSource.m in Sources */,
 				03DBEE619B0CC8A818BB26C5 /* BrowserSubtitlePipeline.m in Sources */,
 				5B7E0C11A2D94F3E8C6B1A01 /* BrowserSubtitleTranslator.m in Sources */,
+				AA5E0C11A2D94F3E8C6B1A05 /* BrowserAppleSpeechTranscriber.m in Sources */,
+				AA5E0C11A2D94F3E8C6B1A01 /* BrowserAppleSpeechRecognizer.swift in Sources */,
 				6EA76B994CB90DF96E3DC23C /* BrowserSubtitleAudioTapSource.m in Sources */,
 				68F5CE70BB905B53EEF0C049 /* BrowserSubtitleEngine.m in Sources */,
 				C9054E240DAB11DFB85943EA /* BrowserMotion.m in Sources */,
