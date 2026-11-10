@@ -1,17 +1,17 @@
 tvOS Browser
 =============
 
-![App-Icon](/docs/icon/preview.png?raw=true "App-Icon im Liquid-Glass-Stil")
+Ein Webbrowser für das Apple TV (tvOS 17 bis 27) mit **Magnetic Buttons**, Liquid-Glass-Oberfläche, Zeigersteuerung über das Clickpad, Werbe- und Cookie-Blocker, nativem Videoplayer, Apples Übersetzung für Webseiten und automatischen Untertiteln, die auf dem Gerät entstehen.
 
-Ein Webbrowser für das Apple TV (tvOS 17 bis 27) mit **Magnetic Buttons**, Liquid-Glass-Oberfläche, Zeigersteuerung über das Clickpad, Werbe- und Cookie-Blocker, nativem Videoplayer und lokalen Untertiteln.
+![Startseite mit Liquid-Glass-Leiste](/screen01.png?raw=true "Startseite (Google) mit Liquid-Glass-Leiste, Zeiger und Leuchten um das Suchfeld")
 
-Die App nutzt **private APIs** (WebKit wird zur Laufzeit geladen). Apple erlaubt das im App Store nicht. Sie ist nur zum Selbstbauen gedacht – bitte keine Builds im App Store veröffentlichen. Keine Gewähr, Nutzung auf eigenes Risiko.
+![Webseite mit Magnetic-Hervorhebung](/screen02.png?raw=true "Magnetic Buttons: der Zeiger ist auf einem Link der Navigationsleiste eingerastet")
 
-Dieses Repo ist eine stark erweiterte Fassung des ursprünglichen tvOS Browser (siehe Git-Historie und `THIRD_PARTY_NOTICES.md`).
+![Seitenleiste](/screen03.png?raw=true "Seitenleiste (•••) mit „Diese Seite“ und „Navigation“")
 
-![Leiste mit Regenbogen-Leuchten](/docs/glow-screens/glow-hell.png?raw=true "Adressleiste mit Leuchten")
+Die App nutzt **private APIs** (WebKit wird zur Laufzeit geladen, die Übersetzung läuft über private Klassen von Apples Translation-Framework). Apple erlaubt das im App Store nicht. Sie ist nur zum Selbstbauen gedacht – bitte keine Builds im App Store veröffentlichen. Keine Gewähr, Nutzung auf eigenes Risiko.
 
-![Zusammenfassung](/docs/ai-screens/zusammenfassung-heise-de.png?raw=true "Zusammenfassen einer Seite")
+Dieses Repo ist eine stark erweiterte Fassung des ursprünglichen [tvOS Browser](https://github.com/jvanakker/tvOSBrowser) von jvanakker (siehe Git-Historie und `THIRD_PARTY_NOTICES.md`). Bildschirmfotos der ursprünglichen Fassung liegen unter `docs/original-screens/`.
 
 
 Einrichten
@@ -19,11 +19,21 @@ Einrichten
 
 Es gibt **keine** fertige App zum Herunterladen. Du brauchst einen Mac mit Xcode (getestet mit Xcode 27, tvOS-SDK 27.2) und ein Apple TV im selben Netz.
 
-1. Apple TV einmalig mit Xcode koppeln (in Xcode 27 über die Geräteverwaltung; das Apple TV zeigt dabei einen Code an).
-2. Im Finder doppelt auf **`Installieren.command`** klicken. Das Skript holt den neuesten Stand (`git pull`), prüft Xcode, lädt bei Bedarf die Whisper-Modelle, baut die App, spielt sie auf und nennt das Ablaufdatum des Profils (mit kostenlosem Apple-Account 7 Tage, danach neu aufspielen).
-3. Alternativ von Hand: `_Project/Browser.xcodeproj` öffnen, Schema *Browser*, eigenes Team unter *Signing* wählen, auf das Apple TV ausführen.
+1. **Apple TV einmalig koppeln:** Am Apple TV *Einstellungen → Fernbedienungen und Geräte → Fernbedienungs-App und Geräte* öffnen und offen lassen. In Xcode 27 im Device Hub *File → Pair Nearby Device…* wählen; das Apple TV zeigt einen Code an.
+2. Im Finder doppelt auf **`Installieren.command`** klicken. Das Skript holt den neuesten Stand (`git pull`), prüft Xcode, lädt bei Bedarf das Whisper-Modell, baut die App, spielt sie auf und nennt das Ablaufdatum des Profils (mit kostenlosem Apple-Account 7 Tage, danach neu aufspielen).
+3. Alternativ von Hand: `_Project/Browser.xcodeproj` öffnen, Schema *Browser*, auf das Apple TV ausführen.
 
 Optionen des Skripts: `--nur-bauen`, `--geraete`, `--kein-pull`, `--debug`, `--starten`/`--nicht-starten`, `UDID=…`.
+
+**Eigenes Team:** Im Projekt sind ein festes Team und die Bundle-ID `io.github.tvosbrowser.app` eingetragen. Wer mit eigener Apple-ID baut, trägt in Xcode beim Ziel *Browser* eine eigene Bundle-ID und unter *Signing & Capabilities* das eigene Team ein (Bilder aus einer älteren Xcode-Fassung, der Weg ist derselbe). `Installieren.command` startet die App über die Variable `BUNDLE_ID` oben im Skript; die muss dann mitgeändert werden.
+
+![Bundle-ID ändern](/readme_instruction_01.png?raw=true "Bundle Identifier auf eine eigene Kennung ändern")
+
+![Team ändern](/readme_instruction_02.png?raw=true "Unter Signing & Capabilities das eigene Team wählen")
+
+**Erster Start:** Eine kurze Einrichtung führt durch Favoriten, Startseite, Schutz (Werbeblocker, Cloudflare-DNS, Cookie-Banner), Videos (Apple-Player, automatische Untertitel, Untertitel in der Webseite) und Design (Liquid Glass oder alt). „Überspringen“ übernimmt die Vorbelegung (bei einer frischen Installation alles an, Liquid Glass). Danach erscheint die Bedienungshilfe. Nach Updates erscheint einmal „Was ist neu“. Alles ist unter *••• → Hilfe* jederzeit abrufbar, die Einrichtung dort als „Einrichtung wiederholen“.
+
+![Ersteinrichtung](/docs/readme-screens/ersteinrichtung.png?raw=true "Ersteinrichtung beim ersten Start")
 
 
 Bedienung
@@ -31,36 +41,52 @@ Bedienung
 
 | Taste / Geste | Wirkung |
 |:--|:--|
-| Über das Clickpad wischen | Zeiger bewegen; Magnetic Buttons: er rastet weich auf Links und Knöpfen ein (mit Leuchten) |
+| Über das Clickpad wischen | Zeiger bewegen. Magnetic Buttons: er rastet weich auf Links und Knöpfen ein (mit Leuchten) |
 | Clickpad drücken | Klicken |
 | Clickpad oben / unten drücken | Scrollen. Zweimal oben: Adressleiste. Zweimal unten: Leiste verkleinern |
-| Clickpad links / rechts drücken | Von Knopf zu Knopf springen, ein Druck = ein Knopf; halten springt weiter. Zweimal rechts: Menü (•••). Im Video 10 s spulen |
+| Clickpad links / rechts drücken | Von Knopf zu Knopf springen, ein Druck = ein Knopf; halten springt weiter. Zweimal rechts: Seitenleiste (•••). Im Video 10 s spulen |
 | Kreisbewegung am Rand | Von Element zu Element (auch mit der Fernbedienung im iPhone-Kontrollzentrum) |
-| Play/Pause | Video starten/stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü (•••) |
-| Menü-Taste | Adressleiste schließen, Reader beenden, dann eine Seite zurück |
-| Siri-Taste, TV-Taste | gehören dem System; Apps bekommen sie nicht |
+| Play/Pause | Video starten/stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Seitenleiste (•••) |
+| Menü-Taste | Dialog bzw. Adressleiste schließen, Reader beenden, dann eine Seite zurück |
+| Siri-Taste kurz zweimal | Seite übersetzen, nochmal zweimal: Übersetzung beenden. Steht gerade der Pop-up-Hinweis: zum Pop-up-Tab. Einmal drücken bewirkt nichts |
+| Siri-Taste halten | Im Adressfeld: Diktat (Adresse, Suchbegriff oder Sprachbefehl) |
+| TV-Taste, Lautstärke, Siri außerhalb von Textfeldern halten | gehören dem System; Apps bekommen sie nicht |
 
-**Adressleiste:** Ein Druck auf die Leiste (oder zweimal oben) öffnet die Tastatur direkt unter der Leiste, darunter Favoriten, oft besuchte und zuletzt besuchte Seiten. Ohne weiteren Klick die Siri-Taste halten und eine Adresse, einen Suchbegriff oder einen **Sprachbefehl** sagen, z. B. „Reader“, „zurück“, „neuer Tab“, „suche Wetter“, „öffne heise punkt de“, „30 Sekunden zurück“, „fasse zusammen“, „übersetzen“.
+Die Siri-Taste ist für Apps offiziell nicht abfragbar. Die App erkennt einen kurzen Siri-Druck daran, dass tvOS ihn als sehr kurzen Druck nach rechts ohne Klick des Clickpads meldet. Am Apple TV ist das noch nicht vollständig durchgetestet (`docs/GERAETETEST.md`, Abschnitt 3).
+
+**Adressleiste:** Ein Druck auf die Leiste (oder zweimal oben) öffnet die Tastatur direkt unter der Leiste, darunter Favoriten, oft besuchte und zuletzt besuchte Seiten. Ohne weiteren Klick die Siri-Taste halten und eine Adresse, einen Suchbegriff oder einen **Sprachbefehl** sagen, z. B. „Reader“, „zurück“, „neuer Tab“, „suche Wetter“, „öffne heise punkt de“, „30 Sekunden zurück“, „fasse zusammen“, „übersetzen“, „Übersetzung beenden“.
 
 **Texteingabe:** Bei jedem Textfeld bietet das iPhone eine Tastatur-Mitteilung an; darüber lassen sich auch Passwörter einfügen.
-
-Beim ersten Start führt eine kurze Einrichtung durch Favoriten, Startseite, Schutz (Werbeblocker, Cloudflare-DNS, Cookie-Banner), Videos (Apple-Player, automatische Untertitel) und Design (Liquid Glass oder alt), danach erscheint die Bedienungshilfe. Nach Updates erscheint einmal „Was ist neu“. Beide sind unter *••• → Hilfe* jederzeit abrufbar, die Einrichtung dort als „Einrichtung wiederholen“.
 
 
 Funktionen
 =============
 
-- **Magnetic Buttons:** das Herzstück dieser Fassung. Der Zeiger zieht sich auf Links und Knöpfe, sobald er in ihre Nähe kommt, und bleibt dort mit spürbarem Halt. Wischt man heraus, springt er zum nächsten Link in dieser Richtung, ein Ziel pro Wischgeste (nur lange, schnelle Wischer laufen weiter); frei wird er erst, wenn dort nichts mehr kommt. Das gewählte Element hebt sich als Glasfläche mit feiner Lichtkante ab, ohne Vergrößerung und ohne Glasbrechung, und wird von einem weichen, wandernden Regenbogen-Leuchten umrahmt (unter „Glow-Animation“ auch stehend); die Hervorhebung liegt eng am Element und übernimmt seine Form (Pille bleibt Pille, Kreis bleibt Kreis, eckige Knöpfe bleiben eckig; ohne eigene Rundung iOS-typisch abgerundet). Beim Wechsel ploppt die Hervorhebung am neuen Ziel auf, statt hinüberzugleiten. So lässt sich eine für Maus und Touch gebaute Webseite mit dem Clickpad bedienen wie eine tvOS-App.
-- **Oberfläche:** Leiste, Seitenleiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben (kontinuierlich, konzentrisch, Kapseln), animiertes Regenbogen-Leuchten um das gewählte Element. Seitenleiste in zwei Spalten mit großen Schaltflächen, Symbolen und Schaltern. Neue App-Icons mit Parallax-Ebenen.
-- **Was ist neu:** Beim ersten Start nach einem Update zeigt die App alle Neuerungen dieser Fassung, jederzeit unter *••• → Hilfe → Was ist neu*.
-- **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, Ausgleiten nach schnellem Wischen), moderne Zeigerbilder in drei Stilen.
-- **Tabs:** Tab-Übersicht mit Vorschaubildern, Sitzung bleibt nach Neustart erhalten. Pop-ups und Links, die ein neues Fenster öffnen, landen als Hintergrund-Tab; unten rechts erscheint kurz ein Hinweis, Klick darauf oder Play/Pause führt hin. Tabs, die man nie angesehen hat, schließen sich nach 30 Minuten von selbst.
+- **Magnetic Buttons:** das Herzstück dieser Fassung. Der Zeiger zieht sich auf Links und Knöpfe, sobald er in ihre Nähe kommt, und bleibt dort mit spürbarem Halt. Zum Nachbarknopf wechselt er erst, wenn der Finger etwa ein Fünftel der Clickpad-Breite gewischt hat, unabhängig von der Größe des Knopfs und vom Zeigertempo; ein Wechsel pro Wischgeste, nur lange, schnelle Wischer laufen weiter. Frei wird er erst, wenn in der Richtung nichts mehr kommt. Das gewählte Element hebt sich als Glasfläche mit feiner Lichtkante ab, ohne Vergrößerung und ohne Glasbrechung, und wird von einem weichen, wandernden Regenbogen-Leuchten umrahmt (unter „Glow-Animation“ auch stehend). Die Hervorhebung liegt eng am Element und übernimmt seine Form (Pille bleibt Pille, Kreis bleibt Kreis, eckige Knöpfe bleiben eckig; ohne eigene Rundung iOS-typisch abgerundet). Beim Wechsel ploppt sie am neuen Ziel auf, statt hinüberzugleiten. So lässt sich eine für Maus und Touch gebaute Webseite mit dem Clickpad bedienen wie eine tvOS-App.
+- **Oberfläche:** Leiste, Seitenleiste und Dialoge im Liquid-Glass-Stil (tvOS 26+), federnde Animationen, Ecken nach Apples Vorgaben (kontinuierlich, konzentrisch, Kapseln). Seitenleiste in zwei Spalten mit großen Schaltflächen, Symbolen und Schaltern. Bei Schaltern und Einstellwerten (Seitenzoom, Werbeblocker, Zeigertempo …) bleibt sie offen und zeigt den neuen Wert; Aktionen wie Neuer Tab, Favoriten, Übersetzen oder Obere Leiste schließen sie. Neue App-Icons mit Parallax-Ebenen.
+- **Altes Design:** Unter *••• → Ansicht & Wiedergabe → Design* lässt sich auf „Alt“ umschalten: graue Leiste, Symbole und Zeiger wie in der ursprünglichen Fassung, ohne Glas und ohne Liquid-Glass-Animationen. Das Umschalten wirkt sofort, ohne Neustart.
+- **Zeiger:** eigene Zeigerpipeline (Nachführung pro Bild, Glättung, kein Zurückhüpfen, kurzes Ausgleiten nach schnellem Wischen), moderne Zeigerbilder in drei Stilen. Zeigertempo in vier Stufen; die Zeigerbeschleunigung (schnelle Wischer tragen weiter) ist abschaltbar und steht als Standard auf „Aus“.
+- **Tabs:** Tab-Übersicht mit Vorschaubildern, Sitzung bleibt nach Neustart erhalten. Pop-ups und Links, die ein neues Fenster öffnen, landen als Hintergrund-Tab; unten rechts erscheint kurz ein Hinweis, Klick darauf, Play/Pause oder zweimal Siri führt hin. Tabs, die man nie angesehen hat, schließen sich nach 30 Minuten von selbst (abschaltbar).
+- **Startseite:** unter *••• → Navigation → Startseite festlegen* Google, ein Favorit, die aktuelle Seite oder eine eigene Adresse; sie erscheint beim Start der App.
 - **Reader-Modus:** Artikel ohne Ablenkung (Readability), Knopf links neben •••.
-- **Werbeblocker:** Filterlisten von uBlock Origin Lite als WebKit-Inhaltsregeln, dazu erweiterte Regeln (Scriptlets, prozedurales CSS) je Seite. Erkennt eine Seite den Blocker und sperrt sie (z. B. bild.de), wird für diese Seite automatisch eine Ausnahme gesetzt. Die Listen aktualisieren sich ohne App-Update: Ein GitHub-Workflow baut sie täglich neu, die App holt höchstens einmal am Tag den neuen Stand (geprüft per SHA-256, umgeschaltet erst nach erfolgreichem Kompilieren; sonst bleiben die bisherigen bzw. mitgelieferten Listen).
+- **Werbeblocker:** Filterlisten von uBlock Origin Lite als WebKit-Inhaltsregeln, dazu erweiterte Regeln (Scriptlets, prozedurales CSS) je Seite. Erkennt eine Seite den Blocker und sperrt sie (z. B. bild.de), wird für diese Seite automatisch eine Ausnahme gesetzt. **Die Listen aktualisieren sich ohne App-Update:** Ein GitHub-Workflow baut sie täglich neu, die App holt höchstens einmal am Tag den neuen Stand (geprüft per SHA-256, umgeschaltet erst nach erfolgreichem Kompilieren; sonst bleiben die bisherigen bzw. mitgelieferten Listen). Stand und Aktualisieren unter *••• → Erweiterungen → Filterlisten aktualisieren*.
 - **Cookie-Banner:** werden automatisch abgelehnt (autoconsent). Bei „Zustimmen oder bezahlen“-Seiten wird optional zugestimmt.
-- **Video:** Videos lassen sich im nativen Player öffnen (mit Bild-in-Bild, Spulen, Metadaten, Rückschreiben der Position in die Seite), Steuerung auch über das iPhone (Now Playing). Bedienung wie in der TV-App: Klick pausiert, nach oben in die Transportleiste zu Untertitel-, Audio- und Untertitel-Erkennungs-Menü.
-- **Automatische Untertitel** (lokal mit whisper.cpp, GPU über Metal): im nativen Player und – über einen Ton-Abgriff per Web Audio – auch für Videos direkt in der Webseite. Die Sprache wird je Video erkannt und dann festgehalten (Standard „Automatisch“); fest wählbar im Player-Menü „Automatische Untertitel“ → „Sprache“ oder in den Einstellungen unter „Untertitelsprache“.
-- **Intelligente Funktionen** (lokal, NaturalLanguage): Seite zusammenfassen, Übersetzen über Google Translate mit Hinweis bei fremdsprachigen Seiten, „Frag die Seite“ („frag, wann wurde … vorgestellt“: passende Stelle wird markiert und angesprungen, Play/Pause springt zur nächsten). Sprachbefehle werden auch sinngemäß erkannt („lade die Seite nochmal“).
+- **Seiten übersetzen mit Apples Übersetzung:** Die Seite wird direkt im Dokument übersetzt, Absatz für Absatz, nachgeladene Teile beim Scrollen. Adresse, Cookies und Anmeldung bleiben, Formulare funktionieren weiter, „Übersetzung beenden“ stellt das Original ohne Neuladen wieder her. Die Seitenleiste zeigt den Weg an („Übersetzen – Apple“). Google Translate (translate.goog) ist nur noch Rückfall, wenn Apple das Sprachpaar nicht anbietet, der Dienst nicht erreichbar ist oder der erste Abschnitt scheitert. Bei fremdsprachigen Seiten erscheint ein Hinweis „Übersetzen?“, Play/Pause übersetzt. Auslöser außerdem: Seitenleiste, Sprachbefehl, Siri zweimal.
+
+  ![Apples Übersetzung](/docs/readme-screens/uebersetzung-apple.png?raw=true "Englische Wikipedia-Seite, von Apple direkt in der Seite übersetzt; die Adresse bleibt en.wikipedia.org")
+
+- **Video:** Videos lassen sich im nativen Player öffnen (mit Bild-in-Bild, Spulen, Metadaten, Rückschreiben der Position in die Seite), Steuerung auch über das iPhone (Now Playing). Bedienung wie in der TV-App: Klick pausiert, nach oben in die Transportleiste zu Untertitel-, Audio- und „Automatische Untertitel“-Menü.
+- **Automatische Untertitel** (lokal mit whisper.cpp, GPU über Metal): im nativen Player und – über einen Ton-Abgriff per Web Audio – auch für Videos direkt in der Webseite.
+  - **Wortgenaue Zeiten:** Die Zeitmarken kommen per DTW-Ausrichtung aus whisper; ein Untertitel beginnt am ersten gesprochenen Wort, lange Sätze werden an Satzenden geteilt. Gegen die offiziellen Untertitel von „Tears of Steel“ gemessen: Abweichung im Median 0,25 s im Simulator (Englisch), 0,38–0,46 s am Apple TV (Deutsch).
+  - **Untertitelsprache:** Standard „Automatisch“, dann erscheinen die Untertitel in der gesprochenen Sprache (je Video erkannt und festgehalten). Fest wählbar sind Deutsch, Englisch, Französisch, Spanisch, Italienisch, Niederländisch, Polnisch, Türkisch, Portugiesisch und Russisch, im Player-Menü „Automatische Untertitel“ → „Sprache“ oder in der Seitenleiste unter „Untertitelsprache“.
+  - **Übersetzte Untertitel:** Spricht das Video eine andere Sprache als die gewählte (z. B. englisches Video, Untertitel Deutsch), erkennt whisper in der gesprochenen Sprache und Apples Übersetzung macht daraus ganze Sätze in der Zielsprache, der vorige Satz geht als Zusammenhang mit. Offline oder bei Fehlern übersetzt whisper selbst wie früher; live kommt der Abschnitt dann im Original.
+
+  ![Untertitel mit Apples Übersetzung](/docs/ai-screens/untertitel-apple-uebersetzung.jpg?raw=true "Englisches Video (Tears of Steel), automatische Untertitel auf Deutsch")
+
+- **Intelligente Funktionen** (lokal, NaturalLanguage): Seite zusammenfassen, „Frag die Seite“ („frag, wann wurde … vorgestellt“: passende Stelle wird markiert und angesprungen, Play/Pause springt zur nächsten). Sprachbefehle werden auch sinngemäß erkannt („lade die Seite nochmal“).
+
+  ![Zusammenfassung](/docs/ai-screens/zusammenfassung-heise-de.png?raw=true "Zusammenfassen einer Seite")
+
 - **Siri:** App-Shortcuts sind eingebaut („Starte den Reader in tvOS Browser“). Ob Siri auf dem Apple TV sie auslöst, ist noch nicht bestätigt; die Sprachbefehle im Diktierfeld funktionieren unabhängig davon.
 - **DNS über Cloudflare** (DoH) für die Webansicht, abschaltbar.
 
@@ -68,26 +94,29 @@ Funktionen
 Einstellungen (•••)
 =============
 
-| Bereich | Schalter |
+| Bereich | Einträge |
 |:--|:--|
-| Diese Seite | Startseite öffnen, Zusammenfassen, Übersetzen, als Startseite setzen, Werbeblocker hier, Cookie-Banner hier ablehnen |
-| Navigation | Tabs, Neuer Tab, Favoriten, Verlauf, Unbenutzte Tabs nach 30 Min. schließen |
-| Erweiterungen | Werbeblocker, bei Sperre automatisch pausieren, Filterlisten aktualisieren (mit Stand), Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitelsprache (Automatisch, Deutsch, Englisch, Französisch, Spanisch, Italienisch, Niederländisch, Polnisch, Türkisch, Portugiesisch, Russisch), Untertitel (Webseite), Cloudflare-DNS |
-| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt: Leiste, Symbole und Zeiger wie im Original, ohne Glas), Glow-Animation (aus: stehender Verlauf; bei „Bewegung reduzieren“ immer stehend), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo, Zeiger gleitet aus, Seitenzoom, an Breite anpassen, Vollbild-Player, Schriftgröße |
+| Diese Seite | Zusammenfassen, Übersetzen bzw. Übersetzung beenden (mit Weg „Apple“ oder „Google“), Neu laden, Seitenzoom, Werbeblocker hier, Cookie-Banner hier ablehnen |
+| Navigation | Startseite öffnen, Startseite festlegen, Favoriten, Verlauf, Tabs anzeigen, Neuer Tab, Unbenutzte Tabs nach 30 Min. schließen |
+| Erweiterungen | Werbeblocker, Werbeblocker bei Sperre automatisch pausieren, Filterlisten aktualisieren (mit Stand), Cookie-Banner ablehnen, Bezahlschranken zustimmen, Native Player automatisch, Automatische Untertitel, Untertitelsprache (Automatisch, Deutsch, Englisch, Französisch, Spanisch, Italienisch, Niederländisch, Polnisch, Türkisch, Portugiesisch, Russisch), Untertitel (Webseite), Cloudflare-DNS |
+| Ansicht & Wiedergabe | Obere Leiste, Regenbogen-Leuchten, Design (Liquid Glass/Alt), Glow-Animation (aus: stehender Verlauf; bei „Bewegung reduzieren“ immer stehend), Liquid-Glass-Animationen, Zeiger (Dunkel/Hell/Symbol), Zeigertempo (Langsam/Normal/Schnell/Sehr schnell), Zeigerbeschleunigung (Standard aus), Zeiger gleitet aus, Vollbild-Player, Seite an Breite anpassen, Browser-Kennung (Desktop/Mobil), Schrift größer/kleiner/zurücksetzen |
 | Daten | Cache leeren, Cookies löschen |
-| Hilfe | Bedienung, Was ist neu |
-| Erweitert | Browser-Kennung (Desktop/Mobil), Medien-Diagnose, WebKit-Medieneinstellungen |
+| Hilfe | Einrichtung wiederholen, Bedienung, Was ist neu |
+| Erweitert | Medien-Diagnose, WebKit-Medieneinstellungen |
+
+Schalter und Einstellwerte lassen die Seitenleiste offen; Einträge, die navigieren oder einen Dialog öffnen, schließen sie.
 
 
-Bekannte Grenzen
+Hinweise und bekannte Grenzen
 =============
 
 - **Private APIs:** Nach jedem tvOS-Update kann etwas brechen. Die App neu aufspielen und die Checkliste in `docs/ERWEITERUNGEN.md` (Abschnitt 2) durchgehen.
 - **Kein App Store**, Profil mit kostenlosem Account läuft nach 7 Tagen ab.
 - **DRM-Videos** (Netflix & Co.) laufen nicht; Untertitel aus der Webseite gehen nicht bei DRM, nativem HLS oder fremden Servern ohne CORS-Freigabe.
 - **Passkeys** werden nicht unterstützt; Logins per Passwort funktionieren.
-- **Apple Intelligence** (Foundation Models, Übersetzung, Writing Tools) ist für Apps auf tvOS gesperrt; die intelligenten Funktionen laufen deshalb mit NaturalLanguage und sind einfacher (extraktive Zusammenfassung).
+- **Apple Intelligence:** Foundation Models, Writing Tools und die öffentliche Translation-API sind für Apps auf tvOS gesperrt. Das Zusammenfassen läuft deshalb mit NaturalLanguage und ist einfacher (extraktive Zusammenfassung). Übersetzt wird über private Klassen des Translation-Frameworks, und zwar nur online über Apples Server (Offline-Modelle lassen sich aus der App nicht laden); ohne Netz springt bei Seiten Google ein, bei Untertiteln whisper. Auf Apples Weg bekommen Apples Server den Text, Google sieht die Seite nicht; nur der Rückfall über translate.goog lädt die Seite über Google (ohne Cookies und Anmeldung der Originalseite).
 - **Siri** löst auf dem Apple TV nach bisherigem Stand keine eigenen Phrasen von Drittanbieter-Apps aus.
+- **Gerätetests:** Manche neuen Funktionen sind bisher nur im tvOS-Simulator geprüft. Was am Apple TV noch offen ist, steht in `docs/GERAETETEST.md`.
 - Whisper-Modelle (`_Project/Browser/WhisperModels/*.bin`) liegen nicht im Repo; `Installieren.command` bzw. `tools/fetch_whisper_model.sh` lädt sie.
 
 
@@ -96,7 +125,9 @@ Für Entwickler
 
 - `PLAN.md` – Plan und Stand aller Phasen
 - `docs/ERWEITERUNGEN.md` – alle Eigenbauten, Risiken, Selbsttests, Logpräfixe
+- `docs/GERAETETEST.md` – offene Punkte für den Test am Apple TV
 - `docs/BERICHT-STABILITAET-LEISTUNG.md` – Stabilitäts- und Leistungsprüfung vom 8. November 2026 mit Messwerten am Apple TV
 - `docs/SIRI_STEUERUNG.md`, `docs/APPLE_INTELLIGENCE.md` – Befunde zu Siri und Apple Intelligence auf tvOS
 - Werbeblocker-Listen ohne App-Update: Das öffentliche Repo [`dennisek-lab/tvos-browser-filterlisten`](https://github.com/dennisek-lab/tvos-browser-filterlisten) baut sie täglich und veröffentlicht sie am Release `filterlisten-latest` (Abschnitt 6.10 in `docs/ERWEITERUNGEN.md`)
+- Bildschirmfotos für dieses README: eigener tvOS-Simulator, Debug-Build, Selbsttest-Schritte über `SIMCTL_CHILD_POINTER_SELFTEST` (Abschnitt 14 in `docs/ERWEITERUNGEN.md`), Aufnahme mit `xcrun simctl io <UDID> screenshot`
 - `THIRD_PARTY_NOTICES.md` – Lizenzen (u. a. uBlock-Origin-Filterlisten, autoconsent, Readability, AdGuard Scriptlets, whisper.cpp)
