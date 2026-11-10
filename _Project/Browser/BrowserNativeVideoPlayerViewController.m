@@ -839,6 +839,12 @@ static NSTimeInterval BrowserWebVTTTime(NSString *value) {
 - (void)handlePlayerItemFailedToPlayToEndTime:(NSNotification *)notification {
     NSError *error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
     [self log:@"failedToPlayToEnd error=%@", error];
+    if (self.reportsPlaybackFailures && !self.didReportFailure && !self.didEndSession) {
+        self.didReportFailure = YES;
+        if (self.failureHandler != nil) {
+            self.failureHandler(error);
+        }
+    }
 }
 
 - (void)handlePlayerItemNewErrorLogEntry:(NSNotification *)notification {

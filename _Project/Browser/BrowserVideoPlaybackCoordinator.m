@@ -775,6 +775,11 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
 
 /// Brücke für diese Seite abschalten und neu laden: YouTube liefert dann wieder das MP4 mit 360p (itag 18).
 - (void)fallBackFromYouTubeHDWithReason:(NSString *)reason {
+    [self fallBackFromYouTubeHDWithReason:reason resumeTime:0.0];
+}
+
+/// `resumeTime` > 1: Die Seite lädt mit `t=<s>` neu und spielt ab dort (Abbruch mitten in der Wiedergabe).
+- (void)fallBackFromYouTubeHDWithReason:(NSString *)reason resumeTime:(NSTimeInterval)resumeTime {
     BrowserWebView *webView = self.host.browserWebView;
     NSString *page = [self currentPageKey];
     if (webView == nil || [self.youTubeHDFallbackPage isEqualToString:page]) {
@@ -784,7 +789,13 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     self.youTubeHDFallbackPage = page;
     NSLog(@"[YouTubeHD] Rückfall auf 360p (%@): Seite ohne Brücke neu laden", reason);
     // Merkt sich die Video-ID: Das nächste Video (neu geladen) bekommt die Brücke wieder.
-    [webView evaluateJavaScriptAsync:@"try { var m = /[?&]v=([\\w-]{11})/.exec(location.search) || /\\/(?:shorts|live|embed)\\/([\\w-]{11})/.exec(location.pathname); sessionStorage.setItem('__browserYouTubeHDOff', m ? m[1] : '1'); } catch(e) {} location.reload();"];
+    NSString *reload = @"location.reload()";
+    if (resumeTime > 1.0 && isfinite(resumeTime)) {
+        reload = [NSString stringWithFormat:@"(function(){ var u = new URL(location.href); u.searchParams.set('t', '%lds'); location.replace(u.href); })()", (long)resumeTime];
+        NSLog(@"[YouTubeHD] Seite spielt ab %.0f s weiter", resumeTime);
+    }
+    NSString *script = [@"try { var m = /[?&]v=([\\w-]{11})/.exec(location.search) || /\\/(?:shorts|live|embed)\\/([\\w-]{11})/.exec(location.pathname); sessionStorage.setItem('__browserYouTubeHDOff', m ? m[1] : '1'); } catch(e) {} " stringByAppendingString:reload];
+    [webView evaluateJavaScriptAsync:script];
 }
 
 - (void)openYouTubeHDWithTrigger:(BrowserPageVideoTrigger)trigger {
@@ -855,6 +866,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         player.videoSubtitle = presentation.author.length > 0 ? presentation.author : @"YouTube";
         player.artworkURL = presentation.artworkURL;
         player.initialPlaybackTime = time;
+        player.reportsPlaybackFailures = YES;
         __block BOOL failed = NO;
         player.dismissHandler = ^(NSTimeInterval playbackTime) {
             typeof(self) innerSelf = weakSelf;
@@ -874,11 +886,12 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 failed = YES;
                 NSLog(@"[YouTubeHD] Wiedergabe fehlgeschlagen: %@", error);
                 BrowserNativeVideoPlayerViewController *failedPlayer = innerSelf.activePlayer;
+                NSTimeInterval failedAt = CMTimeGetSeconds(failedPlayer.player.currentTime);
                 innerSelf.activePlayer = nil;
                 innerSelf.handoverInProgress = NO;
                 innerSelf.youTubeHDClosedDate = [NSDate date];
                 [failedPlayer dismissViewControllerAnimated:YES completion:^{
-                    [innerSelf fallBackFromYouTubeHDWithReason:error.localizedDescription ?: @"AVPlayer"];
+                    [innerSelf fallBackFromYouTubeHDWithReason:error.localizedDescription ?: @"AVPlayer" resumeTime:failedAt];
                 }];
             });
         };

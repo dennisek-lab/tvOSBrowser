@@ -71,6 +71,10 @@ static bool BrowserWhisperAbort(void *userData) {
 @interface BrowserWhisperSharedModel : NSObject
 @property (nonatomic, readonly) struct whisper_context *context;
 @property (nonatomic, copy, readonly) NSString *key;
+/// Immer nur eine Engine rechnet auf dem Modell. Zwei gleichzeitige `whisper_full_with_state` auf einem Modell (Seite
+/// und nativer Player nach dem Rückfall auf 360p) brachen am Apple TV in der DTW-Ausrichtung ab
+/// (`WHISPER_ASSERT filter_width < a->ne[2]`, 10. November 2026). Nacheinander reicht die Rechenzeit (RTF 0,1–0,35).
+@property (nonatomic, readonly) NSLock *computeLock;
 @end
 
 @implementation BrowserWhisperSharedModel
@@ -80,6 +84,7 @@ static bool BrowserWhisperAbort(void *userData) {
     if (self) {
         _context = context;
         _key = [key copy];
+        _computeLock = [NSLock new];
     }
     return self;
 }
@@ -440,7 +445,9 @@ static NSMapTable<NSString *, BrowserWhisperSharedModel *> *BrowserWhisperModelT
     params.audio_ctx = 384;
     params.max_tokens = 1;
     params.temperature_inc = 0.0f;
+    [_model.computeLock lock];
     int result = whisper_full_with_state(_context, _state, params, silence, 16000);
+    [_model.computeLock unlock];
     NSLog(@"%@ Encoder vorgewärmt (Audio-Kontext 384) in %.2f s%@", kSubtitleLogPrefix, CFAbsoluteTimeGetCurrent() - begin,
           result == 0 ? @"" : [NSString stringWithFormat:@", Fehler %d", result]);
 }
@@ -861,12 +868,15 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     }
     self.spokenChecks += 1;
     CFAbsoluteTime begin = CFAbsoluteTimeGetCurrent();
+    [_model.computeLock lock];
     if (whisper_pcm_to_mel_with_state(_context, _state, samples, (int)count, threads) != 0) {
+        [_model.computeLock unlock];
         return nil;
     }
     float probabilities[128] = {0};
     int maxId = whisper_lang_max_id();
     int lang = whisper_lang_auto_detect_with_state(_context, _state, 0, threads, maxId < 128 ? probabilities : NULL);
+    [_model.computeLock unlock];
     const char *name = lang >= 0 ? whisper_lang_str(lang) : NULL;
     if (name == NULL) {
         return nil;
@@ -998,7 +1008,9 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     params.abort_callback_user_data = &_abortFlag;
 
     CFAbsoluteTime begin = CFAbsoluteTimeGetCurrent();
+    [_model.computeLock lock];
     int result = whisper_full_with_state(_context, _state, params, samples, (int)count);
+    [_model.computeLock unlock];
     double compute = CFAbsoluteTimeGetCurrent() - begin;
     if (result != 0) {
         NSLog(@"%@ whisper_full Fehler %d (abgebrochen=%d)", kSubtitleLogPrefix, result, atomic_load(&_abortFlag));

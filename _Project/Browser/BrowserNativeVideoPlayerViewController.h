@@ -57,6 +57,9 @@ extern NSNotificationName const BrowserNativePlayerWillEndSessionNotification;
 @property (nonatomic, copy, nullable) void (^dismissHandler)(NSTimeInterval playbackTime);
 /// Wird aufgerufen, wenn AVPlayer das Video nicht abspielen kann (Status „failed“). Einmalig.
 @property (nonatomic, copy, nullable) void (^failureHandler)(NSError * _Nullable error);
+/// Auch einen Abbruch mitten in der Wiedergabe (`AVPlayerItemFailedToPlayToEndTime`, etwa HTTP 403 auf Segmente) an
+/// `failureHandler` melden. Für YouTube in HD: dort gibt es einen Rückfall (360p in der Seite), sonst stünde das Bild.
+@property (nonatomic) BOOL reportsPlaybackFailures;
 
 #pragma mark Einhängepunkt für Erweiterungen (z. B. Untertitel)
 

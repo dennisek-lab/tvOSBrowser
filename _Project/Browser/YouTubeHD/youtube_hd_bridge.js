@@ -682,7 +682,7 @@
         var q = u.searchParams;
         var itag = q.get('itag') || '';
         var entry = { t: Date.now() - state.installed, itag: itag, method: method || 'GET', range: q.get('range') || '',
-            sabr: q.get('sabr') || '', ump: q.get('ump') || '', pot: q.has('pot') ? 1 : 0, rn: q.get('rn') || '', host: u.host };
+            sabr: q.get('sabr') || '', ump: q.get('ump') || '', pot: q.has('pot') ? 1 : 0, potLen: (q.get('pot') || '').length, rn: q.get('rn') || '', host: u.host };
         if (state.requests.length < 60) { state.requests.push(entry); }
         if (!itag || itag === '18') { return; }
         // Je Player-Response (googlevideo-Parameter id) die erste Adresse merken: n und pot gelten für alle Formate
@@ -696,10 +696,21 @@
             var fk = Object.keys(state.formatURLs);
             if (fk.length > 40) { delete state.formatURLs[fk[0]]; }
         }
-        if (!id || state.captures[id]) { return; }
+        if (!id) { return; }
+        // Am Apple TV ruft die Seite die ersten Stücke mit einem kurzen Vorab-pot ab (16 Zeichen, BotGuard noch nicht
+        // fertig), etwa eine Sekunde später mit dem echten (116). Mit dem kurzen liefert googlevideo nur den Anfang
+        // (403 nach etwa 45 s). Darum das längste pot je Response behalten.
+        var prev = state.captures[id];
+        if (prev) {
+            if (entry.potLen > (prev.potLen || 0)) {
+                prev.url = url; prev.itag = itag; prev.potLen = entry.potLen; prev.at = Date.now();
+                note('längeres pot (' + entry.potLen + ' Zeichen) für id ' + id);
+            }
+            return;
+        }
         var keys = Object.keys(state.captures);
         if (keys.length >= 6) { delete state.captures[keys[0]]; }
-        state.captures[id] = { url: url, itag: itag, method: entry.method, at: Date.now() };
+        state.captures[id] = { url: url, itag: itag, method: entry.method, at: Date.now(), potLen: entry.potLen };
         state.captured = url; state.capturedItag = itag; state.capturedId = id;
         note('erste Medienanfrage itag=' + itag + ' ' + entry.method + ' range=' + entry.range + ' pot=' + entry.pot + ' ump=' + entry.ump);
         // Formate mit signatureCipher (häufig, etwa Musikvideos): Die Signatur entschlüsselt nur der Player, und nur

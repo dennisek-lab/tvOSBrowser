@@ -10,6 +10,8 @@ static NSString * const kBrowserYouTubeHDMaxHeightKey = @"YouTubeHDMaxHeight";
 static NSString * const kBrowserYouTubeHDPlaylistHost = @"youtube-hd.invalid";
 static NSInteger const kBrowserYouTubeHDMaxVariants = 3;
 static NSInteger const kBrowserYouTubeHDMaxAudioTracks = 4;
+/// Kürzer ist ein Vorab-pot (Apple TV: 16 Zeichen), das echte hat über 100.
+static NSUInteger const kBrowserYouTubeHDMinimumPotLength = 40;
 
 @implementation BrowserYouTubeHDPresentation
 @end
@@ -198,6 +200,21 @@ static long long BrowserYouTubeHDLong(id value) {
                 return;
             }
             NSLog(@"[YouTubeHD] itag %@ nach %.1f s nicht abgerufen, nehme die vorhandenen Formate", info[@"wantItag"], now - firstSeen);
+        }
+        // Kurzes Vorab-pot (Apple TV: 16 Zeichen, das echte hat über 100): bis 4 s auf das echte warten, sonst bricht
+        // googlevideo nach etwa 45 s mit 403 ab. Kommt keins, mit dem kurzen starten (Rückfall bei Abbruch).
+        if ([captured[@"pot"] length] > 0 && [captured[@"pot"] length] < kBrowserYouTubeHDMinimumPotLength) {
+            BrowserWebView *strongWebView = weakWebView;
+            if (strongWebView != nil && now - firstSeen < 4.0) {
+                if (capturedAt <= 0.0) {
+                    NSLog(@"[YouTubeHD] pot erst %lu Zeichen (Vorab-Token), warte auf das echte", (unsigned long)[captured[@"pot"] length]);
+                }
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [weakSelf pollInfoOfWebView:strongWebView start:start deadline:deadline capturedAt:firstSeen completion:completion];
+                });
+                return;
+            }
+            NSLog(@"[YouTubeHD] nach %.1f s nur kurzes pot (%lu Zeichen), starte trotzdem", now - firstSeen, (unsigned long)[captured[@"pot"] length]);
         }
         NSLog(@"[YouTubeHD] Medienanfrage itag=%@ nach %.1f s, n=%@ pot=%lu Zeichen", captured[@"itag"],
               CACurrentMediaTime() - start, captured[@"n"], (unsigned long)[captured[@"pot"] length]);
