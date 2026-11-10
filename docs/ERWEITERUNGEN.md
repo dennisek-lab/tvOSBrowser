@@ -823,6 +823,16 @@ Weitere Befunde:
 - Werbung kam im Simulator nicht vor. Erwartung: Werbung hat eigene Responses (andere `id`), die App wartet bis 20 s auf die Anfrage zum Hauptvideo; die Werbung läuft so lange unsichtbar im nachgebildeten Video. Nicht geprüft.
 - Der Seitenplayer puffert nach dem Schließen wieder (Ersatz-`MediaSource`, die Daten werden nur auf Zeitangaben gelesen und verworfen), nach dem Qualitätswunsch in HD.
 
+**Messung am Gerät (Apple TV 4K, 10. November 2026, www.youtube.com → m.youtube.com, WLAN).** googlevideo nimmt die Abrufe aus dem App-Prozess an (keine 403).
+
+| Video | Spuren (HLS) | Zeiten | Ergebnis |
+|:--|:--|:--|:--|
+| `aqz-KE-bpKQ` (Big Buck Bunny) | 299 1080p60, 298 720p60, 135 480p, Ton 140 | `sidx` 342–375 ms, Playlist 0,55 s nach der Anfrage der Seite | `size=1920x1080 tcs=2 bitrate=7065/20092 kbit/s`, 44 s ohne Stocken; nach dem Schließen `Position zurück in die Seite: 47.3` |
+| `dQw4w9WgXcQ` (Rick Astley, `signatureCipher`) | 137 1080p25, 134 360p, Ton 140 | Playlist 0,62 s | `size=1920x1080 bitrate=4465/18147`, t 36 s |
+| `kJQP7kiw5Fk` (Despacito) | 137 1080p24, Ton 140 | Playlist 0,45 s | `size=1920x1080 bitrate=4466/27599`, t 36 s. Kam am Gerät **ohne** DRM (im Simulator mit), YouTube entscheidet das je Abruf. |
+
+Speicher während 1080p60 (`memsys`): App 596 MB, Reserve 1502 MB, System frei 38–43 MB, komprimiert 450–460 MB; kein Abbruch. Die 596 MB kommen fast ganz von den automatischen Untertiteln: whisper small wird zweimal geladen (Seite `[WebSubs]` 23 → 294 MB, nativer Player `[Subtitles]` 352 → 634 MB), nicht von der Brücke. Offen: Werbung vor dem Video (kam nicht), ein Video, das am Gerät wirklich mit DRM kommt, Wärme bei längerer Wiedergabe.
+
 **Was zerbrechlich ist.** YouTube-Interna: Abschalten von SABR über `serverAbrStreamingUrl` (verschwinden die Formatadressen ganz, gibt es nur noch den Rückfall), die Merkmale, an denen der Player MSE erkennt, `setPlaybackQualityRange`, die Parameter `id`/`n`/`pot` der Abrufe, die `/watch`-Adressen. Wird eines davon geändert, greifen Wächter und Rückfälle (360p), HD fehlt dann.
 
 **Am Gerät prüfen.** Speicher und Wärme bei 1080p60 (der Seitenplayer lädt parallel weiter), ob googlevideo die Abrufe aus dem App-Prozess genauso annimmt wie die aus dem Webprozess (IP-Bindung `ip=`, IPv4/IPv6), Startzeit, Bild-in-Bild, Werbung, Verhalten bei DRM-Videos (FairPlay).
