@@ -70,6 +70,8 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 @property (nonatomic) BOOL liveTranslating;
 /// Zuletzt erkannte Originalsätze (Kontext „vorheriger Satz“ für Apples Übersetzung).
 @property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *recentSourceCues;
+/// Vorauslesend zuletzt übernommene Untertitel (Doppelte an Abschnittsgrenzen erkennen, seit DTW-Zeiten).
+@property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *acceptedAheadCues;
 @end
 
 @implementation BrowserSubtitlePipeline
@@ -92,6 +94,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
         _liveTranslationTimeout = 0.5;
         _finishingWindows = [NSMutableArray array];
         _recentSourceCues = [NSMutableArray array];
+        _acceptedAheadCues = [NSMutableArray array];
     }
     return self;
 }
@@ -110,6 +113,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
         [self.pendingWindows removeAllObjects];
         [self.finishingWindows removeAllObjects];
         [self.recentSourceCues removeAllObjects];
+        [self.acceptedAheadCues removeAllObjects];
     });
     source.delegate = self;
 }
@@ -128,6 +132,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
 - (void)clearCoverage {
     dispatch_sync(self.queue, ^{
         [self.covered removeAllIndexes];
+        [self.acceptedAheadCues removeAllObjects];   // neu erkannte Stelle ist kein Doppel
     });
 }
 
@@ -524,17 +529,54 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     });
 }
 
+/// Derselbe Satz aus zwei überlappenden Abschnitten: Mit DTW-Wortzeiten liegt seine Mitte mal knapp vor, mal knapp
+/// hinter der Abschnittsgrenze, die Abdeckung nach Mitte fängt das nicht (am Apple TV kam „Ich habe euch gestern Abend
+/// reden hören.“ zweimal). Zeitlich zu mehr als der Hälfte des kürzeren in einem übernommenen: doppelt.
+- (BOOL)overlapsAcceptedAheadCue:(BrowserSubtitleCue *)cue {
+    for (BrowserSubtitleCue *other in self.acceptedAheadCues.reverseObjectEnumerator) {
+        if (other.end < cue.start - 30.0) {
+            break;
+        }
+        double overlap = MIN(cue.end, other.end) - MAX(cue.start, other.start);
+        double shorter = MIN(cue.end - cue.start, other.end - other.start);
+        if (shorter > 0.0 && overlap > 0.5 * shorter) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (void)acceptAheadCues:(NSArray<BrowserSubtitleCue *> *)cues fromWindow:(BrowserSubtitleWindow *)window {
     NSMutableArray<BrowserSubtitleCue *> *accepted = [NSMutableArray array];
     for (BrowserSubtitleCue *cue in cues) {
         NSTimeInterval middle = (cue.start + cue.end) / 2.0;
         if (middle < window.acceptFrom || middle >= window.acceptUntil) {
+#if DEBUG
+            NSLog(@"%@ Untertitel %.2f–%.2f s außerhalb %.2f–%.2f s, verworfen: %@", kPipelineLogPrefix, cue.start, cue.end,
+                  window.acceptFrom, window.acceptUntil, cue.text);
+#endif
             continue;  // gehört zum Nachbarabschnitt (Überlappung)
         }
         if ([self.covered containsIndex:(NSUInteger)floor(MAX(0.0, middle) / kPipelineCoverageUnit)]) {
+#if DEBUG
+            NSLog(@"%@ Untertitel %.2f–%.2f s schon abgedeckt, verworfen: %@", kPipelineLogPrefix, cue.start, cue.end, cue.text);
+#endif
             continue;  // schon von einem früheren Abschnitt
         }
+        if ([self overlapsAcceptedAheadCue:cue]) {
+#if DEBUG
+            NSLog(@"%@ Untertitel %.2f–%.2f s doppelt (Abschnittsgrenze), verworfen: %@", kPipelineLogPrefix, cue.start, cue.end, cue.text);
+#endif
+            continue;
+        }
+#if DEBUG
+        NSLog(@"%@ Untertitel %.2f–%.2f s: %@", kPipelineLogPrefix, cue.start, cue.end, cue.text);
+#endif
+        [self.acceptedAheadCues addObject:cue];
         [accepted addObject:cue];
+    }
+    if (self.acceptedAheadCues.count > 40) {
+        [self.acceptedAheadCues removeObjectsInRange:NSMakeRange(0, self.acceptedAheadCues.count - 40)];
     }
     NSUInteger first = (NSUInteger)ceil(MAX(0.0, window.acceptFrom) / kPipelineCoverageUnit);
     NSUInteger last = (NSUInteger)floor(MAX(0.0, window.acceptUntil) / kPipelineCoverageUnit);

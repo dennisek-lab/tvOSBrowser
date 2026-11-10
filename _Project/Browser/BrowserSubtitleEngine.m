@@ -69,6 +69,11 @@ static bool BrowserWhisperAbort(void *userData) {
 @interface BrowserSubtitleEngine () {
 #if BROWSER_HAS_WHISPER
     struct whisper_context *_context;
+    /// Wort-Zeitmarken per DTW (Ausrichtung über Attention-Köpfe); ohne DTW sind whispers Token-Zeiten oft unbrauchbar.
+    BOOL _usesDTW;
+    /// Höchstlänge eines Stücks beim Teilen: 84 (zwei Zeilen); folgt Apples Übersetzung, ganze Sätze bis 150 Zeichen,
+    /// sonst übersetzt Apple Satzhälften einzeln („… dass du ausgeflippt bist“ / „Von meiner Roboterhand raus?“).
+    NSUInteger _splitCharacters;
 #endif
     _Atomic(bool) _abortFlag;
     double _totalCompute;
@@ -268,7 +273,16 @@ static bool BrowserWhisperAbort(void *userData) {
 #else
     params.use_gpu = ![NSUserDefaults.standardUserDefaults boolForKey:@"AutoSubtitlesCPUOnly"];
 #endif
-    params.flash_attn = true;
+    // DTW-Wortzeiten: whisper.cpp kann sie nicht mit Flash Attention. Ohne DTW bekam am Apple TV das erste Wort eines
+    // Segments dessen ganze Dauer, die übrigen Sätze landeten am Abschnittsende und wurden als Überlappung verworfen.
+    // Rechenzeit reicht: base läuft mit Metal bei RTF 0,02–0,04. Vergleich ohne DTW: pref SubtitlesNoDTW=YES.
+    BOOL baseModel = [self.modelName hasPrefix:@"base"];
+    _usesDTW = baseModel && ![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoDTW"];
+    params.flash_attn = !_usesDTW;
+    if (_usesDTW) {
+        params.dtw_token_timestamps = true;
+        params.dtw_aheads_preset = [self.modelName containsString:@".en"] ? WHISPER_AHEADS_BASE_EN : WHISPER_AHEADS_BASE;
+    }
     _context = whisper_init_from_file_with_params(self.modelPath.fileSystemRepresentation, params);
     atomic_store(&gBrowserWhisperVerboseLog, 0);
     if (_context == NULL) {
@@ -278,8 +292,8 @@ static bool BrowserWhisperAbort(void *userData) {
         }
         return NO;
     }
-    NSLog(@"%@ Modell %@ geladen in %.2f s, Sprache %@, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
-          kSubtitleLogPrefix, self.modelName, CFAbsoluteTimeGetCurrent() - begin, self.language,
+    NSLog(@"%@ Modell %@ geladen in %.2f s, Sprache %@, DTW-Wortzeiten %d, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
+          kSubtitleLogPrefix, self.modelName, CFAbsoluteTimeGetCurrent() - begin, self.language, _usesDTW,
           whisper_is_multilingual(_context), memoryBefore, [BrowserSubtitleEngine currentMemoryFootprintMB],
           whisper_print_system_info());
     if (![self.language isEqualToString:@"auto"] && whisper_is_multilingual(_context)) {
@@ -443,8 +457,11 @@ static NSArray<BrowserSubtitleCue *> *BrowserSubtitleRemoveRepeats(NSArray<Brows
 }
 
 /// Zeilen auffüllen: kurze Stücke (ein, zwei Wörter, < 2 s) mit dem folgenden zusammenlegen, solange beides in zwei
-/// Zeilen passt. Sonst stünde „getötet.“ nur eine Sekunde da. Das zweite Stück erscheint dadurch höchstens ≈ 2 s vor
-/// seinem Sprechbeginn (wie bei rollenden Live-Untertiteln), der Anfang bleibt exakt.
+/// Zeilen passt und das folgende höchstens 1 s nach dem Anfang beginnt (es erscheint so höchstens 1 s zu früh).
+/// Länger stehen bleiben Zeilen über die rollende Anzeige (Mindestanzeigedauer 2–4 s, die vorige bleibt über der neuen).
+/// Vorher bis zu ≈ 3,5 s Vorlauf: Am Apple TV las man „… wir müssen unseren Leidenschaften folgen“ vor dem Sprechen.
+static const NSTimeInterval kBrowserSubtitleMaxMergeLead = 1.0;   // höchstens so viel früher darf ein Stück erscheinen
+
 static NSArray<BrowserSubtitleCue *> *BrowserSubtitleMergeShortCues(NSArray<BrowserSubtitleCue *> *cues, NSUInteger maxCharacters) {
     NSMutableArray<BrowserSubtitleCue *> *merged = [NSMutableArray arrayWithCapacity:cues.count];
     for (BrowserSubtitleCue *cue in cues) {
@@ -454,7 +471,7 @@ static NSArray<BrowserSubtitleCue *> *BrowserSubtitleMergeShortCues(NSArray<Brow
             BOOL previousShort = previousDuration < 2.0 || previous.text.length < 28;
             BOOL cueShort = cue.end - cue.start < 1.5 || cue.text.length < 20;
             BOOL fits = previous.text.length + 1 + cue.text.length <= maxCharacters;
-            BOOL close = cue.start - previous.end < 1.0 && cue.end - previous.start <= 8.0 && previousDuration < 2.5;
+            BOOL close = cue.start - previous.start <= kBrowserSubtitleMaxMergeLead && cue.end - previous.start <= 8.0;
             if ((previousShort || cueShort) && fits && close) {
                 merged[merged.count - 1] = [[BrowserSubtitleCue alloc] initWithStart:previous.start end:MAX(previous.end, cue.end)
                                                                                 text:[NSString stringWithFormat:@"%@ %@", previous.text, cue.text]];
@@ -467,15 +484,88 @@ static NSArray<BrowserSubtitleCue *> *BrowserSubtitleMergeShortCues(NSArray<Brow
 }
 
 static const NSUInteger kBrowserSubtitleMaxCueCharacters = 84;   // zwei Zeilen à ≈ 42 Zeichen
-static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
 
-/// Teilt ein whisper-Segment in Untertitel: an Satzenden (ab 24 Zeichen), sonst spätestens nach ≈ 84 Zeichen an einer
-/// Wortgrenze (bevorzugt nach Komma). Zeiten aus den Token-Zeitmarken; das erste Stück beginnt mit dem Segment.
-- (NSArray<BrowserSubtitleCue *> *)cuesForSegment:(int)segment text:(NSString *)text start:(NSTimeInterval)segmentStart
-                                              end:(NSTimeInterval)segmentEnd windowStart:(NSTimeInterval)windowStart {
-    if (text.length <= kBrowserSubtitleMaxCueCharacters && segmentEnd - segmentStart <= 7.0) {
-        return @[[[BrowserSubtitleCue alloc] initWithStart:segmentStart end:segmentEnd text:text]];
+/// Wortzeiten prüfen: aufsteigend, im Segment und nicht alle an einem Ende gestaucht. Sonst (keine DTW-Zeiten, whisper
+/// gab dem ersten Wort das ganze Segment) anteilig nach Textlänge verteilen: Sprechtempo ist grob gleichmäßig, das trifft
+/// Satzanfänge auf ≈ 1 s. Enden = Anfang des nächsten Worts.
+static BOOL BrowserSubtitleFixWordTimes(NSArray<NSString *> *words, NSMutableArray<NSNumber *> *starts,
+                                        NSMutableArray<NSNumber *> *ends, NSTimeInterval *segmentStartInOut,
+                                        NSTimeInterval *segmentEndInOut, NSTimeInterval windowStart, NSTimeInterval windowEnd,
+                                        BOOL dtw) {
+    NSUInteger count = words.count;
+    NSTimeInterval segmentStart = *segmentStartInOut, segmentEnd = *segmentEndInOut;
+    BOOL plausible = YES;
+    double previous = windowStart - 0.2;
+    // DTW-Zeiten gelten im ganzen Abschnitt: whispers Segmentgrenzen liegen oft Sekunden daneben (Tears of Steel:
+    // Segment 12,9–19,9 s, DTW-Wort 23,3 s, offizieller Untertitel 23,0 s). Nur aufsteigend und im Abschnitt.
+    double low = dtw ? windowStart - 0.2 : segmentStart - 0.5;
+    double high = dtw ? windowEnd + 0.2 : segmentEnd + 0.2;
+    for (NSUInteger i = 0; i < count && plausible; i++) {
+        double start = starts[i].doubleValue;
+        if (!isfinite(start) || start < previous - 0.05 || start < low || start > high) {
+            plausible = NO;
+        }
+        previous = start;
     }
+    double span = starts.lastObject.doubleValue - starts.firstObject.doubleValue;
+    if (plausible && count >= 4 && span < 0.05 * count) {
+        plausible = NO;   // alle Wörter auf einem Fleck: keine echten Zeiten
+    }
+    if (plausible && dtw) {
+        // Segment an die Wörter anlegen: Anfang kurz vor dem ersten Wort (DTW-Zeiten liegen eher etwas nach dem
+        // Einsatz), Ende nach dem letzten Wort plus Ausklang, beides im Abschnitt.
+        segmentStart = MAX(windowStart, starts.firstObject.doubleValue - 0.15);
+        segmentEnd = MIN(windowEnd, MAX(starts.lastObject.doubleValue + 0.6, segmentStart + 0.5));
+        *segmentStartInOut = segmentStart;
+        *segmentEndInOut = segmentEnd;
+    }
+    double duration = MAX(0.3, segmentEnd - segmentStart);
+    if (!plausible) {
+#if DEBUG
+        NSLog(@"[Subtitles] Wortzeiten unplausibel (%.2f–%.2f s, %lu Wörter, erstes %.2f): anteilig verteilt", segmentStart, segmentEnd,
+              (unsigned long)count, starts.firstObject.doubleValue);
+#endif
+        NSUInteger total = 0;
+        for (NSString *word in words) {
+            total += word.length + 1;
+        }
+        NSUInteger before = 0;
+        for (NSUInteger i = 0; i < count; i++) {
+            starts[i] = @(segmentStart + duration * (double)before / (double)MAX((NSUInteger)1, total));
+            before += words[i].length + 1;
+        }
+    }
+    for (NSUInteger i = 0; i < count; i++) {
+        double start = MAX(segmentStart, MIN(starts[i].doubleValue, segmentEnd));
+        starts[i] = @(start);
+    }
+    for (NSUInteger i = 0; i < count; i++) {
+        ends[i] = @(i + 1 < count ? MAX(starts[i].doubleValue, starts[i + 1].doubleValue) : segmentEnd);
+    }
+    return plausible;
+}
+
+/// Steht im Text ein Satzende (. ? ! …) mit Leerzeichen dahinter und mindestens 8 Zeichen davor?
+static BOOL BrowserSubtitleHasInnerSentenceEnd(NSString *text) {
+    for (NSUInteger i = 8; i + 1 < text.length; i++) {
+        unichar c = [text characterAtIndex:i];
+        if ((c == '.' || c == '?' || c == '!' || c == 0x2026) && [text characterAtIndex:i + 1] == ' ') {
+            return YES;
+        }
+    }
+    return NO;
+}
+static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You're a jerk, Tom.“ eigene Zeile, „Look!“ nicht
+
+/// Teilt ein whisper-Segment in Untertitel: an Satzenden (ab 8 Zeichen), sonst spätestens nach ≈ 84 Zeichen an einer
+/// Wortgrenze (bevorzugt nach Komma). Zeiten aus den Token-Zeitmarken; das erste Stück beginnt mit dem Segment.
+/// Auch kurze Segmente mit zwei Sätzen werden geteilt: whisper fasst „You're a jerk, Tom. Look, Celia, …“ in ein
+/// Segment, als Ganzes erschiene der zweite Satz Sekunden vor dem Sprechen.
+- (NSArray<BrowserSubtitleCue *> *)cuesForSegment:(int)segment text:(NSString *)text start:(NSTimeInterval)segmentStart
+                                              end:(NSTimeInterval)segmentEnd windowStart:(NSTimeInterval)windowStart
+                                        windowEnd:(NSTimeInterval)windowEnd {
+    NSUInteger maxCharacters = _splitCharacters > 0 ? _splitCharacters : kBrowserSubtitleMaxCueCharacters;
+    BOOL single = text.length <= maxCharacters && segmentEnd - segmentStart <= 7.0 && !BrowserSubtitleHasInnerSentenceEnd(text);
     whisper_token eot = whisper_token_eot(_context);
     int tokens = whisper_full_n_tokens(_context, segment);
     // Wörter bilden (Token mit führendem Leerzeichen beginnen ein Wort; Bytes erst am Wortende als UTF-8 lesen).
@@ -483,7 +573,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
     NSMutableArray<NSNumber *> *wordStarts = [NSMutableArray array];
     NSMutableArray<NSNumber *> *wordEnds = [NSMutableArray array];
     NSMutableData *bytes = [NSMutableData data];
-    double wordStart = NAN, wordEnd = NAN;
+    __block double wordStart = NAN, wordEnd = NAN;   // __block: finishWord liest die aktuellen Werte (vorher immer NaN)
     void (^finishWord)(void) = ^{
         NSString *word = [[[NSString alloc] initWithData:bytes encoding:NSUTF8StringEncoding]
                           stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -506,16 +596,24 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         if (piece[0] == ' ' && bytes.length > 0) {
             finishWord();
         }
+        double tokenTime = _usesDTW && data.t_dtw >= 0 ? data.t_dtw / 100.0 : data.t0 / 100.0;
         if (bytes.length == 0) {
-            wordStart = windowStart + data.t0 / 100.0;
+            wordStart = windowStart + tokenTime;
         }
-        wordEnd = windowStart + data.t1 / 100.0;
+        wordEnd = windowStart + (_usesDTW && data.t_dtw >= 0 ? data.t_dtw / 100.0 : data.t1 / 100.0);
         [bytes appendBytes:piece length:strlen(piece)];
     }
     if (bytes.length > 0) {
         finishWord();
     }
-    if (words.count < 2) {
+    if (words.count == 0) {
+        return @[[[BrowserSubtitleCue alloc] initWithStart:segmentStart end:segmentEnd text:text]];
+    }
+    BOOL timed = BrowserSubtitleFixWordTimes(words, wordStarts, wordEnds, &segmentStart, &segmentEnd, windowStart, windowEnd, _usesDTW);
+    if (timed && _usesDTW) {
+        wordStarts[0] = @(segmentStart);
+    }
+    if (single || words.count < 2) {
         return @[[[BrowserSubtitleCue alloc] initWithStart:segmentStart end:segmentEnd text:text]];
     }
     NSMutableArray<BrowserSubtitleCue *> *cues = [NSMutableArray array];
@@ -534,7 +632,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         NSInteger breakAfter = -1;
         if (!lastWord && sentenceEnd && length >= kBrowserSubtitleMinSentenceCharacters) {
             breakAfter = (NSInteger)w;
-        } else if (!lastWord && length + 1 + words[w + 1].length > kBrowserSubtitleMaxCueCharacters) {
+        } else if (!lastWord && length + 1 + words[w + 1].length > maxCharacters) {
             breakAfter = bestBreak >= (NSInteger)pieceStart ? bestBreak : (NSInteger)w;
         }
         if (breakAfter < 0 && !lastWord) {
@@ -728,6 +826,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         }
     }
     NSString *whisperLanguage = translateFrom ?: decodingLanguage;
+    _splitCharacters = translateFrom != nil ? 150 : kBrowserSubtitleMaxCueCharacters;
     params.language = whisperLanguage.UTF8String;
     params.detect_language = false;
     params.translate = false;
@@ -788,7 +887,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 24;
         NSTimeInterval t1 = startTime + whisper_full_get_segment_t1(_context, i) / 100.0;
         t1 = MIN(t1, startTime + seconds);
         t0 = MIN(t0, t1 - 0.2);
-        [cues addObjectsFromArray:[self cuesForSegment:i text:text start:t0 end:t1 windowStart:startTime]];
+        [cues addObjectsFromArray:[self cuesForSegment:i text:text start:t0 end:t1 windowStart:startTime windowEnd:startTime + seconds]];
     }
     if (context.length > 0) {
         // whisper schreibt gern den Kontext ab („Ich bin der Nal, das war schön“ in jedem Abschnitt): Sätze, die

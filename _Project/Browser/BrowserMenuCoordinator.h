@@ -38,6 +38,8 @@
 /// "Apple" oder "Google": womit übersetzt ist bzw. würde (Detail der Menüzeile).
 - (nullable NSString *)browserTranslationProviderName;
 - (void)browserShowOriginalPage;
+/// Untertitelsprache geändert: Untertitel in der Webseite (Weg B) mit der neuen Sprache neu starten.
+- (void)browserAutoSubtitlesLanguageDidChange;
 
 @end
 

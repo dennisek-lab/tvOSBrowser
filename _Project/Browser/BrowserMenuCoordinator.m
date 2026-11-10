@@ -1618,6 +1618,9 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                     detail:[BrowserSubtitleEngine displayNameForLanguage:current]
                                    handler:^{
         self.preferencesStore.autoSubtitlesLanguage = next;
+        if ([self.host respondsToSelector:@selector(browserAutoSubtitlesLanguageDidChange)]) {
+            [self.host browserAutoSubtitlesLanguageDidChange];
+        }
     }];
 }
 

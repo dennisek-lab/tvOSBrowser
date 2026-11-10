@@ -2453,6 +2453,16 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
 }
 
+/// Untertitelsprache gewechselt: Weg B las die Sprache bisher nur beim Start (App, Tab, Schalter), ein Wechsel in der
+/// Seitenleiste wirkte erst nach einem Neustart. prepare… hält bei anderer Sprache an, startWebSubtitlesIfEnabled startet neu.
+- (void)browserAutoSubtitlesLanguageDidChange {
+    if (!self.preferencesStore.webSubtitlesEnabled || self.webSubtitleController == nil) {
+        return;
+    }
+    NSLog(@"[WebSubs] Untertitelsprache jetzt %@: Erkennung wird neu gestartet", self.preferencesStore.autoSubtitlesLanguage);
+    [self startWebSubtitlesIfEnabled];
+}
+
 - (void)browserHideTopNav {
     [self deactivateTopBarFocusMode];
     self.viewModel.topNavigationBarVisible = NO;
