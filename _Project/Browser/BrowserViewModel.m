@@ -5,8 +5,14 @@
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
 static NSUInteger const kMaximumTextFontSize = 200;
-static NSUInteger const kMaximumTabCount = 5;
+/// Höchstzahl offener Tabs. Geladen (mit eigener WebView und eigenem Seitenprozess) sind davon höchstens
+/// kMaximumLoadedTabCount in BrowserTabCoordinator.m, die übrigen nur als Adresse, Titel und Vorschaubild.
+static NSUInteger const kMaximumTabCount = 10;
 @implementation BrowserViewModel
+
++ (NSUInteger)maximumTabCount {
+    return kMaximumTabCount;
+}
 
 - (instancetype)init {
     self = [super init];

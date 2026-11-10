@@ -11,6 +11,8 @@
 @property (nonatomic) NSUInteger textFontSize;
 @property (nonatomic) BOOL fullscreenVideoPlaybackEnabled;
 
+/// Höchstzahl offener Tabs (zehn).
++ (NSUInteger)maximumTabCount;
 - (BrowserTabViewModel *)activeTab;
 - (BrowserTabViewModel *)addTab;
 /// Neuer Tab am Ende, der aktive Tab bleibt aktiv (Pop-ups, Links mit target=_blank). nil bei Höchstzahl.

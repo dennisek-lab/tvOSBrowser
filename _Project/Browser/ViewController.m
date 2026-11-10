@@ -475,16 +475,44 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                     NSLog(@"[SelfTest] tabinfo %lu Tabs, aktiv %ld, Ablauf %.0f s, Einblendung %@ „%@“", (unsigned long)self.viewModel.tabs.count,
                           (long)self.viewModel.activeTabIndex, self.preferencesStore.unusedTabExpiryInterval,
                           self.popupNotice.visible ? NSStringFromCGRect(self.popupNotice.frameInContainer) : @"aus", self.popupNotice.text ?: @"");
+                    NSLog(@"[SelfTest] tabinfo geladen %lu von %lu Tabs", (unsigned long)[self.tabCoordinator loadedTabCount],
+                          (unsigned long)self.viewModel.tabs.count);
                     [self.viewModel.tabs enumerateObjectsUsingBlock:^(BrowserTabViewModel *tab, NSUInteger index, __unused BOOL *stopTabs) {
-                        NSLog(@"[SelfTest] tab %lu%@ benutzt=%d alter=%.0f s titel=%@ url=%@", (unsigned long)index,
-                              (NSInteger)index == self.viewModel.activeTabIndex ? @" (aktiv)" : @"", tab.userInteracted,
-                              now - tab.openedAt, tab.title, tab.URLString.length > 0 ? tab.URLString : tab.requestURL);
+                        NSLog(@"[SelfTest] tab %lu%@ %@ benutzt=%d alter=%.0f s vorschau=%d scroll=%@%@ titel=%@ url=%@", (unsigned long)index,
+                              (NSInteger)index == self.viewModel.activeTabIndex ? @" (aktiv)" : @"",
+                              [self.tabCoordinator isTabLoaded:tab] ? @"geladen" : (tab.pendingRequest != nil ? @"wartet" : @"entladen"),
+                              tab.userInteracted, now - tab.openedAt, tab.snapshotImage != nil,
+                              tab.hasSavedScrollOffset ? [NSString stringWithFormat:@"%.0f", tab.savedScrollOffset.y] : @"-",
+                              tab.needsScrollRestore ? @"(wiederherstellen)" : @"",
+                              tab.title, tab.URLString.length > 0 ? tab.URLString : tab.requestURL);
                     }];
+                    return;
+                }
+                if ([step hasPrefix:@"popup:"] || [step hasPrefix:@"bglink:"]) {
+                    // Wie window.open bzw. Link mit target=_blank: Hintergrund-Tab, lädt erst beim Öffnen.
+                    BOOL popup = [step hasPrefix:@"popup:"];
+                    NSString *address = [step substringFromIndex:popup ? 6 : 7];
+                    NSURL *url = [NSURL URLWithString:address];
+                    BOOL handled = url != nil && [self openBackgroundTabWithRequest:[NSURLRequest requestWithURL:url] popup:popup];
+                    NSLog(@"[SelfTest] %@ %@ ok=%d tabs=%lu geladen=%lu", popup ? @"popup" : @"bglink", address, handled,
+                          (unsigned long)self.viewModel.tabs.count, (unsigned long)[self.tabCoordinator loadedTabCount]);
+                    return;
+                }
+                if ([step isEqualToString:@"overview"]) {
+                    [self browserShowTabOverview];
+                    NSLog(@"[SelfTest] overview sichtbar=%d geladen=%lu", self.tabOverviewController.visible,
+                          (unsigned long)[self.tabCoordinator loadedTabCount]);
+                    return;
+                }
+                if ([step isEqualToString:@"overviewclose"]) {
+                    [self.tabOverviewController dismiss];
+                    NSLog(@"[SelfTest] overviewclose geladen=%lu", (unsigned long)[self.tabCoordinator loadedTabCount]);
                     return;
                 }
                 if ([step hasPrefix:@"tab:"]) {
                     NSInteger index = [step substringFromIndex:4].integerValue;
-                    NSLog(@"[SelfTest] wechsle zu Tab %ld", (long)index);
+                    NSLog(@"[SelfTest] wechsle zu Tab %ld (geladen=%d)", (long)index,
+                          index >= 0 && index < (NSInteger)self.viewModel.tabs.count && [self.tabCoordinator isTabLoaded:self.viewModel.tabs[index]]);
                     BrowserWebView *previous = self.webview;
                     [self.tabCoordinator switchToTabAtIndex:index];
                     [self activeWebViewChangedFrom:previous];
@@ -1286,7 +1314,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
 }
 
 /// Pop-up (window.open, createWebView) bzw. Link mit target=_blank: immer als Hintergrund-Tab, der aktuelle Tab bleibt
-/// vorn. Einblendung unten rechts; bei fünf offenen Tabs nur eine kurze Rückmeldung, kein Dialog.
+/// vorn. Einblendung unten rechts; bei zehn offenen Tabs nur eine kurze Rückmeldung, kein Dialog.
 /// Rückgabe NO nur, wenn die Adresse nicht taugt (dann darf der Aufrufer normal weitermachen).
 - (BOOL)openBackgroundTabWithRequest:(NSURLRequest *)request popup:(BOOL)popup {
     NSURL *url = request.URL;
@@ -1298,7 +1326,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     BrowserTabViewModel *tab = [self.tabCoordinator createBackgroundTabWithRequest:request];
     if (tab == nil) {
         NSLog(@"[Popup] nicht geöffnet, schon %lu Tabs: %@", (unsigned long)self.viewModel.tabs.count, url.absoluteString);
-        [self.commandRouter showFeedback:popup ? @"Pop-up nicht geöffnet: höchstens fünf Tabs" : @"Nicht geöffnet: höchstens fünf Tabs"
+        [self.commandRouter showFeedback:popup ? @"Pop-up nicht geöffnet: höchstens zehn Tabs" : @"Nicht geöffnet: höchstens zehn Tabs"
                               symbolName:@"square.on.square"
                                  success:NO];
         return YES;

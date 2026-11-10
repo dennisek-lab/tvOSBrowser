@@ -17,6 +17,12 @@
 /// Hintergrund geöffnet wurden) schließen sich nach Ablauf von selbst. Neue Tabs gelten als benutzt, ebenso Tabs aus
 /// alten Sitzungen ohne diesen Eintrag.
 @property (nonatomic) BOOL userInteracted;
+/// Zuletzt angezeigt (Sekunden seit 1970, 0 = nie). Bestimmt, welche Tabs ihre WebView behalten: nur die zuletzt
+/// benutzten fünf bleiben geladen, ältere werden entladen und beim nächsten Anzeigen neu geladen.
+@property (nonatomic) NSTimeInterval lastActivatedAt;
+/// Anfrage eines Pop-ups bzw. Links mit target=_blank, das noch nicht geladen wurde (lädt erst beim ersten Anzeigen,
+/// so bleiben z. B. POST-Daten erhalten). Wird nicht gespeichert; nach einem Neustart lädt der Tab seine Adresse.
+@property (nonatomic, strong) NSURLRequest *pendingRequest;
 
 - (instancetype)initWithSessionRepresentation:(NSDictionary *)sessionRepresentation;
 - (NSDictionary *)sessionRepresentation;

@@ -47,13 +47,17 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)loadHomePage;
 - (void)createNewTabLoadingHomePage:(BOOL)loadHomePage;
 - (BOOL)createNewTabWithRequest:(NSURLRequest *)request;
-/// Pop-up bzw. Link mit target=_blank: neuer Tab am Ende, lädt unsichtbar im Hintergrund; der aktive Tab bleibt vorn.
-/// Der neue Tab gilt als unbenutzt (`userInteracted = NO`). nil, wenn schon fünf Tabs offen sind oder die Adresse fehlt.
+/// Pop-up bzw. Link mit target=_blank: neuer Tab am Ende, der aktive Tab bleibt vorn. Lädt noch nicht (keine WebView,
+/// zählt nicht zu den fünf geladenen Tabs); erst beim Öffnen. Der neue Tab gilt als unbenutzt (`userInteracted = NO`).
+/// nil, wenn schon zehn Tabs offen sind (nie wird dafür ein anderer Tab geschlossen) oder die Adresse fehlt.
 - (nullable BrowserTabViewModel *)createBackgroundTabWithRequest:(NSURLRequest *)request;
 /// Schließt unbenutzte Tabs, die länger als `expiry` Sekunden offen sind. Nie den aktiven und nie den letzten Tab.
 /// Rückgabe: Zahl der geschlossenen Tabs.
 - (NSUInteger)closeUnusedTabsOlderThan:(NSTimeInterval)expiry;
 - (void)switchToTabAtIndex:(NSInteger)tabIndex;
+/// Zahl der Tabs mit WebView (höchstens fünf); die übrigen sind entladen oder noch nicht geladene Pop-ups.
+- (NSUInteger)loadedTabCount;
+- (BOOL)isTabLoaded:(nullable BrowserTabViewModel *)tab;
 /// Adresszeile (Titel und Domain) neu setzen.
 - (void)refreshActiveTabUI;
 - (void)closeTabAtIndex:(NSInteger)tabIndex;
