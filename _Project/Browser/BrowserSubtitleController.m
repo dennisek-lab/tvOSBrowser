@@ -491,6 +491,9 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
                                                                                                        cookies:self.cookies];
         NSString *language = self.preferences.autoSubtitlesLanguage;
         hlsSource.preferredLanguage = [language isEqualToString:@"auto"] ? nil : language;
+        if ([self.playerViewController isKindOfClass:BrowserNativeVideoPlayerViewController.class]) {
+            hlsSource.generatedResources = ((BrowserNativeVideoPlayerViewController *)self.playerViewController).generatedPlaylists;
+        }
         source = hlsSource;
     } else if ([kind isEqualToString:@"mp4"]) {
         source = [[BrowserSubtitleProgressiveAudioSource alloc] initWithURL:self.playbackURL requestHeaders:self.requestHeaders cookies:self.cookies];

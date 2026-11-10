@@ -20,6 +20,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init NS_UNAVAILABLE;
 /// Sprache für die Wahl der Audio-Rendition („en“, „de“ …; nil = Standard-Rendition).
 @property (nonatomic, copy, nullable) NSString *preferredLanguage;
+/// In der App erzeugte Playlists (Adresse → Inhalt), etwa YouTube in HD (`https://youtube-hd.invalid/…`): werden
+/// nicht geladen, sondern direkt gelesen. Segmente und alles andere kommen weiter übers Netz.
+@property (nonatomic, copy, nullable) NSDictionary<NSString *, NSData *> *generatedResources;
 @end
 
 NS_ASSUME_NONNULL_END

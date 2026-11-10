@@ -231,6 +231,16 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         completion(nil, @"gestoppt");
         return;
     }
+    NSData *generated = self.generatedResources[URL.absoluteString];
+    if (generated != nil) {
+        if (range.length > 0 && generated.length >= NSMaxRange(range)) {
+            generated = [generated subdataWithRange:range];
+        }
+        dispatch_async(self.queue, ^{
+            completion(generated, nil);
+        });
+        return;
+    }
     NSURLSessionDataTask *task = [self.session dataTaskWithRequest:[self requestForURL:URL range:range]
                                                 completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 200;

@@ -64,11 +64,54 @@ static bool BrowserWhisperAbort(void *userData) {
     _Atomic(bool) *flag = (_Atomic(bool) *)userData;
     return atomic_load(flag);
 }
+
+/// Ein geladenes whisper-Modell (Gewichte, nur gelesen), geteilt von allen Engines mit derselben Datei und denselben
+/// Ladeparametern. Jede Engine rechnet in ihrem eigenen `whisper_state`. Vorher lud jede Engine ihr eigenes Modell:
+/// Seiten-Untertitel und nativer Player zusammen 2 × whisper small (Apple TV 10. November 2026: App 596 MB beim Abspielen).
+@interface BrowserWhisperSharedModel : NSObject
+@property (nonatomic, readonly) struct whisper_context *context;
+@property (nonatomic, copy, readonly) NSString *key;
+@end
+
+@implementation BrowserWhisperSharedModel
+
+- (instancetype)initWithContext:(struct whisper_context *)context key:(NSString *)key {
+    self = [super init];
+    if (self) {
+        _context = context;
+        _key = [key copy];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    if (_context != NULL) {
+        whisper_free(_context);
+        _context = NULL;
+        NSLog(@"%@ Modell freigegeben (%@), Speicher %.0f MB", kSubtitleLogPrefix, _key.lastPathComponent,
+              [BrowserSubtitleEngine currentMemoryFootprintMB]);
+    }
+}
+
+@end
+
+/// Geladene Modelle, schwach gehalten: Gibt die letzte Engine ihres frei, wird das Modell freigegeben.
+static NSMapTable<NSString *, BrowserWhisperSharedModel *> *BrowserWhisperModelTable(void) {
+    static NSMapTable *table;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        table = [NSMapTable strongToWeakObjectsMapTable];
+    });
+    return table;
+}
 #endif
 
 @interface BrowserSubtitleEngine () {
 #if BROWSER_HAS_WHISPER
+    /// Geteiltes Modell (hält es am Leben) und der Zeiger darauf; gerechnet wird nur in `_state`.
+    BrowserWhisperSharedModel *_model;
     struct whisper_context *_context;
+    struct whisper_state *_state;
     /// Wort-Zeitmarken per DTW (Ausrichtung über Attention-Köpfe); ohne DTW sind whispers Token-Zeiten oft unbrauchbar.
     BOOL _usesDTW;
     /// Höchstlänge eines Stücks beim Teilen: 84 (zwei Zeilen); folgt Apples Übersetzung, ganze Sätze bis 150 Zeichen,
@@ -202,17 +245,18 @@ static bool BrowserWhisperAbort(void *userData) {
         whisper_vad_free(_vad);
         _vad = NULL;
     }
-    if (_context != NULL) {
-        whisper_free(_context);
-        _context = NULL;
-        NSLog(@"%@ Modell freigegeben, Speicher %.0f MB", kSubtitleLogPrefix, [BrowserSubtitleEngine currentMemoryFootprintMB]);
+    if (_state != NULL) {
+        whisper_free_state(_state);
+        _state = NULL;
     }
+    _context = NULL;
+    _model = nil;  // letzte Engine des Modells: dealloc gibt es frei
 #endif
 }
 
 - (BOOL)isLoaded {
 #if BROWSER_HAS_WHISPER
-    return _context != NULL;
+    return _state != NULL;
 #else
     return NO;
 #endif
@@ -274,7 +318,7 @@ static bool BrowserWhisperAbort(void *userData) {
 
 - (BOOL)loadModel:(NSError **)error {
 #if BROWSER_HAS_WHISPER
-    if (_context != NULL) {
+    if (_state != NULL) {
         return YES;
     }
     double memoryBefore = [BrowserSubtitleEngine currentMemoryFootprintMB];
@@ -331,17 +375,38 @@ static bool BrowserWhisperAbort(void *userData) {
             _vadModelPath = nil;
         }
     }
-    _context = whisper_init_from_file_with_params(self.modelPath.fileSystemRepresentation, params);
+    NSString *modelKey = [NSString stringWithFormat:@"%@|gpu=%d|dtw=%d", self.modelPath, params.use_gpu, _usesDTW ? (int)preset : -1];
+    BOOL shared = NO;
+    BrowserWhisperSharedModel *model = nil;
+    NSMapTable<NSString *, BrowserWhisperSharedModel *> *models = BrowserWhisperModelTable();
+    @synchronized (models) {
+        model = [models objectForKey:modelKey];
+        if (model != nil) {
+            shared = YES;
+        } else {
+            // Unter der Sperre laden: Eine zweite Engine wartet die halbe Sekunde, statt das Modell noch einmal zu laden.
+            struct whisper_context *context = whisper_init_from_file_with_params_no_state(self.modelPath.fileSystemRepresentation, params);
+            if (context != NULL) {
+                model = [[BrowserWhisperSharedModel alloc] initWithContext:context key:modelKey];
+                [models setObject:model forKey:modelKey];
+            }
+        }
+    }
+    _model = model;
+    _context = model.context;
+    _state = _context != NULL ? whisper_init_state(_context) : NULL;
     atomic_store(&gBrowserWhisperVerboseLog, 0);
-    if (_context == NULL) {
+    if (_state == NULL) {
+        _model = nil;
+        _context = NULL;
         NSLog(@"%@ Modell konnte nicht geladen werden: %@", kSubtitleLogPrefix, self.modelPath);
         if (error != NULL) {
             *error = [NSError errorWithDomain:@"BrowserSubtitleEngine" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Modell konnte nicht geladen werden"}];
         }
         return NO;
     }
-    NSLog(@"%@ Modell %@ geladen in %.2f s, Sprache %@, DTW-Wortzeiten %d, VAD %@, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
-          kSubtitleLogPrefix, self.modelName, CFAbsoluteTimeGetCurrent() - begin, self.language, _usesDTW,
+    NSLog(@"%@ Modell %@ %@ in %.2f s, Sprache %@, DTW-Wortzeiten %d, VAD %@, mehrsprachig=%d, Speicher %.0f → %.0f MB, System: %s",
+          kSubtitleLogPrefix, self.modelName, shared ? @"geteilt (eigener Zustand)" : @"geladen", CFAbsoluteTimeGetCurrent() - begin, self.language, _usesDTW,
           _vadModelPath.lastPathComponent ?: @"aus",
           whisper_is_multilingual(_context), memoryBefore, [BrowserSubtitleEngine currentMemoryFootprintMB],
           whisper_print_system_info());
@@ -375,7 +440,7 @@ static bool BrowserWhisperAbort(void *userData) {
     params.audio_ctx = 384;
     params.max_tokens = 1;
     params.temperature_inc = 0.0f;
-    int result = whisper_full(_context, params, silence, 16000);
+    int result = whisper_full_with_state(_context, _state, params, silence, 16000);
     NSLog(@"%@ Encoder vorgewärmt (Audio-Kontext 384) in %.2f s%@", kSubtitleLogPrefix, CFAbsoluteTimeGetCurrent() - begin,
           result == 0 ? @"" : [NSString stringWithFormat:@", Fehler %d", result]);
 }
@@ -616,7 +681,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     NSUInteger maxCharacters = _splitCharacters > 0 ? _splitCharacters : kBrowserSubtitleMaxCueCharacters;
     BOOL single = text.length <= maxCharacters && segmentEnd - segmentStart <= 7.0 && !BrowserSubtitleHasInnerSentenceEnd(text);
     whisper_token eot = whisper_token_eot(_context);
-    int tokens = whisper_full_n_tokens(_context, segment);
+    int tokens = whisper_full_n_tokens_from_state(_state, segment);
     // Wörter bilden (Token mit führendem Leerzeichen beginnen ein Wort; Bytes erst am Wortende als UTF-8 lesen).
     NSMutableArray<NSString *> *words = [NSMutableArray array];
     NSMutableArray<NSNumber *> *wordStarts = [NSMutableArray array];
@@ -634,11 +699,11 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         bytes.length = 0;
     };
     for (int k = 0; k < tokens; k++) {
-        whisper_token_data data = whisper_full_get_token_data(_context, segment, k);
+        whisper_token_data data = whisper_full_get_token_data_from_state(_state, segment, k);
         if (data.id >= eot) {
             continue;  // Zeitmarken und Steuertokens
         }
-        const char *piece = whisper_full_get_token_text(_context, segment, k);
+        const char *piece = whisper_full_get_token_text_from_state(_context, _state, segment, k);
         if (piece == NULL || piece[0] == 0) {
             continue;
         }
@@ -647,8 +712,8 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
         }
         // Unter VAD liegen die Token-Zeiten auf der gekürzten Zeitachse. whisper_full_get_token_t0/t1 rechnen sie zurück,
         // t_dtw nicht: dessen Versatz ist innerhalb eines Sprachstücks derselbe wie der von t0.
-        int64_t t0 = whisper_full_get_token_t0(_context, segment, k);
-        int64_t t1 = whisper_full_get_token_t1(_context, segment, k);
+        int64_t t0 = whisper_full_get_token_t0_from_state(_state, segment, k);
+        int64_t t1 = whisper_full_get_token_t1_from_state(_state, segment, k);
         int64_t offset = t0 - data.t0;
         BOOL dtw = _usesDTW && data.t_dtw >= 0;
         if (bytes.length == 0) {
@@ -796,12 +861,12 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     }
     self.spokenChecks += 1;
     CFAbsoluteTime begin = CFAbsoluteTimeGetCurrent();
-    if (whisper_pcm_to_mel(_context, samples, (int)count, threads) != 0) {
+    if (whisper_pcm_to_mel_with_state(_context, _state, samples, (int)count, threads) != 0) {
         return nil;
     }
     float probabilities[128] = {0};
     int maxId = whisper_lang_max_id();
-    int lang = whisper_lang_auto_detect(_context, 0, threads, maxId < 128 ? probabilities : NULL);
+    int lang = whisper_lang_auto_detect_with_state(_context, _state, 0, threads, maxId < 128 ? probabilities : NULL);
     const char *name = lang >= 0 ? whisper_lang_str(lang) : NULL;
     if (name == NULL) {
         return nil;
@@ -829,7 +894,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
 
 - (NSArray<BrowserSubtitleCue *> *)transcribeSamples:(const float *)samples count:(NSUInteger)count startTime:(NSTimeInterval)startTime {
 #if BROWSER_HAS_WHISPER
-    if (_context == NULL || samples == NULL || count < 1600) {
+    if (_state == NULL || samples == NULL || count < 1600) {
         return nil;
     }
     atomic_store(&_abortFlag, false);
@@ -933,7 +998,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     params.abort_callback_user_data = &_abortFlag;
 
     CFAbsoluteTime begin = CFAbsoluteTimeGetCurrent();
-    int result = whisper_full(_context, params, samples, (int)count);
+    int result = whisper_full_with_state(_context, _state, params, samples, (int)count);
     double compute = CFAbsoluteTimeGetCurrent() - begin;
     if (result != 0) {
         NSLog(@"%@ whisper_full Fehler %d (abgebrochen=%d)", kSubtitleLogPrefix, result, atomic_load(&_abortFlag));
@@ -944,7 +1009,7 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
 
     NSString *windowLanguage = nil;
     if ([decodingLanguage isEqualToString:@"auto"]) {
-        const char *lang = whisper_lang_str(whisper_full_lang_id(_context));
+        const char *lang = whisper_lang_str(whisper_full_lang_id_from_state(_state));
         if (lang != NULL) {
             windowLanguage = [NSString stringWithUTF8String:lang];
             self.detectedLanguage = windowLanguage;
@@ -952,21 +1017,21 @@ static const NSUInteger kBrowserSubtitleMinSentenceCharacters = 8;   // „You'r
     }
 
     NSMutableArray<BrowserSubtitleCue *> *cues = [NSMutableArray array];
-    int segments = whisper_full_n_segments(_context);
+    int segments = whisper_full_n_segments_from_state(_state);
     for (int i = 0; i < segments; i++) {
-        const char *rawText = whisper_full_get_segment_text(_context, i);
+        const char *rawText = whisper_full_get_segment_text_from_state(_state, i);
         NSString *text = rawText != NULL ? [[NSString stringWithUTF8String:rawText] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : @"";
-        float noSpeech = whisper_full_get_segment_no_speech_prob(_context, i);
+        float noSpeech = whisper_full_get_segment_no_speech_prob_from_state(_state, i);
         if (BrowserSubtitleIsNoiseText(text) || noSpeech > 0.8f) {
             // Verworfene Segmente sichtbar machen: lange Rechenzeiten bei „0 Segmente“ kommen von erfundenem Text
             // (Musik), den whisper bis zur Token-Grenze ausschreibt.
             NSString *shown = text.length > 60 ? [[text substringToIndex:60] stringByAppendingString:@"…"] : text;
             NSLog(@"%@ Segment verworfen (no_speech %.2f, %d Tokens): %@", kSubtitleLogPrefix, noSpeech,
-                  whisper_full_n_tokens(_context, i), shown);
+                  whisper_full_n_tokens_from_state(_state, i), shown);
             continue;
         }
-        NSTimeInterval t0 = startTime + whisper_full_get_segment_t0(_context, i) / 100.0;
-        NSTimeInterval t1 = startTime + whisper_full_get_segment_t1(_context, i) / 100.0;
+        NSTimeInterval t0 = startTime + whisper_full_get_segment_t0_from_state(_state, i) / 100.0;
+        NSTimeInterval t1 = startTime + whisper_full_get_segment_t1_from_state(_state, i) / 100.0;
         t1 = MIN(t1, startTime + seconds);
         t0 = MIN(t0, t1 - 0.2);
         [cues addObjectsFromArray:[self cuesForSegment:i text:text start:t0 end:t1 windowStart:startTime windowEnd:startTime + seconds]];
