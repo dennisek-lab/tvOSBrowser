@@ -1,5 +1,6 @@
 #import "BrowserSubtitleController.h"
 
+#import "BrowserAppleSpeechTranscriber.h"
 #import "BrowserNativeVideoPlayerViewController.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserSubtitleAudioTapSource.h"
@@ -34,6 +35,8 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
 @property (nonatomic, strong) NSMutableArray<BrowserSubtitleCue *> *cues;  // Hauptthread, nach Start sortiert
 @property (nonatomic, strong, nullable) id<BrowserSubtitleAudioSource> source;
 @property (nonatomic, strong, nullable) BrowserSubtitleEngine *engine;
+/// Apples Spracherkennung statt whisper (Einstellung SubtitlesRecognizer=apple, docs/ERWEITERUNGEN.md 10.10), sonst nil.
+@property (atomic, strong, nullable) BrowserAppleSpeechTranscriber *appleSpeech;
 @property (nonatomic, strong) BrowserSubtitlePipeline *pipeline;
 @property (nonatomic, strong) dispatch_queue_t engineQueue;
 /// Schon versuchte Quellen („mp4“, „tap“, „hls“), damit jede Rückfallstufe nur einmal kommt.
@@ -123,9 +126,17 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         _pipeline = [[BrowserSubtitlePipeline alloc] initWithTranscriber:^(NSData *samples, NSTimeInterval startTime,
                                                                            void (^completion)(NSArray<BrowserSubtitleCue *> *)) {
             BrowserSubtitleEngine *engine = weakSelf.engine;
-            dispatch_async(engineQueue, ^{
-                completion(engine != nil ? [engine transcribeSamples:samples.bytes count:samples.length / sizeof(float) startTime:startTime] : nil);
-            });
+            BrowserSubtitleTranscriber whisper = ^(NSData *whisperSamples, NSTimeInterval whisperStart, void (^whisperCompletion)(NSArray<BrowserSubtitleCue *> *)) {
+                dispatch_async(engineQueue, ^{
+                    whisperCompletion(engine != nil ? [engine transcribeSamples:whisperSamples.bytes count:whisperSamples.length / sizeof(float) startTime:whisperStart] : nil);
+                });
+            };
+            BrowserAppleSpeechTranscriber *apple = weakSelf.appleSpeech;
+            if (apple != nil) {
+                [apple transcribeSamples:samples startTime:startTime whisper:whisper completion:completion];
+            } else {
+                whisper(samples, startTime, completion);
+            }
         }];
         _pipeline.cueHandler = ^(NSArray<BrowserSubtitleCue *> *cues, NSTimeInterval replaceFrom, NSTimeInterval windowStart, NSTimeInterval windowEnd) {
             [weakSelf addCues:cues replacingTentativeFrom:replaceFrom];
@@ -384,7 +395,10 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         return;
     }
     NSString *language = self.preferences.autoSubtitlesLanguage;
-    NSString *modelPath = [BrowserSubtitleEngine modelPathForLanguage:language];
+    // Apples Spracherkennung (SubtitlesRecognizer=apple): whisper erkennt dann nur die gesprochene Sprache („auto“)
+    // und ist Rückfall; Apple erkennt, übersetzt wird wie bisher über translationTarget.
+    NSString *whisperLanguage = [BrowserAppleSpeechTranscriber whisperLanguageForSubtitleLanguage:language];
+    NSString *modelPath = [BrowserSubtitleEngine modelPathForLanguage:whisperLanguage];
     if (modelPath == nil) {
         [self.overlay showStatus:@"Automatische Untertitel nicht verfügbar" duration:5.0];
         NSLog(@"%@ kein Modell im Paket (tools/fetch_whisper_model.sh)", kSubtitleControllerLogPrefix);
@@ -392,9 +406,15 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
     }
     self.running = YES;
     [self.triedSources removeAllObjects];
-    BrowserSubtitleEngine *engine = [[BrowserSubtitleEngine alloc] initWithModelPath:modelPath language:language];
+    BrowserSubtitleEngine *engine = [[BrowserSubtitleEngine alloc] initWithModelPath:modelPath language:whisperLanguage];
     self.engine = engine;
     __weak typeof(self) weakSelf = self;
+    BrowserAppleSpeechTranscriber *apple = [BrowserAppleSpeechTranscriber transcriberForSubtitleLanguage:language];
+    __weak BrowserSubtitleEngine *weakEngine = engine;
+    apple.spokenLanguageProvider = ^NSString *{
+        return weakEngine.lockedLanguage;
+    };
+    self.appleSpeech = apple;
     if ([engine.language isEqualToString:@"auto"]) {
         if (self.sessionLanguage.length > 0) {
             [engine lockLanguage:self.sessionLanguage];  // einmal je Video erkennen, nicht nach jedem Neustart
@@ -503,7 +523,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         return;
     }
     self.holdingStart = YES;
-    NSString *language = self.engine.language;
+    NSString *language = self.appleSpeech.subtitleLanguage ?: self.engine.language;  // bei Apple läuft whisper auf „auto“
     BOOL mayTranslate = language.length > 0 && ![language isEqualToString:@"auto"] &&
                         ![NSUserDefaults.standardUserDefaults boolForKey:@"SubtitlesNoAppleTranslation"] &&
                         !BrowserSubtitleTranslator.sharedTranslator.suspended;
@@ -746,11 +766,13 @@ static NSTimeInterval BrowserSubtitleMinimumDisplay(BrowserSubtitleCue *cue) {
 }
 
 - (NSString *)offsetSummary {
-    NSString *language = self.engine.language;
+    BrowserAppleSpeechTranscriber *apple = self.appleSpeech;
+    NSString *language = apple.subtitleLanguage ?: self.engine.language;
+    NSString *summary = BrowserSubtitleOffsetSummary(self.offsets);
     if (language.length > 0 && ![language isEqualToString:@"auto"]) {
-        return [NSString stringWithFormat:@"%@, %@", BrowserSubtitleOffsetSummary(self.offsets), [BrowserSubtitleTranslator.sharedTranslator summary]];
+        summary = [NSString stringWithFormat:@"%@, %@", summary, [BrowserSubtitleTranslator.sharedTranslator summary]];
     }
-    return BrowserSubtitleOffsetSummary(self.offsets);
+    return apple != nil ? [NSString stringWithFormat:@"%@, %@", summary, [apple summary]] : summary;
 }
 
 - (void)playerTimeDidChange:(CMTime)time {

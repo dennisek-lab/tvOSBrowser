@@ -1,5 +1,6 @@
 #import "BrowserWebSubtitleController.h"
 
+#import "BrowserAppleSpeechTranscriber.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserSpeechRecognizerStub.h"
 #import "BrowserSubtitleEngine.h"
@@ -133,7 +134,16 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
         completion(cues);
     };
     if ([recognizer isKindOfClass:BrowserWhisperSpeechRecognizer.class]) {
-        [(BrowserWhisperSpeechRecognizer *)recognizer transcribeEngineSamples:samples startTime:startTime completion:finish];
+        BrowserWhisperSpeechRecognizer *whisperRecognizer = (BrowserWhisperSpeechRecognizer *)recognizer;
+        BrowserAppleSpeechTranscriber *apple = self.appleSpeech;
+        if (apple != nil) {
+            [apple transcribeSamples:samples startTime:startTime whisper:^(NSData *whisperSamples, NSTimeInterval whisperStart,
+                                                                           void (^whisperCompletion)(NSArray<BrowserSubtitleCue *> *)) {
+                [whisperRecognizer transcribeEngineSamples:whisperSamples startTime:whisperStart completion:whisperCompletion];
+            } completion:finish];
+            return;
+        }
+        [whisperRecognizer transcribeEngineSamples:samples startTime:startTime completion:finish];
         return;
     }
     [recognizer transcribeSamples:samples.bytes count:samples.length / sizeof(float) startTime:startTime
@@ -354,8 +364,9 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
     self.directSource = nil;
     self.directURL = nil;
     [source stop];
-    NSLog(@"[WebSubs] Tonquelle %@ getrennt, Versatz: %@, %@", source.kindName, BrowserSubtitleOffsetSummary(self.offsets),
-          [BrowserSubtitleTranslator.sharedTranslator summary]);
+    NSLog(@"[WebSubs] Tonquelle %@ getrennt, Versatz: %@, %@%@", source.kindName, BrowserSubtitleOffsetSummary(self.offsets),
+          [BrowserSubtitleTranslator.sharedTranslator summary],
+          self.appleSpeech != nil ? [@", " stringByAppendingString:[self.appleSpeech summary]] : @"");
 }
 
 - (void)directSource:(id<BrowserSubtitleAudioSource>)source didFailWithReason:(NSString *)reason {
@@ -577,7 +588,8 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
             capture.averageTransportMilliseconds, capture.averageDecodeMilliseconds, capture.bufferedDuration,
             (unsigned long)_windows, (unsigned long)self.pipeline.processedWindows, (unsigned long)self.pipeline.droppedWindows,
             _windows ? _recognitionSum / _windows : 0.0, _recognitionMax,
-            [NSString stringWithFormat:@"%@, %@", BrowserSubtitleOffsetSummary(self.offsets), [BrowserSubtitleTranslator.sharedTranslator summary]],
+            [NSString stringWithFormat:@"%@, %@%@", BrowserSubtitleOffsetSummary(self.offsets), [BrowserSubtitleTranslator.sharedTranslator summary],
+             self.appleSpeech != nil ? [@", " stringByAppendingString:[self.appleSpeech summary]] : @""],
             (unsigned long)self.overlay.cueCount,
             self.overlay.currentMediaTime, NSStringFromCGRect(capture.playbackState.videoRect),
             capture.playbackState.fullscreen ? @" Vollbild" : @"", self.overlay.layoutSummary];

@@ -5,6 +5,7 @@
 #import "BrowserWebSubtitleOverlay.h"
 
 @class BrowserWebView;
+@class BrowserAppleSpeechTranscriber;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -27,6 +28,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init;
 
 @property (nonatomic, strong) id<BrowserSpeechRecognizing> recognizer;
+/// Apples Spracherkennung statt whisper (SubtitlesRecognizer=apple, docs/ERWEITERUNGEN.md 10.10); `recognizer`
+/// (whisper) bestimmt dann nur die Sprache und ist Rückfall. nil = whisper erkennt.
+@property (atomic, strong, nullable) BrowserAppleSpeechTranscriber *appleSpeech;
 @property (nonatomic, readonly) BrowserWebAudioCapture *capture;
 @property (nonatomic, readonly) BrowserWebSubtitleOverlay *overlay;
 

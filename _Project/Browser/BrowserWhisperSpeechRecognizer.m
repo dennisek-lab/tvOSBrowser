@@ -120,6 +120,10 @@ static NSArray<NSString *> *BrowserWhisperCollapseRepeats(NSArray<NSString *> *w
     return [NSString stringWithFormat:@"whisper %@ (%@)", self.modelName, self.language];
 }
 
+- (NSString *)lockedLanguage {
+    return [self lockedEngine].lockedLanguage;
+}
+
 - (double)averageRealTimeFactor {
     os_unfair_lock_lock(&_statsLock);
     double factor = _totalAudio > 0.0 ? _totalCompute / _totalAudio : 0.0;
