@@ -399,7 +399,7 @@ static CGFloat const kTopBarClassicVerticalInset = 8.0;
 - (void)applyContrastStyle {
     if (self.classicDesign) {
         self.chromeContainerView.layer.shadowOpacity = 0.0;
-        self.glassDimmingView.backgroundColor = [UIColor colorWithWhite:0.54 alpha:0.62]; // auf weißer Seite Grau 155 wie screen01.png
+        self.glassDimmingView.backgroundColor = [UIColor colorWithWhite:0.54 alpha:0.62]; // auf weißer Seite Grau 155 wie docs/original-screens/screen01.png
         return;
     }
     BOOL light = self.lightPage;

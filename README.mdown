@@ -11,7 +11,7 @@ Ein Webbrowser für das Apple TV (tvOS 17 bis 27) mit **Magnetic Buttons**, Liqu
 
 Die App nutzt **private APIs** (WebKit wird zur Laufzeit geladen, die Übersetzung läuft über private Klassen von Apples Translation-Framework). Apple erlaubt das im App Store nicht. Sie ist nur zum Selbstbauen gedacht – bitte keine Builds im App Store veröffentlichen. Keine Gewähr, Nutzung auf eigenes Risiko.
 
-Dieses Repo ist eine stark erweiterte Fassung des ursprünglichen [tvOS Browser](https://github.com/jvanakker/tvOSBrowser) von jvanakker (siehe Git-Historie und `THIRD_PARTY_NOTICES.md`). Bildschirmfotos der ursprünglichen Fassung liegen unter `docs/original-screens/`.
+Dieses Repo ist eine stark erweiterte Fassung des ursprünglichen tvOS Browser von Steven Troughton-Smith, weitergeführt von [jvanakker/tvOSBrowser](https://github.com/jvanakker/tvOSBrowser) (siehe Git-Historie und `THIRD_PARTY_NOTICES.md`). Bildschirmfotos der ursprünglichen Fassung liegen unter `docs/original-screens/`.
 
 
 Einrichten
