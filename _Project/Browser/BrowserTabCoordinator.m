@@ -11,6 +11,9 @@
 static CGFloat const kThumbnailStagingOffset = 4096.0;
 /// Breite der Vorschau in der Tab-Übersicht (kTabCardWidth in BrowserTabOverviewController.m) in Punkten.
 static CGFloat const kThumbnailMaximumWidth = 600.0;
+/// Höchstens so viele Tabs behalten ihre WebView (je ein eigener Seitenprozess, am Apple TV 130–590 MB). Ältere Tabs
+/// werden entladen: Adresse, Titel, Scrollposition und Vorschaubild bleiben, der Verlauf (Zurück/Vor) geht verloren.
+static NSUInteger const kMaximumLoadedTabCount = 5;
 
 @interface BrowserTabCoordinator ()
 
@@ -433,7 +436,7 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
         [self.activeWebView loadRequest:home];
         return YES;
     }
-    if (tabs.count >= 5 || ![self createNewTabWithRequest:home]) {
+    if (tabs.count >= BrowserViewModel.maximumTabCount || ![self createNewTabWithRequest:home]) {
         NSLog(@"[Tabs] Start: alle Tabs belegt, Startseite im aktiven Tab");
         [self.activeWebView loadRequest:home];
         return YES;
@@ -479,6 +482,7 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
 
     // Angezeigt = benutzt: Ein Tab, zu dem der Nutzer wechselt, schließt sich nie mehr von selbst.
     [self markTabUsed:tab];
+    tab.lastActivatedAt = NSDate.date.timeIntervalSince1970;
     [self updateThumbnailStagingViewFrame];
     for (BrowserTabViewModel *candidate in self.viewModel.tabs) {
         BrowserWebView *candidateWebView = self.webViewsByTabIdentifier[candidate.identifier];
@@ -508,6 +512,72 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     self.manualScrollPanRecognizer.enabled = shouldAllowWebInteraction;
 
     [self refreshActiveTabUI];
+    [self unloadTabsBeyondLoadedBudget];
+}
+
+- (NSUInteger)loadedTabCount {
+    NSUInteger count = 0;
+    for (BrowserTabViewModel *tab in self.viewModel.tabs) {
+        if (self.webViewsByTabIdentifier[tab.identifier] != nil) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/// Mehr als kMaximumLoadedTabCount Tabs mit WebView: die am längsten nicht angezeigten entladen, nie den aktiven.
+- (void)unloadTabsBeyondLoadedBudget {
+    NSUInteger loaded = [self loadedTabCount];
+    if (loaded <= kMaximumLoadedTabCount) {
+        return;
+    }
+    BrowserTabViewModel *activeTab = self.activeTab;
+    NSMutableArray<BrowserTabViewModel *> *candidates = [NSMutableArray array];
+    for (BrowserTabViewModel *tab in self.viewModel.tabs) {
+        if (tab != activeTab && self.webViewsByTabIdentifier[tab.identifier] != nil) {
+            [candidates addObject:tab];
+        }
+    }
+    // Stabil sortiert: bei gleichem Zeitpunkt (z. B. nie angezeigt) zuerst die weiter vorn stehenden Tabs.
+    [candidates sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(BrowserTabViewModel *a, BrowserTabViewModel *b) {
+        if (a.lastActivatedAt < b.lastActivatedAt) {
+            return NSOrderedAscending;
+        }
+        return a.lastActivatedAt > b.lastActivatedAt ? NSOrderedDescending : NSOrderedSame;
+    }];
+    for (BrowserTabViewModel *tab in candidates) {
+        if (loaded <= kMaximumLoadedTabCount) {
+            break;
+        }
+        [self unloadWebViewForTab:tab];
+        loaded--;
+        NSLog(@"[Tabs] Hintergrund-Tab entladen: %@ (geladen %lu/%lu)", tab.URLString.length > 0 ? tab.URLString : tab.requestURL,
+              (unsigned long)loaded, (unsigned long)kMaximumLoadedTabCount);
+    }
+}
+
+/// WebView eines Hintergrund-Tabs freigeben (wie beim Schließen). Scrollposition und Vorschaubild bleiben; beim nächsten
+/// Anzeigen lädt der Tab seine Adresse neu und springt an die alte Stelle. Der Verlauf (Zurück/Vor) geht verloren.
+- (void)unloadWebViewForTab:(BrowserTabViewModel *)tab {
+    BrowserWebView *webView = self.webViewsByTabIdentifier[tab.identifier];
+    if (webView == nil || tab == self.activeTab) {
+        return;
+    }
+    if (tab.snapshotImage == nil) {
+        [self captureSnapshotForTab:tab];
+    } else {
+        [self updateStoredScrollOffsetForTab:tab];
+    }
+    if (tab.hasSavedScrollOffset) {
+        tab.needsScrollRestore = YES;
+    }
+    [webView closePage];
+    [webView removeFromSuperview];
+    [self.webViewsByTabIdentifier removeObjectForKey:tab.identifier];
+}
+
+- (BOOL)isTabLoaded:(BrowserTabViewModel *)tab {
+    return tab != nil && self.webViewsByTabIdentifier[tab.identifier] != nil;
 }
 
 - (void)updateStoredScrollOffsetForTab:(BrowserTabViewModel *)tab {
@@ -516,7 +586,9 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     }
 
     BrowserWebView *webView = self.webViewsByTabIdentifier[tab.identifier];
-    if (webView == nil) {
+    // Solange die Seite nach dem Neuladen noch nicht an die alte Stelle gesprungen ist, gilt die gespeicherte Position
+    // (die neue WebView steht noch oben).
+    if (webView == nil || tab.needsScrollRestore) {
         return;
     }
 
@@ -597,6 +669,10 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     if (webView == nil || CGRectIsEmpty(webView.bounds)) {
         return;
     }
+    // Entladener Tab lädt gerade neu: das Bild von vorher ist besser als eine halb geladene Seite.
+    if (tab.needsScrollRestore && tab.snapshotImage != nil) {
+        return;
+    }
 
     [self prepareWebViewLayoutForSnapshot:webView];
     // Nur so fein wie die Karte der Tab-Übersicht (584 pt breit), nicht in voller Bildschirmauflösung: ein Bild in
@@ -620,31 +696,58 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
 - (void)prepareTabOverviewThumbnails {
     [self updateThumbnailStagingViewFrame];
 
+    // Geladene Tabs: Vorschau neu aufnehmen. Entladene Tabs behalten ihr Vorschaubild.
+    NSMutableArray<BrowserTabViewModel *> *missing = [NSMutableArray array];
     for (BrowserTabViewModel *tab in self.viewModel.tabs) {
         BrowserWebView *webView = self.webViewsByTabIdentifier[tab.identifier];
         if (tab == self.activeTab) {
             [self captureSnapshotForTab:tab];
             continue;
         }
-
-        if (webView == nil) {
-            webView = [self createConfiguredWebView];
-            self.webViewsByTabIdentifier[tab.identifier] = webView;
-        }
-
-        [self parkWebViewForThumbnailing:webView];
-        if (webView.request == nil) {
-            [self loadStoredContentForTab:tab webView:webView fallbackToHomePage:NO];
+        if (webView != nil) {
+            [self parkWebViewForThumbnailing:webView];
+            if (webView.request == nil) {
+                [self loadStoredContentForTab:tab webView:webView fallbackToHomePage:NO];
+            } else {
+                [self captureSnapshotForTab:tab];
+            }
             continue;
         }
+        // Ohne Bild (z. B. nach einem Neustart) nur im Rahmen des Ladebudgets für die Vorschau laden. Nie unbenutzte
+        // Hintergrund-Tabs (Pop-ups): Die laden erst, wenn der Nutzer sie öffnet; die Karte zeigt Titel und Adresse.
+        if (tab.snapshotImage == nil && tab.userInteracted) {
+            [missing addObject:tab];
+        }
+    }
 
-        [self captureSnapshotForTab:tab];
+    // Zuletzt benutzte zuerst.
+    [missing sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(BrowserTabViewModel *a, BrowserTabViewModel *b) {
+        if (a.lastActivatedAt > b.lastActivatedAt) {
+            return NSOrderedAscending;
+        }
+        return a.lastActivatedAt < b.lastActivatedAt ? NSOrderedDescending : NSOrderedSame;
+    }];
+    NSUInteger loaded = [self loadedTabCount];
+    for (NSUInteger index = 0; index < missing.count; index++) {
+        BrowserTabViewModel *tab = missing[index];
+        if (loaded >= kMaximumLoadedTabCount) {
+            NSLog(@"[Tabs] Übersicht: %lu Tabs ohne Vorschau, Ladebudget %lu erreicht", (unsigned long)(missing.count - index),
+                  (unsigned long)kMaximumLoadedTabCount);
+            break;
+        }
+        BrowserWebView *webView = [self createConfiguredWebView];
+        self.webViewsByTabIdentifier[tab.identifier] = webView;
+        [self parkWebViewForThumbnailing:webView];
+        [self loadStoredContentForTab:tab webView:webView fallbackToHomePage:NO];
+        loaded++;
+        NSLog(@"[Tabs] Übersicht: lade Tab für Vorschau: %@ (geladen %lu/%lu)", tab.URLString.length > 0 ? tab.URLString : tab.requestURL,
+              (unsigned long)loaded, (unsigned long)kMaximumLoadedTabCount);
     }
 }
 
 - (void)showMaxTabsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Zu viele Tabs"
-                                                                             message:@"Es können höchstens fünf Tabs gleichzeitig offen sein."
+                                                                             message:@"Es können höchstens zehn Tabs gleichzeitig offen sein."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     [alertController addAction:[UIAlertAction actionWithTitle:@"Schließen"
                                                         style:UIAlertActionStyleCancel
@@ -711,16 +814,28 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     tab.requestURL = URLString;
     tab.URLString = URLString;
     tab.title = request.URL.host.length > 0 ? request.URL.host : @"Neuer Tab";
-
-    // Unsichtbar neben dem Bildschirm laden (wie die Vorschauen der Tab-Übersicht); Medien hält
-    // webViewDidFinishLoad: dort an.
-    BrowserWebView *webView = [self createConfiguredWebView];
-    self.webViewsByTabIdentifier[tab.identifier] = webView;
-    [self parkWebViewForThumbnailing:webView];
-    [webView loadRequest:request];
-    [self.rootView bringSubviewToFront:self.cursorView];
+    // Noch nicht laden: keine WebView, kein Seitenprozess. Erst beim Öffnen (Einblendung oder Tab-Übersicht) lädt
+    // switchToTabAtIndex: die Anfrage. So verdrängt ein Pop-up keinen anderen Tab aus dem Speicher.
+    tab.pendingRequest = request;
+    NSLog(@"[Tabs] Hintergrund-Tab angelegt, lädt erst beim Öffnen: %@ (geladen %lu/%lu)", URLString,
+          (unsigned long)[self loadedTabCount], (unsigned long)kMaximumLoadedTabCount);
     [self persistSession];
     return tab;
+}
+
+/// Aktiver Tab hat eine frische WebView ohne Seite: zurückgestellte Pop-up-Anfrage oder gespeicherte Adresse laden.
+- (void)loadContentIntoEmptyActiveWebView {
+    if (self.activeWebView == nil || self.activeWebView.request != nil) {
+        return;
+    }
+    BrowserTabViewModel *tab = self.activeTab;
+    NSURLRequest *pendingRequest = tab.pendingRequest;
+    tab.pendingRequest = nil;
+    if (pendingRequest != nil) {
+        [self.activeWebView loadRequest:pendingRequest];
+        return;
+    }
+    [self loadStoredContentForTab:tab webView:self.activeWebView fallbackToHomePage:YES];
 }
 
 - (NSUInteger)closeUnusedTabsOlderThan:(NSTimeInterval)expiry {
@@ -760,9 +875,8 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     [self.viewModel switchToTabAtIndex:tabIndex];
     [self initWebView];
     [self.rootView bringSubviewToFront:self.cursorView];
-    if (self.activeWebView.request == nil) {
-        [self loadStoredContentForTab:self.activeTab webView:self.activeWebView fallbackToHomePage:YES];
-    }
+    // Entladener Tab oder noch nicht geladenes Pop-up: jetzt laden (Scrollposition folgt in webViewDidFinishLoad:).
+    [self loadContentIntoEmptyActiveWebView];
     [self persistSession];
 }
 
@@ -785,9 +899,7 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
 
     if (closingActiveTab) {
         [self initWebView];
-        if (self.activeWebView.request == nil) {
-            [self loadStoredContentForTab:self.activeTab webView:self.activeWebView fallbackToHomePage:YES];
-        }
+        [self loadContentIntoEmptyActiveWebView];
     }
 
     [self refreshActiveTabUI];

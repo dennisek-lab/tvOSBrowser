@@ -77,6 +77,8 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
 @property (nonatomic) UIView *cardBackgroundView;
 @property (nonatomic) UIImageView *thumbnailView;
+/// Ohne Vorschaubild (Pop-up, das noch nicht geladen ist, oder entladener Tab nach einem Neustart): Domain statt Bild.
+@property (nonatomic) UILabel *placeholderLabel;
 @property (nonatomic) UIView *addIconBackdropView;
 @property (nonatomic) UIImageView *addIconView;
 @property (nonatomic) UILabel *titleLabel;
@@ -109,6 +111,12 @@ static CGFloat const kTabCardURLHeight = 64.0;
         _thumbnailView.contentMode = UIViewContentModeScaleAspectFill;
         _thumbnailView.clipsToBounds = YES;
         [_cardBackgroundView addSubview:_thumbnailView];
+
+        _placeholderLabel = [[UILabel alloc] initWithFrame:CGRectInset(_thumbnailView.frame, 30.0, 30.0)];
+        _placeholderLabel.textAlignment = NSTextAlignmentCenter;
+        _placeholderLabel.numberOfLines = 3;
+        _placeholderLabel.hidden = YES;
+        [_cardBackgroundView addSubview:_placeholderLabel];
 
         _addIconBackdropView = [[UIView alloc] initWithFrame:CGRectMake((kTabCardWidth - 144.0) / 2.0, (kTabCardHeight - 144.0) / 2.0, 144.0, 144.0)];
         _addIconBackdropView.backgroundColor = UIColor.clearColor;
@@ -152,6 +160,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
     self.activeTab = NO;
     self.thumbnailView.hidden = YES;
     self.thumbnailView.image = nil;
+    self.placeholderLabel.hidden = YES;
     self.addIconBackdropView.hidden = NO;
     self.titleLabel.text = @"Neuer Tab";
     self.urlLabel.text = @"Startseite öffnen";
@@ -164,6 +173,25 @@ static CGFloat const kTabCardURLHeight = 64.0;
     self.activeTab = activeTab;
     self.thumbnailView.hidden = NO;
     self.thumbnailView.image = tab.snapshotImage;
+    self.placeholderLabel.hidden = tab.snapshotImage != nil;
+    if (tab.snapshotImage == nil) {
+        NSString *host = [NSURL URLWithString:tab.URLString.length > 0 ? tab.URLString : tab.requestURL].host ?: @"";
+        if ([host hasPrefix:@"www."]) {
+            host = [host substringFromIndex:4];
+        }
+        NSMutableAttributedString *text = [NSMutableAttributedString new];
+        if (host.length > 0) {
+            [text appendAttributedString:[[NSAttributedString alloc] initWithString:[host stringByAppendingString:@"\n"] attributes:@{
+                NSFontAttributeName: [UIFont preferredFontForTextStyle:UIFontTextStyleTitle2],
+                NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.8],
+            }]];
+        }
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:@"Keine Vorschau" attributes:@{
+            NSFontAttributeName: [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1],
+            NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.5],
+        }]];
+        self.placeholderLabel.attributedText = text;
+    }
     self.addIconBackdropView.hidden = YES;
     self.titleLabel.text = tab.title.length > 0 ? tab.title : @"Neuer Tab";
     self.urlLabel.text = tab.URLString.length > 0 ? tab.URLString : @"Startseite";
