@@ -1,0 +1,10 @@
+// Signierung und Bundle-ID.
+// Eigene Werte gehören in Signing.local.xcconfig neben dieser Datei (wird nicht eingecheckt), zum Beispiel:
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   BROWSER_BUNDLE_ID = de.beispiel.tvbrowser
+// Ohne diese Datei baut das Projekt mit den Werten hier; Xcode fragt dann nach einem Team.
+
+DEVELOPMENT_TEAM =
+BROWSER_BUNDLE_ID = io.github.tvosbrowser.app
+
+#include? "Signing.local.xcconfig"

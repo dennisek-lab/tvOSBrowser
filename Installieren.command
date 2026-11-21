@@ -16,7 +16,19 @@ ROOT="$(pwd)"
 PROJEKT="_Project/Browser.xcodeproj"
 SCHEMA="Browser"
 KONFIG="Release"
-BUNDLE_ID="io.github.tvosbrowser.app"
+# Bundle-ID und Team aus _Project/Signing.xcconfig bzw. der eigenen _Project/Signing.local.xcconfig (gewinnt).
+xcconfig_wert() {
+  local wert="" datei
+  for datei in "$ROOT/_Project/Signing.xcconfig" "$ROOT/_Project/Signing.local.xcconfig"; do
+    [ -f "$datei" ] || continue
+    local zeile
+    zeile=$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$datei" | tail -1 | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]*$//')
+    [ -n "$zeile" ] && wert="$zeile"
+  done
+  printf '%s' "$wert"
+}
+BUNDLE_ID="$(xcconfig_wert BROWSER_BUNDLE_ID)"
+TEAM_ID="$(xcconfig_wert DEVELOPMENT_TEAM)"
 BUILD_DIR="$ROOT/build"
 LOG="$ROOT/build.log"
 
@@ -221,7 +233,7 @@ if ! xcodebuild "${bauen_args[@]}" -destination "id=$GERAET" -allowProvisioningU
   grep -E "error:" "$LOG" | sort -u | head -10
   fehler "Bauen fehlgeschlagen. Vollständiges Protokoll: $LOG"
   if grep -qiE "No Account for Team|no accounts|provisioning profile|signing" "$LOG"; then
-    echo "Signierung: In Xcode unter Einstellungen > Accounts die Apple-ID anmelden (Team <Team-ID>)."
+    echo "Signierung: In Xcode unter Einstellungen > Accounts die Apple-ID anmelden und in _Project/Signing.local.xcconfig DEVELOPMENT_TEAM (und eine eigene BROWSER_BUNDLE_ID) eintragen${TEAM_ID:+ (eingetragen: Team $TEAM_ID)}."
   fi
   if grep -qiE "locked|passcode|unavailable|not connected" "$LOG"; then
     echo "Gerät erreichbar? Apple TV aufwecken und die Fernbedienungs-Seite offen lassen."

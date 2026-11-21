@@ -94,7 +94,7 @@ static NSString *BrowserWebAudioScriptSource(void) {
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _sampleQueue = dispatch_queue_create("io.github.tvosbrowser.app.webaudio", DISPATCH_QUEUE_SERIAL);
+        _sampleQueue = dispatch_queue_create("tvbrowser.webaudio", DISPATCH_QUEUE_SERIAL);
         _ringLock = OS_UNFAIR_LOCK_INIT;
         _ring = calloc(kBrowserWebAudioRingCapacity, sizeof(float));
         _statusDetail = @"";

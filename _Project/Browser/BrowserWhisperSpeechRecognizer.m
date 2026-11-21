@@ -107,7 +107,7 @@ static NSArray<NSString *> *BrowserWhisperCollapseRepeats(NSArray<NSString *> *w
         _recentCues = [NSMutableArray array];
         atomic_store(&_generation, 0);
         dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
-        _engineQueue = dispatch_queue_create("io.github.tvosbrowser.app.websubtitles.whisper", attributes);
+        _engineQueue = dispatch_queue_create("tvbrowser.websubtitles.whisper", attributes);
         // Gleich im Hintergrund laden, damit der erste Abschnitt nicht auf das Modell wartet. Kommt danach kein Ton
         // (Untertitel an, aber kein Video), nach idleUnloadDelay wieder freigeben: whisper small belegt am Apple TV
         // rund 300 MB, die sonst bis zum Beenden der App fehlen (Messung 10. November 2026: App 340 MB im Leerlauf).

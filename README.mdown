@@ -25,7 +25,14 @@ Es gibt **keine** fertige App zum Herunterladen. Du brauchst einen Mac mit Xcode
 
 Optionen des Skripts: `--nur-bauen`, `--geraete`, `--kein-pull`, `--debug`, `--starten`/`--nicht-starten`, `UDID=…`.
 
-**Eigenes Team:** Im Projekt sind ein festes Team und die Bundle-ID `io.github.tvosbrowser.app` eingetragen. Wer mit eigener Apple-ID baut, trägt in Xcode beim Ziel *Browser* eine eigene Bundle-ID und unter *Signing & Capabilities* das eigene Team ein (Bilder aus einer älteren Xcode-Fassung, der Weg ist derselbe). `Installieren.command` startet die App über die Variable `BUNDLE_ID` oben im Skript; die muss dann mitgeändert werden.
+**Eigenes Team:** Im Projekt ist kein Team eingetragen, die Bundle-ID ist `io.github.tvosbrowser.app`. Lege `_Project/Signing.local.xcconfig` an (wird nicht eingecheckt) und trage dort das eigene Team und eine eigene Bundle-ID ein:
+
+```
+DEVELOPMENT_TEAM = ABCDE12345
+BROWSER_BUNDLE_ID = de.beispiel.tvbrowser
+```
+
+Die Team-ID steht in Xcode unter *Einstellungen → Accounts* bzw. im Apple-Developer-Konto. `Installieren.command` liest beide Werte von dort. Alternativ in Xcode beim Ziel *Browser* unter *Signing & Capabilities* Team und Bundle-ID wählen (Bilder aus einer älteren Xcode-Fassung, der Weg ist derselbe); das ändert aber die eingecheckte Projektdatei.
 
 ![Bundle-ID ändern](/readme_instruction_01.png?raw=true "Bundle Identifier auf eine eigene Kennung ändern")
 

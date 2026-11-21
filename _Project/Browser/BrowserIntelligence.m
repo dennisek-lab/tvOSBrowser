@@ -72,7 +72,7 @@ static NSString * const kDeclinedHostsKey = @"TranslateDeclinedHosts";
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _workQueue = dispatch_queue_create("io.github.tvosbrowser.app.intelligence", DISPATCH_QUEUE_SERIAL);
+        _workQueue = dispatch_queue_create("tvbrowser.intelligence", DISPATCH_QUEUE_SERIAL);
         _sentenceEmbeddings = [NSMutableDictionary dictionary];
     }
     return self;

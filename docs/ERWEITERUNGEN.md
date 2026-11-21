@@ -317,7 +317,7 @@ Ohne App-Update übernimmt das der Workflow `filterlisten.yml` täglich (6.10); 
 - **Reaktion:** Host der Hauptseite (aus `message.webView.URL`) wird per `setException:YES` ausgenommen, in `adBlockAutoExceptionHosts` vermerkt, Seite einmal neu geladen. Schleifenschutz: pro Host einmal je App-Lauf. Eine Menüentscheidung des Nutzers (`setException:`) entfernt den Auto-Vermerk.
 - **Log (DEBUG):** `[AdBlockWall] host … erkannt → Ausnahme, neu laden`.
 - **Keine eingebaute Hostliste:** Die Filterliste „Adblock Warning Removal List“ (EasyList, antiadblockfilters) ist gepflegt, besteht aber aus Netzwerk-/Kosmetikregeln, nicht aus einer Liste von Sperr-Seiten. Eine Vorab-Ausnahme würde unnötig Werbung zeigen, daher nur Erkennung.
-- **Hinweis:** `adBlockAutoExceptionHosts`/`adBlockExceptionHosts` überstehen `clearall` (liegen in `NSUserDefaults`, nicht im Datenspeicher). Am Gerät ist bild.de nach dem ersten Treffer dauerhaft ausgenommen, eine Sperrseite erscheint dann nicht mehr. Nachsehen: `xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer --domain-identifier io.github.tvosbrowser.app --source Library/Preferences/io.github.tvosbrowser.app.plist --destination p.plist` und `plutil -p p.plist`.
+- **Hinweis:** `adBlockAutoExceptionHosts`/`adBlockExceptionHosts` überstehen `clearall` (liegen in `NSUserDefaults`, nicht im Datenspeicher). Am Gerät ist bild.de nach dem ersten Treffer dauerhaft ausgenommen, eine Sperrseite erscheint dann nicht mehr. Nachsehen: `xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer --domain-identifier <Bundle-ID> --source Library/Preferences/<Bundle-ID>.plist --destination p.plist` und `plutil -p p.plist`.
 - **Test:** `POINTER_SELFTEST="clearall;url:https://www.bild.de;wait;wait;wait;wait;wait;wait;wait;wait"`. Gegenprobe ohne Treffer: spiegel.de, heise.de, `de.wikipedia.org/wiki/Werbeblocker`. Sperrtexte fehlen? `BLOCKER`/`ACTION` in `adblock-wall.js` ergänzen.
 
 ### 6.9 Erweiterte Regeln: Scriptlets und prozedurales CSS (`BrowserScriptletInjector`)
@@ -360,7 +360,7 @@ Im DEBUG-Build setzt `runtime.js` je Frame `window.__browserScriptlets = {host, 
 POINTER_SELFTEST='url:https://www.youtube.com/watch?v=dQw4w9WgXcQ;wait;wait;wait;wait;js:[JSON.stringify(window.__browserScriptlets), String(ytInitialPlayerResponse.adPlacements), String(document.querySelector("#movie_player").getPlayerResponse().adPlacements), !!document.querySelector(".ad-showing")].join(" ")'
 # erwartet: {"host":"www.youtube.com","scriptlets":23,…} undefined undefined false
 ```
-Gegenprobe ohne Scriptlets: Ausnahme setzen (`xcrun simctl spawn <udid> defaults write io.github.tvosbrowser.app AdBlockExceptionHosts -array youtube.com`); dann liefert dieselbe Zeile `[object Object]`, und im Simulator lief ein 15-s-Werbeclip (`.ad-showing`). Navigation innerhalb von YouTube: `js:document.querySelector("ytd-app").dispatchEvent(new CustomEvent("yt-navigate", {bubbles: true, composed: true, detail: {endpoint: {watchEndpoint: {videoId: "kJQP7kiw5Fk"}, commandMetadata: {webCommandMetadata: {url: "/watch?v=kJQP7kiw5Fk", webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832}}}}}))`, danach wie oben `getPlayerResponse()` prüfen (Stand 8. November 2026: ohne Scriptlets zwei `adPlacements`, mit Scriptlets `undefined`). Prozedurales CSS: auf heise.de `<p>=== Anzeige / Sponsorenhinweis ===</p>` an `body` hängen; ExtendedCss blendet ihn und den folgenden Absatz aus.
+Gegenprobe ohne Scriptlets: Ausnahme setzen (`xcrun simctl spawn <udid> defaults write <Bundle-ID> AdBlockExceptionHosts -array youtube.com`); dann liefert dieselbe Zeile `[object Object]`, und im Simulator lief ein 15-s-Werbeclip (`.ad-showing`). Navigation innerhalb von YouTube: `js:document.querySelector("ytd-app").dispatchEvent(new CustomEvent("yt-navigate", {bubbles: true, composed: true, detail: {endpoint: {watchEndpoint: {videoId: "kJQP7kiw5Fk"}, commandMetadata: {webCommandMetadata: {url: "/watch?v=kJQP7kiw5Fk", webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832}}}}}))`, danach wie oben `getPlayerResponse()` prüfen (Stand 8. November 2026: ohne Scriptlets zwei `adPlacements`, mit Scriptlets `undefined`). Prozedurales CSS: auf heise.de `<p>=== Anzeige / Sponsorenhinweis ===</p>` an `body` hängen; ExtendedCss blendet ihn und den folgenden Absatz aus.
 
 Im Simulator spielt YouTube das Hauptvideo beim ersten Laden **auch ohne** Scriptlets nicht ab („Dieses Video kann in deinem Browser nicht abgespielt werden“). Ob Werbung wirklich wegfällt und das Video läuft, nur am Gerät beurteilen.
 
@@ -424,7 +424,7 @@ python3 -m http.server 8000 --directory <ordner>   # mit <ordner>/good/manifest.
 SIMCTL_CHILD_FILTERLIST_URL=http://127.0.0.1:8000/good/manifest.json \
 SIMCTL_CHILD_FILTERLIST_CHECK_NOW=1 \
 SIMCTL_CHILD_POINTER_SELFTEST='wait;wait;wait;wait;wait;wait;url:http://127.0.0.1:8000/test.html;wait;wait;js:…' \
-  xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app
+  xcrun simctl launch --console-pty --terminate-running-process <udid> <Bundle-ID>
 ```
 `FILTERLIST_URL` ersetzt die Quelle (nur DEBUG, auch `http://`), `FILTERLIST_CHECK_NOW=1` prüft 2 s nach dem ersten Seitenaufbau ohne Tagesgrenze. Geprüft am 8. November 2026 (tvOS-27.2-Simulator) mit einem Teststand, der zusätzlich `flt-testwerbung\.js` blockt, `#flt-testbanner` per Regelsatz und `#flt-scriptletbanner` per Scriptlet-CSS für `127.0.0.1` ausblendet:
 
@@ -590,7 +590,7 @@ Bilder: `docs/magnetic-varianten/form-*.png` (je links vorher, rechts nachher): 
 
 - **Zeigerbilder:** `BrowserCursorRenderer` (eigene Vektorzeichnung per `UIBezierPath`/`UIGraphicsImageRenderer`, 3-fach gerastert, kein Apple-Bildmaterial; die alten PNGs `Cursor`/`Pointer` im Asset-Katalog sind ungenutzt). Arten: Pfeil, Hand (Zeigefinger, nur bei großen Zielen oder in der Tabübersicht sichtbar, sonst ersetzt die Hervorhebung den Zeiger), I-Beam (noch ohne Aufrufer). Stile in `BrowserPreferencesStore.cursorStyle` (Schlüssel `CursorStyle`, additiv, kein Menüeintrag): 0 macOS-Stil (Pfeil schwarz mit weißem Rand, Hand weiß mit schwarzem Rand, Standard), 1 invertiert, 2 SF Symbols (`cursorarrow`, `hand.point.up.left.fill`, Kontur durch 16 versetzte Kopien, Spitze per Pixelsuche). Höhe etwa 44 pt.
   **Hotspot:** `BrowserCursorImageView` (Unterklasse von `UIImageView`, in `BrowserRemoteInputController` als `cursorView` angelegt) zeichnet das Bild in einer inneren Ansicht, versetzt um `+[BrowserCursorRenderer hotspot]` (30/14 pt Rand für Kontur, Schatten, Daumen). So bleibt `cursorView.frame.origin` die Klickspitze, und alle Hosts (`DOMPointForCursorOrigin:` usw.) bleiben unverändert. Wichtig: `image` der Oberklasse bleibt leer (Setter überschrieben, Getter nicht), sonst zeichnet UIImageView zusätzlich ein zweites, verkleinertes Bild.
-  **Test:** `POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;wait;672,910;wait"` plus Stil per `xcrun simctl spawn <udid> defaults write io.github.tvosbrowser.app CursorStyle -int N`; `770,566;click` trifft den Link „Bildschirm“ (Seite lädt neu). Screenshots in `docs/cursor-screens/` (`zeiger-varianten.png` Kontaktbogen; Zeiger verschwindet nach kurzer Ruhe, Screenshot direkt nach dem `move`-Log aufnehmen).
+  **Test:** `POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;wait;wait;672,910;wait"` plus Stil per `xcrun simctl spawn <udid> defaults write <Bundle-ID> CursorStyle -int N`; `770,566;click` trifft den Link „Bildschirm“ (Seite lädt neu). Screenshots in `docs/cursor-screens/` (`zeiger-varianten.png` Kontaktbogen; Zeiger verschwindet nach kurzer Ruhe, Screenshot direkt nach dem `move`-Log aufnehmen).
 
 ### 8.4 Private/fragile Punkte
 - GameController: Verhalten von `GCMicroGamepad` mit absoluten Werten (Wertebereich, Nullwert beim Loslassen als „nicht berührt“: `handlePadValue:` wertet `(0,0)` als Loslassen). Ohne `respondsToSelector`-Fallback, aber der UIKit-Fallback übernimmt, wenn keine Proben kommen.
@@ -934,7 +934,7 @@ tools/fetch_whisper_model.sh base.en-q5_1   # optional: nur für „Englisch“,
 - `build_whisper.sh` holt die Quelle nach `vendor/whisper.cpp` (nicht im Repo), lädt bei Bedarf CMake per pip nach `vendor/tools-venv`, baut beide Slices mit dem Xcode-Generator, fasst `libwhisper`, `libggml*` (base, cpu, blas, metal) und `libparakeet` per `libtool` zu einem statischen `whisper.framework` zusammen und erzeugt `vendor/whisper.xcframework`. Version: `WHISPER_TAG=v1.9.5`, Mindest-tvOS: `TVOS_MIN=17.0`.
 - Einbindung ins Projekt ohne Framework-Eintrag: `FRAMEWORK_SEARCH_PATHS[sdk=appletvos*]` bzw. `[sdk=appletvsimulator*]` zeigen auf die Slices, gelinkt wird per Modul-Autolink (`#import <whisper/whisper.h>`, Modulkarte mit `link framework "whisper"`, `c++`, Accelerate, Metal, MetalKit). Fehlt das Framework, kompiliert `BrowserSubtitleEngine.m` ohne whisper (`__has_include`), die App baut, der Player meldet „nicht verfügbar“.
 - Metal-Kernel: `build-xcframework.sh` von whisper.cpp kann tvOS (Gerät + Simulator), wir bauen aber nur die tvOS-Teile mit eigenem Skript. **Gerät** (Stand 2026-11-08): mit installierter Metal-Toolchain vorkompiliert für tvOS (`GGML_METAL_TARGET_OS=tvos`) nach `vendor/whisper-metal/appletvos/default.metallib` (committet, ≈15 MB); die Build-Phase „Whisper-Metal-Kernel kopieren“ legt sie als `default.metallib` ins App-Paket (dort sucht ggml). Das Geräte-Framework enthält dann keinen Kernel-Quelltext mehr: fehlt die Datei, kann ggml auf dem Gerät kein Metal (Hinweis in der Build-Phase; `tools/build_whisper.sh` ausführen). Ohne Toolchain (oder `WHISPER_METAL_EMBED=ON`) wird der Quelltext eingebettet und beim ersten Laden zur Laufzeit übersetzt. **Simulator**: immer eingebettet (`WHISPER_METAL_SIM_EMBED=ON`); ggml übersetzt die Kernel dort beim ersten Laden im Prozess auch bei `use_gpu = NO` (≈16 s nach Neuinstallation, danach aus dem Metal-Cache 0,06 s).
-- Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write io.github.tvosbrowser.app AutoSubtitlesCPUOnly -bool YES`.
+- Im **Simulator** rechnet whisper auf der CPU (`use_gpu = NO`; die Simulator-GPU ist `MTLGPUFamilyApple2` ohne SIMD-Group-Reduktion). Auf dem Gerät Metal; abschaltbar mit `defaults write <Bundle-ID> AutoSubtitlesCPUOnly -bool YES`.
 
 **Modell.** Reihenfolge in `+[BrowserSubtitleEngine modelCandidatesForLanguage:]`: für „en“ `base.en-q5_1`, `base.en-q8_0`, `base.en`, `tiny.en-q5_1` …, danach mehrsprachige; für „auto“ und alle anderen Sprachen zuerst mehrsprachige (`base-q5_1`, `base-q8_0`, `base`, `small-q5_1`, `tiny-q5_1`, `tiny`), notfalls ein `.en`-Modell. `.en`-Modelle können nur Englisch (die Engine rechnet dann fest in „en“, das Player-Menü zeigt „Sprache: nur Englisch (Modell)“, die Seitenleiste „Nur Englisch (Modell)“). Größen (ggml q5_1): `tiny` ≈ 31 MB, `base` ≈ 57 MB (mehrsprachig gleich groß wie `.en`), `small` ≈ 181 MB (genauer, etwa dreimal langsamer, am Gerät ungetestet). Im Haupt-Checkout liegen `base-q5_1` und `base.en-q5_1`; früher war „en“ Standard, deshalb wurde trotz vorhandenem mehrsprachigem Modell immer `base.en` geladen und deutscher Ton als englisches Kauderwelsch ausgegeben.
 
@@ -1081,21 +1081,21 @@ Befund: Weg A läuft am Gerät klar in Echtzeit (RTF ≤ 0,11, weit unter 0,8), 
 
 **Test.**
 ```bash
-xcrun simctl spawn <SIM> defaults write io.github.tvosbrowser.app AutoSubtitlesEnabled -bool YES
+xcrun simctl spawn <SIM> defaults write <Bundle-ID> AutoSubtitlesEnabled -bool YES
 SIMCTL_CHILD_POINTER_SELFTEST='url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;state' \
-  xcrun simctl launch --console --terminate-running-process <SIM> io.github.tvosbrowser.app | grep Subtitles
+  xcrun simctl launch --console --terminate-running-process <SIM> <Bundle-ID> | grep Subtitles
 ```
 Die .mov wird als Video-Dokument geladen, der Player öffnet automatisch; „Tears of Steel“ hat ab ≈ 20 s englische Dialoge. HLS mit Sprache: `https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8` (TS, Ton gemuxt; Selbsttest mit `;wait;…;nplayer`), fMP4: `https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8` (nur Pieptöne). Gerät: `DEVICECTL_CHILD_…` wie in 14.1, Einstellung per Player-Menü, Seitenmenü oder Selbsttest-Schritt `pref:` (14.2), z. B.
 ```bash
 DEVICECTL_CHILD_POINTER_SELFTEST='pref:AutoSubtitlesEnabled=YES;pref:AutoSubtitlesCPUOnly=NO;url:https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov;wait;nplayer;wait;…;nplayer;nclose' \
-  xcrun devicectl device process launch --device <UDID> --terminate-existing --console io.github.tvosbrowser.app
+  xcrun devicectl device process launch --device <UDID> --terminate-existing --console <Bundle-ID>
 ```
 (ein `wait` = 3 s; für ≈ 100 s Wiedergabe gut 30 Schritte).
 
 Deutsch und Menü (Simulator, 2026-11-08): MP4 bzw. HLS der aktuellen „tagesschau in 100 Sekunden“ (Adressen wechseln täglich, z. B. `https://tagesschau-progressive.ard-mcdn.de/video/2026/1108/TV-20261108-2105-0000.webm.h264.mp4`; HLS mit einer CC-Spur unter `adaptive.tagesschau.de/…/master.m3u8`):
 ```bash
 SIMCTL_CHILD_POINTER_SELFTEST='pref:AutoSubtitlesEnabled=YES;pref:AutoSubtitlesLanguage=auto;url:<mp4>;wait;wait;wait;wait;wait;nplayer;hid:select;hid:up;hid:select;wait;nplayer' \
-  xcrun simctl launch --console-pty --terminate-running-process <SIM> io.github.tvosbrowser.app | grep -E 'Subtitles|nplayer|InputTrace'
+  xcrun simctl launch --console-pty --terminate-running-process <SIM> <Bundle-ID> | grep -E 'Subtitles|nplayer|InputTrace'
 ```
 Erwartet: `Sprache festgelegt: de …`, nach `hid:select` eingeblendete Leiste, nach `hid:up` `fokus=AVxOverlayToolCell`, nach dem zweiten `select` `oben=AVUnifiedPlayerContextMenuContainerViewController` (Menü offen). Welcher Knopf fokussiert ist, zeigt ein Screenshot (`xcrun simctl io <SIM> screenshot …`).
 
@@ -1111,7 +1111,7 @@ Erwartet: `Sprache festgelegt: de …`, nach `hid:select` eingeblendete Leiste, 
 | `BrowserAppleSpeechTranscriber.m/.h` | Obj-C-Seite: Einstellung, Verfügbarkeit, Zustand der Sprachpakete, gesprochene Sprache von whisper, Rückfall whisper, `translationTarget`, Kennzahlen. Holt die Swift-Klasse per `NSClassFromString` und ruft sie über das Protokoll `BrowserAppleSpeechRecognizerClass` |
 | Haken | `BrowserSubtitleController.m` (Weg A, nativer Player), `BrowserWebSubtitleController.m/.h` (Eigenschaft `appleSpeech`), `ViewController.m` (`prepareWebSubtitleControllerUsingStub:language:` legt sie für Weg B an, Selbsttest `speechprobe`), `BrowserWhisperSpeechRecognizer` (`lockedLanguage`). `BrowserSubtitleEngine` und `BrowserSubtitlePipeline` sind unverändert |
 
-**Einschalten.** `defaults write io.github.tvosbrowser.app SubtitlesRecognizer apple` bzw. Selbsttest `pref:SubtitlesRecognizer=apple` (Standard `whisper`; leer = whisper). Gelesen beim Start der Erkennung (Player öffnen, Weg B beim Start/Sprachwechsel). Log beim ersten Mal: `[AppleSpeech] Einstellung SubtitlesRecognizer=apple: SpeechTranscriber verfügbar` bzw. `… isAvailable = false (Simulator/zu altes tvOS) – Rückfall whisper` (dann bleibt alles wie bisher, whisper in der eingestellten Sprache).
+**Einschalten.** `defaults write <Bundle-ID> SubtitlesRecognizer apple` bzw. Selbsttest `pref:SubtitlesRecognizer=apple` (Standard `whisper`; leer = whisper). Gelesen beim Start der Erkennung (Player öffnen, Weg B beim Start/Sprachwechsel). Log beim ersten Mal: `[AppleSpeech] Einstellung SubtitlesRecognizer=apple: SpeechTranscriber verfügbar` bzw. `… isAvailable = false (Simulator/zu altes tvOS) – Rückfall whisper` (dann bleibt alles wie bisher, whisper in der eingestellten Sprache).
 
 **Ablauf je Abschnitt** (gleiche Schnittstelle wie der whisper-Block: Samples, Startzeit → Cues; die Pipeline mit Abschnitten, Überlappung, Abdeckung, Mithören und Übersetzung bleibt gleich):
 1. whisper wird bei Apple immer mit „auto“ angelegt: es bestimmt nur die gesprochene Sprache und ist Rückfall. Steht die Sprache fest (`lockedLanguage`, zwei Abschnitte mit gleicher Sprache), rechnet whisper nicht mehr mit. Vorher rechnet whisper den Abschnitt zuerst (zählt als Stimme) und liefert die Sprache dieses Abschnitts; hat whisper nichts (Stille, Musik), bleibt es dabei.
@@ -1142,7 +1142,7 @@ Erwartet: `Sprache festgelegt: de …`, nach `hid:select` eingeblendete Leiste, 
 
 Im Rückfall ist whisper also auf dem mehrsprachigen `base` statt `base.en` (etwas schwächer für Englisch). *Mac-Prüfstand* (macOS 27, dieselbe Swift-Datei mit kleinem Treiber, `de_DE` war auf dem Mac schon installiert, kein Laden/Reservieren): gesprochener deutscher Text (`say -v Anna`, 16 s), 12-s-Abschnitt in 0,40 s (erster Lauf, Modell laden), 4-s-Rest in 0,06 s, alle Wörter richtig mit Satzzeichen, Wortzeiten plausibel (z. B. „Tagesschau.“ 3,84–4,74 s), Untertitel „Guten Abend, meine Damen und Herren, ich begrüße Sie zur Tagesschau.“ | „Die Bundesregierung hat heute ein neues Gesetz zum Klimaschutz beschlossen,“ | „das ab dem kommenden Jahr gelten soll.“. Englisch dort nicht gemessen (Paket `en_US` auf dem Mac nicht installiert, nicht ohne Rückfrage geladen).
 
-**Gerätetest** (Reihenfolge; `DEVICECTL_CHILD_POINTER_SELFTEST='…' DEVICECTL_CHILD_POINTER_SELFTEST_INTERVAL=3 xcrun devicectl device process launch --device <UDID> --terminate-existing --console io.github.tvosbrowser.app`):
+**Gerätetest** (Reihenfolge; `DEVICECTL_CHILD_POINTER_SELFTEST='…' DEVICECTL_CHILD_POINTER_SELFTEST_INTERVAL=3 xcrun devicectl device process launch --device <UDID> --terminate-existing --console <Bundle-ID>`):
 1. `speechprobe;wait;wait;wait;wait;wait;wait;wait;wait;wait;wait` – erwartet `isAvailable=true`, `unterstützt (45): …`, `en → en_US: Paket supported`, danach `vorbereitet en: en → en_US, Paket geladen in … s` (beim ersten Mal; Netz nötig, sonst `Laden fehlgeschlagen`), `Testton 5 s (Sprachausgabe „The quick brown fox …“): N Wörter`, `Untertitel 0.xx–… s: The quick brown fox jumps over the lazy dog.` Lädt das Paket länger als 30 s, `speechprobe` noch einmal starten (dann `Paket installiert`).
 2. Einstellungen (eigener Start): `pref:SubtitlesRecognizer=apple;pref:AutoSubtitlesEnabled=YES;pref:AutoSubtitlesLanguageMigratedToAuto=YES;pref:AutoSubtitlesLanguage=en;wait`
 3. Messen: `url:https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel-audio_eng=128002-video_eng=751000.m3u8;wait;…` (≈ 47 × `wait`, ≈ 150 s; der Player öffnet von selbst). Im Log: `[AppleSpeech] Einstellung … verfügbar`, `Erkennung Apple …`, je Abschnitt `[AppleSpeech] Abschnitt … (en_US): …`, kein `Rückfall whisper` außer in den ersten Abschnitten, falls das Paket noch fehlte. Vergleich: `compare.py <log> TOS-en.srt 140`.
@@ -1361,7 +1361,7 @@ Bestätigter Text geht über `submitAddressInputText:` an `handleEnteredAddressT
 ### 14.1 Gerätezyklus (Apple TV)
 Zum normalen Aufspielen (Release) genügt ein Doppelklick auf `Installieren.command` im Repo-Stamm: aktualisiert (`git pull`), prüft Xcode, wählt das Apple TV, baut, installiert, startet optional und nennt das Ablaufdatum des Profils (bei kostenlosem Account 7 Tage). Optionen: `--nur-bauen` (unsigniert, ohne Gerät), `--geraete`, `--kein-pull`, `--debug`, `--starten`/`--nicht-starten`, `UDID=…`. Ruft `tools/fetch_whisper_model.sh` und `tools/build_whisper.sh` auf, falls vorhanden. Die Einzelschritte von Hand:
 
-Ein Gerät wird einmal über die App **Device Hub** (Xcode 27) gekoppelt. Danach ohne Xcode-Oberfläche (Projekt `_Project/Browser.xcodeproj`, Schema `Browser`, Bundle-ID `io.github.tvosbrowser.app`):
+Ein Gerät wird einmal über die App **Device Hub** (Xcode 27) gekoppelt. Danach ohne Xcode-Oberfläche (Projekt `_Project/Browser.xcodeproj`, Schema `Browser`, Bundle-ID aus `_Project/Signing.xcconfig` bzw. `Signing.local.xcconfig`):
 
 ```bash
 xcrun devicectl list devices                                   # UDID ermitteln
@@ -1372,7 +1372,7 @@ xcodebuild -project _Project/Browser.xcodeproj -scheme Browser \
 xcrun devicectl device install app --device <UDID> ../build/Build/Products/Debug-appletvos/Browser.app
 # 3. Starten mit Konsole und Selbsttest
 DEVICECTL_CHILD_POINTER_SELFTEST='url:https://example.org;300,400;click' \
-  xcrun devicectl device process launch --device <UDID> --terminate-existing --console io.github.tvosbrowser.app
+  xcrun devicectl device process launch --device <UDID> --terminate-existing --console <Bundle-ID>
 # 4. Bildschirmfoto
 xcrun devicectl device capture screenshot --device <UDID> --destination bild.png
 ```
@@ -1585,7 +1585,7 @@ swift tools/make_app_icon.swift --preview-only     # nur docs/icon/ neu erzeugen
 
 **Grenzen.** Echtes Verschmelzen von Leiste und Karte per `UIGlassContainerEffect` bräuchte beide Glasflächen im selben `contentView`; die Leiste (`BrowserTopBarView` ist selbst ein `UIVisualEffectView`) und die Karte liegen in getrennten Hierarchien. Deshalb wächst die Karte als Kapsel aus der unteren Leistenhälfte heraus. Ist eine Hervorhebung ausgeblendet (Alpha 0, nach dem Lösen, Zielwechsel oder Leerlauf-Ausblendung), sind Drehung und Atmen ihres Glows entfernt (`BrowserGlowView animationsPaused`); beim Einblenden laufen sie im gemeinsamen Takt weiter (Abschnitt 21).
 
-**Test.** Simulator, eigenes Gerät: `defaults write io.github.tvosbrowser.app LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
+**Test.** Simulator, eigenes Gerät: `defaults write <Bundle-ID> LiquidGlassAnimationsEnabled -bool NO|YES` (per `xcrun simctl spawn <udid> …`), dann `SIMCTL_CHILD_MOTION_LOG=1` und `SIMCTL_CHILD_POINTER_SELFTEST="url:https://de.wikipedia.org/wiki/Apple_TV;wait;js:window.scrollTo(0,1500);js:window.scrollTo(0,0);address;menu;advmenu;menu;guide;menu"` mit `xcrun simctl launch --console-pty`. DEBUG-Logzeilen `[Motion] kind=… liquid=0|1 dauer=…` und `[Motion] Ebene <Schlüssel>: Feder …`. Glätte: `xcrun simctl io <udid> recordVideo`, Einzelbilder per AVFoundation auswerten (Bildabstände, eingefrorene Bilder, Kontaktabzüge).
 
 ---
 
@@ -1797,7 +1797,7 @@ Helfer: `BrowserShapeApply(layer, radius)` (Radius + kontinuierliche Kurve), `Br
 
 ## 21. Leistung: Messung, Optimierungen, Befunde
 
-**Messweg (Simulator, Apple TV 4K 3. Generation, tvOS 27.2).** DEBUG-Build, Start mit `xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app` und Selbsttest (Abschnitt 14.2). Zeitmarken aus `[Perf]`-Zeilen (`BrowserPerf.h`, Millisekunden seit Prozessstart über `sysctl KERN_PROC_PID`), CPU mit `top -l` auf die Mac-Prozesse des Simulators (App, `com.apple.WebKit.WebContent`, `backboardd` als Render-Server), Speicher mit `footprint -p`, Hauptthread-Blockaden mit `PERF_STALLS=1`. Simulatorwerte schwanken stark (Pre-main 240–790 ms); Aussagen daher nur aus mehreren Läufen und immer A/B im selben Simulator.
+**Messweg (Simulator, Apple TV 4K 3. Generation, tvOS 27.2).** DEBUG-Build, Start mit `xcrun simctl launch --console-pty --terminate-running-process <udid> <Bundle-ID>` und Selbsttest (Abschnitt 14.2). Zeitmarken aus `[Perf]`-Zeilen (`BrowserPerf.h`, Millisekunden seit Prozessstart über `sysctl KERN_PROC_PID`), CPU mit `top -l` auf die Mac-Prozesse des Simulators (App, `com.apple.WebKit.WebContent`, `backboardd` als Render-Server), Speicher mit `footprint -p`, Hauptthread-Blockaden mit `PERF_STALLS=1`. Simulatorwerte schwanken stark (Pre-main 240–790 ms); Aussagen daher nur aus mehreren Läufen und immer A/B im selben Simulator.
 
 **Ergebnisse (Mittel aus 5 Starts, gespeicherte Cookies vorhanden, ms nach `main`):**
 
@@ -1867,7 +1867,7 @@ Selbsttest (DEBUG): `setup` zeigt die Karte, `setup:N` Schritt N, `setupopt:i` b
 
 **Woran man merkt, dass es kaputt ist.** Leiste bleibt nach dem Umschalten im alten Look: DEBUG-Zeile `[TopBar] Design alt|Liquid Glass` fehlt. Symbole fehlen: `Icons/MenuIcons/*.png` nicht mehr im Ressourcen-Build (Gruppe „MenuIcons“ im Projekt, Pfad `../../Icons/MenuIcons`); dann greifen die SF Symbols als Rückfall. Im alten Design erscheint Glas: ein neuer Aufrufer prüft `@available(tvOS 26.0, *)` statt `BrowserMotion.glassMaterialAvailable`.
 
-**Test.** Eigener tvOS-Simulator, `SIMCTL_CHILD_POINTER_SELFTEST="pref:ClassicDesign=1;url:https://www.apple.com/apple-tv-4k/;wait;wait"` mit `xcrun simctl launch --console-pty --terminate-running-process <udid> io.github.tvosbrowser.app`, Screenshot per `xcrun simctl io <udid> screenshot` und mit `docs/original-screens/screen01.png` vergleichen. Zurück: `pref:ClassicDesign=0` (die Leiste ist danach bildgleich mit einem Start im neuen Design). Klicks: `360,50;click` (Startseite), `1712,50;click` (Vollbild-Dialog), `label` zeigt die Adresse. Zeiger sichtbar: Schritt `x,y` als letzten Schritt (nach 4 s Leerlauf blendet der Zeiger aus).
+**Test.** Eigener tvOS-Simulator, `SIMCTL_CHILD_POINTER_SELFTEST="pref:ClassicDesign=1;url:https://www.apple.com/apple-tv-4k/;wait;wait"` mit `xcrun simctl launch --console-pty --terminate-running-process <udid> <Bundle-ID>`, Screenshot per `xcrun simctl io <udid> screenshot` und mit `docs/original-screens/screen01.png` vergleichen. Zurück: `pref:ClassicDesign=0` (die Leiste ist danach bildgleich mit einem Start im neuen Design). Klicks: `360,50;click` (Startseite), `1712,50;click` (Vollbild-Dialog), `label` zeigt die Adresse. Zeiger sichtbar: Schritt `x,y` als letzten Schritt (nach 4 s Leerlauf blendet der Zeiger aus).
 
 ---
 

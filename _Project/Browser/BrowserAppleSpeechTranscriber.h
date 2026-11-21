@@ -24,7 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Untertitel, statt whisper. Gleiche Schnittstelle wie der whisper-Block der Pipeline (Abschnitt → Cues), die Pipeline
 /// bleibt unverändert. docs/ERWEITERUNGEN.md 10.10.
 ///
-/// Auswahl: `defaults write io.github.tvosbrowser.app SubtitlesRecognizer apple` (Standard `whisper`), Selbsttest
+/// Auswahl: `defaults write <Bundle-ID> SubtitlesRecognizer apple` (Standard `whisper`), Selbsttest
 /// `pref:SubtitlesRecognizer=apple`. whisper bleibt geladen, aber nur als Spracherkennung („auto“: welche Sprache
 /// spricht das Video?) und als Rückfall: SpeechTranscriber fehlt, Sprache nicht unterstützt, Sprachpaket fehlt oder
 /// wird noch geladen, Fehler beim Erkennen. Log `[AppleSpeech] … Rückfall whisper`.

@@ -166,7 +166,7 @@ static void BrowserTapProcess(MTAudioProcessingTapRef tap,
     self = [super init];
     if (self) {
         _playerItem = playerItem;
-        _queue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.tap", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tvbrowser.subtitles.tap", DISPATCH_QUEUE_SERIAL);
         _context = (BrowserTapContext *)calloc(1, sizeof(BrowserTapContext));
         atomic_store(&_context->refCount, 1);
         atomic_store(&_context->active, false);

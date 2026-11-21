@@ -80,7 +80,7 @@ NSString *BrowserSubtitleOffsetSummary(NSArray<NSNumber *> *offsets) {
     self = [super init];
     if (self) {
         _transcriber = [transcriber copy];
-        _queue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.processing", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tvbrowser.subtitles.processing", DISPATCH_QUEUE_SERIAL);
         _buffer = [NSMutableData data];
         _pendingWindows = [NSMutableArray array];
         _covered = [NSMutableIndexSet indexSet];

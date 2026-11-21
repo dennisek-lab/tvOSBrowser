@@ -308,7 +308,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         _cookies = [cookies copy] ?: @[];
         _lookahead = 60.0;
         _maxPending = 25.0;
-        _queue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.mp4", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tvbrowser.subtitles.mp4", DISPATCH_QUEUE_SERIAL);
         _sessionDelegate = [BrowserMP4SessionDelegate new];
         NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
         configuration.HTTPShouldSetCookies = NO;

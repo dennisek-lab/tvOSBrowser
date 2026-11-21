@@ -334,7 +334,7 @@ typedef NS_ENUM(NSInteger, BrowserSOCKSState) {
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _queue = dispatch_queue_create("io.github.tvosbrowser.app.dnsproxy", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tvbrowser.dnsproxy", DISPATCH_QUEUE_SERIAL);
         _sessions = [NSMutableSet set];
         _privacyContext = nw_privacy_context_create("cloudflare-doh");
         nw_privacy_context_require_encrypted_name_resolution(_privacyContext, true, [BrowserDNSProxy cloudflareResolver]);

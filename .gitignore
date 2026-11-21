@@ -84,3 +84,6 @@ build-sim-*/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+## Eigene Signierung (Team, Bundle-ID), siehe _Project/Signing.xcconfig
+_Project/Signing.local.xcconfig

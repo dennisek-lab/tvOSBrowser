@@ -119,7 +119,7 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         _playlistURL = playlistURL;
         _requestHeaders = [requestHeaders copy] ?: @{};
         _cookies = [cookies copy] ?: @[];
-        _queue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.hls", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tvbrowser.subtitles.hls", DISPATCH_QUEUE_SERIAL);
         NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
         configuration.HTTPShouldSetCookies = NO;
         configuration.timeoutIntervalForRequest = 20.0;

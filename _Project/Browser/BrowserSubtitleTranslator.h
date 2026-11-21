@@ -10,7 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// whisper übersetzt eine Weile wieder selbst (alter Weg), der Abschnitt bekommt den Originaltext bzw. wird neu
 /// erkannt (Pipeline). Logpräfix `[Subtitles]` mit „Apple-Übersetzung“ bzw. „Rückfall whisper“.
 ///
-/// Abschalten (Vergleichsmessung): `defaults write io.github.tvosbrowser.app SubtitlesNoAppleTranslation -bool YES`
+/// Abschalten (Vergleichsmessung): `defaults write <Bundle-ID> SubtitlesNoAppleTranslation -bool YES`
 /// bzw. Selbsttest `pref:SubtitlesNoAppleTranslation=YES`. Ohne Kontext: `SubtitlesTranslateNoContext`.
 @interface BrowserSubtitleTranslator : NSObject
 

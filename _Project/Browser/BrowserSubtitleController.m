@@ -14,7 +14,7 @@
 #import <objc/runtime.h>
 
 static NSString * const kSubtitleControllerLogPrefix = @"[Subtitles]";
-static NSString * const kSubtitleMenuIdentifier = @"io.github.tvosbrowser.app.autoSubtitles";
+static NSString * const kSubtitleMenuIdentifier = @"tvbrowser.autoSubtitles";
 static NSString * const kSubtitleStartHoldReason = @"Untertitel";
 /// Höchstens so lange wartet der Start auf die ersten Untertitel (vorauslesende Quellen). Der Player puffert in der
 /// Zeit ohnehin; am Gerät waren die ersten 4 s nach 0,4–0,7 s fertig.
@@ -119,7 +119,7 @@ static const void *kSubtitleControllerAssociationKey = &kSubtitleControllerAssoc
         _offsets = [NSMutableArray array];
         _lastMeasuredStart = -INFINITY;
         _triedSources = [NSMutableSet set];
-        _engineQueue = dispatch_queue_create("io.github.tvosbrowser.app.subtitles.whisper",
+        _engineQueue = dispatch_queue_create("tvbrowser.subtitles.whisper",
                                              dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
         __weak typeof(self) weakSelf = self;
         dispatch_queue_t engineQueue = _engineQueue;
