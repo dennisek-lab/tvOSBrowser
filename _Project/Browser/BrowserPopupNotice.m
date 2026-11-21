@@ -11,6 +11,7 @@
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
 #endif
+#import "BrowserLocalization.h"
 
 /// Sichtbar so lange; jedes weitere Pop-up startet die Zeit neu.
 static const NSTimeInterval kPopupNoticeDuration = 6.0;
@@ -137,18 +138,18 @@ static UIVisualEffect *BrowserPopupNoticeEffect(void) {
 - (NSString *)currentTitle {
     NSUInteger count = self.burstIdentifiers.count;
     if (count > 1) {
-        return self.burstAllPopups ? [NSString stringWithFormat:@"%lu Pop-ups geöffnet", (unsigned long)count]
-                                   : [NSString stringWithFormat:@"%lu Tabs im Hintergrund geöffnet", (unsigned long)count];
+        return self.burstAllPopups ? [NSString stringWithFormat:BLS(@"%lu Pop-ups geöffnet"), (unsigned long)count]
+                                   : [NSString stringWithFormat:BLS(@"%lu Tabs im Hintergrund geöffnet"), (unsigned long)count];
     }
     NSString *identifier = self.burstIdentifiers.firstObject;
     NSString *name = identifier != nil ? self.displayNames[identifier] : nil;
     if (self.burstAllPopups) {
         if (self.firstSameSite || name.length == 0) {
-            return @"Diese Webseite hat soeben ein Pop-up geöffnet";
+            return BLS(@"Diese Webseite hat soeben ein Pop-up geöffnet");
         }
-        return [NSString stringWithFormat:@"Pop-up geöffnet: %@", name];
+        return [NSString stringWithFormat:BLS(@"Pop-up geöffnet: %@"), name];
     }
-    return name.length > 0 ? [NSString stringWithFormat:@"Im Hintergrund geöffnet: %@", name] : @"Link im Hintergrund geöffnet";
+    return name.length > 0 ? [NSString stringWithFormat:BLS(@"Im Hintergrund geöffnet: %@"), name] : BLS(@"Link im Hintergrund geöffnet");
 }
 
 - (void)noteTabWithIdentifier:(NSString *)identifier sameSite:(BOOL)sameSite popup:(BOOL)popup displayName:(NSString *)displayName {
@@ -173,7 +174,7 @@ static UIVisualEffect *BrowserPopupNoticeEffect(void) {
         self.view = [BrowserPopupNoticeView new];
     }
     self.view.titleLabel.text = [self currentTitle];
-    self.view.detailLabel.text = @"Play/Pause: öffnen";
+    self.view.detailLabel.text = BLS(@"Play/Pause: öffnen");
     [self layoutAnimated:!appearing];
     if (appearing) {
         [container addSubview:self.view];

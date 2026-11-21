@@ -101,6 +101,10 @@
 		B7A1C0DE5E1F000A0B0001B1 /* BrowserPerfProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F01 /* BrowserPerfProbe.m */; };
 		B7A1C0DE5E1F000A0B0001C1 /* BrowserSetupViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B7A1C0DE5E1F00F0A0B00F11 /* BrowserSetupViewController.m */; };
 		41121CB5A9779EEE09249717 /* BrowserFilterListUpdater.m in Sources */ = {isa = PBXBuildFile; fileRef = 68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */; };
+		11501654FAA64DC2EF922EF8 /* de.lproj in Resources */ = {isa = PBXBuildFile; fileRef = 1C0FD80CE900F545B1A5800D /* de.lproj */; };
+		571CF9790A05E05EA7D4A82D /* en.lproj in Resources */ = {isa = PBXBuildFile; fileRef = 0E67F55A0649BF5D2C9D28AB /* en.lproj */; };
+		5D82EC18AB44DA517234CE26 /* es.lproj in Resources */ = {isa = PBXBuildFile; fileRef = E8FCDA0EA3C37F941F4B5888 /* es.lproj */; };
+		849FE5EA453F6F71A65C642F /* fr.lproj in Resources */ = {isa = PBXBuildFile; fileRef = B321A25EFAD7CF823AF760AA /* fr.lproj */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -266,6 +270,10 @@
 		B7A1C0DE5E1F00F0A0B00F12 /* BrowserSetupViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserSetupViewController.h; sourceTree = "<group>"; };
 		B7148C3B5C77972582F442FC /* BrowserFilterListUpdater.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFilterListUpdater.h; sourceTree = "<group>"; };
 		68E8FC90E30AF2D550B3D564 /* BrowserFilterListUpdater.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFilterListUpdater.m; sourceTree = "<group>"; };
+		1C0FD80CE900F545B1A5800D /* de.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = de.lproj; sourceTree = "<group>"; };
+		0E67F55A0649BF5D2C9D28AB /* en.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = en.lproj; sourceTree = "<group>"; };
+		E8FCDA0EA3C37F941F4B5888 /* es.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = es.lproj; sourceTree = "<group>"; };
+		B321A25EFAD7CF823AF760AA /* fr.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = fr.lproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -557,6 +565,10 @@
 				B002B86E1BAE420500C744AF /* Main.storyboard */,
 				CE3622A85DEBA56CEFC36A65 /* AppShortcuts.xcstrings */,
 				B002B8711BAE420500C744AF /* Assets.xcassets */,
+				B321A25EFAD7CF823AF760AA /* fr.lproj */,
+				E8FCDA0EA3C37F941F4B5888 /* es.lproj */,
+				0E67F55A0649BF5D2C9D28AB /* en.lproj */,
+				1C0FD80CE900F545B1A5800D /* de.lproj */,
 				7268B5C1E882F5DAB9A49DE8 /* Scriptlets */,
 				7AADFF423E379F3DCAE70806 /* WhisperModels */,
 				02AB7C306633303A188E18EE /* Reader */,
@@ -636,6 +648,10 @@
 				3A2A7C2221E790000083CB13 /* multi-tab.png in Resources */,
 				3A2A7C2421E790000083CB13 /* plus.png in Resources */,
 				B002B8721BAE420500C744AF /* Assets.xcassets in Resources */,
+				849FE5EA453F6F71A65C642F /* fr.lproj in Resources */,
+				5D82EC18AB44DA517234CE26 /* es.lproj in Resources */,
+				571CF9790A05E05EA7D4A82D /* en.lproj in Resources */,
+				11501654FAA64DC2EF922EF8 /* de.lproj in Resources */,
 				58A39A75355EB12F5D0BA461 /* Scriptlets in Resources */,
 				E4895E2842B91B8723258DD5 /* WhisperModels in Resources */,
 				BC7377FCB96ADE6D0703EE8F /* Reader in Resources */,

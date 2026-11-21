@@ -1,4 +1,5 @@
 #import "BrowserSubtitleProgressiveAudioSource.h"
+#import "BrowserLocalization.h"
 
 #import <AudioToolbox/AudioToolbox.h>
 #import <stdatomic.h>
@@ -213,7 +214,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         long long expected = response.expectedContentLength;
         fetch.totalLength = expected > 0 ? (uint64_t)expected : 0;
         if (fetch.range.length > 0 && (expected < 0 || expected > 4 * 1024 * 1024)) {
-            fetch.error = @"Server unterstützt keine Range-Anfragen";
+            fetch.error = BLS(@"Server unterstützt keine Range-Anfragen");
             completionHandler(NSURLSessionResponseCancel);
             return;
         }
@@ -445,7 +446,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
             return;
         }
         if (data == nil) {
-            [self failWithReason:[NSString stringWithFormat:@"Kopf nicht ladbar (%@)", error ?: @"?"]];
+            [self failWithReason:[NSString stringWithFormat:BLS(@"Kopf nicht ladbar (%@)"), error ?: @"?"]];
             return;
         }
         self.fileLength = totalLength > 0 ? totalLength : data.length;
@@ -471,17 +472,17 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
             size = self.fileLength - (offset + cursor);
         }
         if (size < header) {
-            [self failWithReason:[NSString stringWithFormat:@"Kein MP4 (Box %@ mit Größe %llu)", BrowserMP4TypeName(type), size]];
+            [self failWithReason:[NSString stringWithFormat:BLS(@"Kein MP4 (Box %@ mit Größe %llu)"), BrowserMP4TypeName(type), size]];
             return;
         }
         uint64_t boxOffset = offset + cursor;
         if (type == BrowserMP4Type('m', 'o', 'o', 'f')) {
-            [self failWithReason:@"fragmentierte MP4 (moof) wird nicht unterstützt"];
+            [self failWithReason:BLS(@"fragmentierte MP4 (moof) wird nicht unterstützt")];
             return;
         }
         if (type == BrowserMP4Type('m', 'o', 'o', 'v')) {
             if (size > kMP4MaxMoovSize) {
-                [self failWithReason:[NSString stringWithFormat:@"moov zu groß (%.1f MB)", size / 1048576.0]];
+                [self failWithReason:[NSString stringWithFormat:BLS(@"moov zu groß (%.1f MB)"), size / 1048576.0]];
                 return;
             }
             if (cursor + size <= data.length) {
@@ -493,7 +494,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
                     return;
                 }
                 if (moov.length != size) {
-                    [self failWithReason:[NSString stringWithFormat:@"moov nicht ladbar (%@)", error ?: @"zu kurz"]];
+                    [self failWithReason:[NSString stringWithFormat:BLS(@"moov nicht ladbar (%@)"), error ?: BLS(@"zu kurz")]];
                     return;
                 }
                 [self parseMoov:moov offset:boxOffset begin:begin];
@@ -503,14 +504,14 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         if (attempt == 0 && cursor == 0 && type != BrowserMP4Type('f', 't', 'y', 'p') && type != BrowserMP4Type('w', 'i', 'd', 'e') &&
             type != BrowserMP4Type('f', 'r', 'e', 'e') && type != BrowserMP4Type('m', 'd', 'a', 't') &&
             type != BrowserMP4Type('s', 'k', 'i', 'p') && type != BrowserMP4Type('p', 'n', 'o', 't')) {
-            [self failWithReason:[NSString stringWithFormat:@"Kein MP4/MOV (erste Box %@)", BrowserMP4TypeName(type)]];
+            [self failWithReason:[NSString stringWithFormat:BLS(@"Kein MP4/MOV (erste Box %@)"), BrowserMP4TypeName(type)]];
             return;
         }
         if (cursor + size > data.length) {
             // Box reicht über das Geladene hinaus (meist mdat): Kopf der nächsten Box nachladen.
             uint64_t next = boxOffset + size;
             if (next + 8 > self.fileLength || attempt >= 8) {
-                [self failWithReason:@"kein moov gefunden"];
+                [self failWithReason:BLS(@"kein moov gefunden")];
                 return;
             }
             NSUInteger length = (NSUInteger)MIN((uint64_t)64 * 1024, self.fileLength - next);
@@ -519,7 +520,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
                     return;
                 }
                 if (more.length < 8) {
-                    [self failWithReason:[NSString stringWithFormat:@"Box bei %llu nicht ladbar (%@)", next, error ?: @"zu kurz"]];
+                    [self failWithReason:[NSString stringWithFormat:BLS(@"Box bei %llu nicht ladbar (%@)"), next, error ?: BLS(@"zu kurz")]];
                     return;
                 }
                 [self findMoovInData:more atOffset:next attempt:attempt + 1 begin:begin];
@@ -528,7 +529,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         }
         cursor += (size_t)size;
     }
-    [self failWithReason:@"kein moov gefunden"];
+    [self failWithReason:BLS(@"kein moov gefunden")];
 }
 
 - (void)parseMoov:(NSData *)moov offset:(uint64_t)moovOffset begin:(CFAbsoluteTime)begin {
@@ -537,7 +538,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
     BrowserMP4Box root;
     size_t cursor = 0;
     if (!BrowserMP4NextBox(bytes, end, &cursor, &root)) {
-        [self failWithReason:@"moov kaputt"];
+        [self failWithReason:BLS(@"moov kaputt")];
         return;
     }
     uint32_t movieTimescale = 1000;
@@ -548,7 +549,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
     size_t trakCursor = root.payload;
     BrowserMP4Box trak;
     NSUInteger audioTracks = 0;
-    NSString *problem = @"keine Audiospur";
+    NSString *problem = BLS(@"keine Audiospur");
     while (BrowserMP4NextBox(bytes, root.end, &trakCursor, &trak)) {
         if (trak.type != BrowserMP4Type('t', 'r', 'a', 'k')) {
             continue;
@@ -566,12 +567,12 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         if (!BrowserMP4FindChild(bytes, mdia.payload, mdia.end, BrowserMP4Type('m', 'd', 'h', 'd'), &mdhd) ||
             !BrowserMP4FindChild(bytes, mdia.payload, mdia.end, BrowserMP4Type('m', 'i', 'n', 'f'), &minf) ||
             !BrowserMP4FindChild(bytes, minf.payload, minf.end, BrowserMP4Type('s', 't', 'b', 'l'), &stbl)) {
-            problem = @"Audiospur ohne Tabellen";
+            problem = BLS(@"Audiospur ohne Tabellen");
             continue;
         }
         self.timescale = bytes[mdhd.payload] == 1 ? BrowserMP4U32(bytes + mdhd.payload + 20) : BrowserMP4U32(bytes + mdhd.payload + 12);
         if (self.timescale == 0) {
-            problem = @"Zeitskala 0";
+            problem = BLS(@"Zeitskala 0");
             continue;
         }
         [self parseEditListInTrak:trak bytes:bytes movieTimescale:movieTimescale];
@@ -631,14 +632,14 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
     if (!BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('s', 't', 's', 'd'), &stsd) ||
         !BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('s', 't', 't', 's'), &stts) ||
         !BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('s', 't', 's', 'c'), &stsc)) {
-        return @"Audiospur ohne stsd/stts/stsc";
+        return BLS(@"Audiospur ohne stsd/stts/stsc");
     }
     if (!BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('s', 't', 's', 'z'), &stsz)) {
-        return @"Audiospur ohne stsz (stz2 nicht unterstützt)";
+        return BLS(@"Audiospur ohne stsz (stz2 nicht unterstützt)");
     }
     if (!BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('s', 't', 'c', 'o'), &stco)) {
         if (!BrowserMP4FindChild(bytes, stbl.payload, stbl.end, BrowserMP4Type('c', 'o', '6', '4'), &stco)) {
-            return @"Audiospur ohne stco/co64";
+            return BLS(@"Audiospur ohne stco/co64");
         }
         co64 = YES;
     }
@@ -647,12 +648,12 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
         return formatProblem;
     }
     if (stsz.payload + 12 > stsz.end || stts.payload + 8 > stts.end || stsc.payload + 8 > stsc.end || stco.payload + 8 > stco.end) {
-        return @"Tabellen zu kurz";
+        return BLS(@"Tabellen zu kurz");
     }
     uint32_t constantSize = BrowserMP4U32(bytes + stsz.payload + 4);
     uint32_t sampleCount = BrowserMP4U32(bytes + stsz.payload + 8);
     if (sampleCount == 0) {
-        return @"Audiospur ohne Pakete (fragmentiert?)";
+        return BLS(@"Audiospur ohne Pakete (fragmentiert?)");
     }
     if (constantSize == 0 && stsz.payload + 12 + (size_t)sampleCount * 4 > stsz.end) {
         return @"stsz zu kurz";
@@ -672,7 +673,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
     _packetSizes = calloc(sampleCount, sizeof(uint32_t));
     _packetTimes = calloc(sampleCount, sizeof(int64_t));
     if (_packetOffsets == NULL || _packetSizes == NULL || _packetTimes == NULL) {
-        return @"kein Speicher für die Pakettabelle";
+        return BLS(@"kein Speicher für die Pakettabelle");
     }
     // Größen
     for (uint32_t i = 0; i < sampleCount; i++) {
@@ -771,13 +772,13 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
                 break;
             }
             if (objectType != 0x40 && objectType != 0x66 && objectType != 0x67 && objectType != 0x68) {
-                return [NSString stringWithFormat:@"Audioformat 0x%02X nicht unterstützt", objectType];
+                return [NSString stringWithFormat:BLS(@"Audioformat 0x%02X nicht unterstützt"), objectType];
             }
             self.magicCookie = descriptor;
             format.mFormatID = kAudioFormatMPEG4AAC;
             format.mFramesPerPacket = 1024;
             if (![self fillAACFormat:&format cookie:descriptor config:config]) {
-                return @"AAC-Konfiguration nicht lesbar";
+                return BLS(@"AAC-Konfiguration nicht lesbar");
             }
             break;
         }
@@ -797,9 +798,9 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
             self.codecName = @"MP3";
             break;
         case BrowserMP4Type('e', 'n', 'c', 'a'):
-            return @"Audiospur verschlüsselt";
+            return BLS(@"Audiospur verschlüsselt");
         default:
-            return [NSString stringWithFormat:@"Audioformat %@ nicht unterstützt", BrowserMP4TypeName(entry.type)];
+            return [NSString stringWithFormat:BLS(@"Audioformat %@ nicht unterstützt"), BrowserMP4TypeName(entry.type)];
     }
     self.inputFormat = format;
     return nil;
@@ -865,7 +866,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
     output.mBytesPerPacket = 4 * _channels;
     OSStatus status = AudioConverterNew(&input, &output, &_converter);
     if (status != noErr || _converter == NULL) {
-        return [NSString stringWithFormat:@"Dekoder %@ nicht verfügbar (%d)", self.codecName, (int)status];
+        return [NSString stringWithFormat:BLS(@"Dekoder %@ nicht verfügbar (%d)"), self.codecName, (int)status];
     }
     if (self.magicCookie.length > 0) {
         status = AudioConverterSetProperty(_converter, kAudioConverterDecompressionMagicCookie,
@@ -1055,7 +1056,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
             if (data.length == range.length) {
                 results[r] = data;
             } else if (firstError == nil) {
-                firstError = error ?: @"zu kurz";
+                firstError = error ?: BLS(@"zu kurz");
             }
             if (--remaining > 0) {
                 return;
@@ -1077,7 +1078,7 @@ didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSe
                     return;
                 }
                 self.busy = NO;
-                [self failWithReason:[NSString stringWithFormat:@"Audiodaten nicht ladbar (%@)", firstError]];
+                [self failWithReason:[NSString stringWithFormat:BLS(@"Audiodaten nicht ladbar (%@)"), firstError]];
                 return;
             }
             self.retries = 0;

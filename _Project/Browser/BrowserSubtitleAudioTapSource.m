@@ -1,4 +1,5 @@
 #import "BrowserSubtitleAudioTapSource.h"
+#import "BrowserLocalization.h"
 
 #import <MediaToolbox/MediaToolbox.h>
 #import <os/lock.h>
@@ -196,7 +197,7 @@ static void BrowserTapProcess(MTAudioProcessingTapRef tap,
     AVPlayerItem *item = self.playerItem;
     AVAsset *asset = item.asset;
     if (asset == nil) {
-        [self.delegate audioSource:self didFailWithReason:@"Kein Video"];
+        [self.delegate audioSource:self didFailWithReason:BLS(@"Kein Video")];
         return;
     }
     __weak typeof(self) weakSelf = self;
@@ -215,7 +216,7 @@ static void BrowserTapProcess(MTAudioProcessingTapRef tap,
     AVAssetTrack *track = tracks.firstObject;
     if (item == nil || track == nil) {
         NSLog(@"%@ keine Audiospur (Fehler %@), Tap nicht möglich", kTapLogPrefix, error.localizedDescription ?: @"–");
-        [self.delegate audioSource:self didFailWithReason:@"Keine Audiospur für den Audio-Tap"];
+        [self.delegate audioSource:self didFailWithReason:BLS(@"Keine Audiospur für den Audio-Tap")];
         return;
     }
     MTAudioProcessingTapCallbacks callbacks;
@@ -231,7 +232,7 @@ static void BrowserTapProcess(MTAudioProcessingTapRef tap,
     OSStatus status = MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PreEffects, &tap);
     if (status != noErr || tap == NULL) {
         NSLog(@"%@ MTAudioProcessingTapCreate Fehler %d", kTapLogPrefix, (int)status);
-        [self.delegate audioSource:self didFailWithReason:@"Audio-Tap konnte nicht angelegt werden"];
+        [self.delegate audioSource:self didFailWithReason:BLS(@"Audio-Tap konnte nicht angelegt werden")];
         return;
     }
     AVMutableAudioMixInputParameters *parameters = [AVMutableAudioMixInputParameters audioMixInputParametersWithTrack:track];

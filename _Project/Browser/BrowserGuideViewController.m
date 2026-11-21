@@ -1,4 +1,5 @@
 #import "BrowserGuideViewController.h"
+#import "BrowserLocalization.h"
 #import "BrowserMotion.h"
 #import "BrowserShape.h"
 
@@ -20,20 +21,20 @@
 /// Neuerungen gegenüber dem ursprünglichen tvOS Browser (Symbol, Titel, Text). Zwei Spalten, höchstens 14.
 + (NSArray<NSArray<NSString *> *> *)whatsNewItems {
     return @[
-        @[@"sparkles", @"Magnetic Buttons", @"Der Zeiger zieht sich auf Links und Knöpfe, sie heben sich als Glas ab und leuchten."],
-        @[@"drop", @"Liquid Glass", @"Leiste, Menüs und Dialoge aus Glas, federnde Animationen."],
-        @[@"cursorarrow.motionlines", @"Neuer Zeiger", @"Gleitet flüssig ohne Ruckeln, Lupe über kleinem Text."],
-        @[@"square.on.square", @"Tabs", @"Übersicht mit Vorschau, bleiben nach Neustart erhalten."],
-        @[@"text.page", @"Reader", @"Artikel ohne Werbung und Ablenkung lesen."],
-        @[@"hand.raised.fill", @"Werbeblocker", @"Filterlisten von uBlock Origin Lite, Ausnahme bei Sperrseiten."],
-        @[@"checkmark.shield.fill", @"Cookie-Banner", @"Werden automatisch abgelehnt."],
-        @[@"play.rectangle", @"Nativer Player", @"Videos im Apple-Player, mit Bild-in-Bild und iPhone-Steuerung."],
-        @[@"captions.bubble", @"Automatische Untertitel", @"Auf dem Gerät erzeugt, im Player und in der Webseite."],
-        @[@"list.bullet.rectangle", @"Zusammenfassen und fragen", @"Seite in wenigen Sätzen, passende Stelle anspringen."],
-        @[@"translate", @"Übersetzen", @"Hinweis bei fremdsprachigen Seiten, ein Druck genügt."],
-        @[@"mic", @"Sprachbefehle", @"„Reader“, „zurück“ oder „suche Wetter“ per Siri-Taste."],
-        @[@"star", @"Favoriten im Adressfeld", @"Favoriten, oft und zuletzt besuchte Seiten auf einen Blick."],
-        @[@"network", @"Cloudflare-DNS", @"Verschlüsselte Namensauflösung, abschaltbar."],
+        @[@"sparkles", BLS(@"Magnetic Buttons"), BLS(@"Der Zeiger zieht sich auf Links und Knöpfe, sie heben sich als Glas ab und leuchten.")],
+        @[@"drop", BLS(@"Liquid Glass"), BLS(@"Leiste, Menüs und Dialoge aus Glas, federnde Animationen.")],
+        @[@"cursorarrow.motionlines", BLS(@"Neuer Zeiger"), BLS(@"Gleitet flüssig ohne Ruckeln, Lupe über kleinem Text.")],
+        @[@"square.on.square", BLS(@"Tabs"), BLS(@"Übersicht mit Vorschau, bleiben nach Neustart erhalten.")],
+        @[@"text.page", BLS(@"Reader"), BLS(@"Artikel ohne Werbung und Ablenkung lesen.")],
+        @[@"hand.raised.fill", BLS(@"Werbeblocker"), BLS(@"Filterlisten von uBlock Origin Lite, Ausnahme bei Sperrseiten.")],
+        @[@"checkmark.shield.fill", BLS(@"Cookie-Banner"), BLS(@"Werden automatisch abgelehnt.")],
+        @[@"play.rectangle", BLS(@"Nativer Player"), BLS(@"Videos im Apple-Player, mit Bild-in-Bild und iPhone-Steuerung.")],
+        @[@"captions.bubble", BLS(@"Automatische Untertitel"), BLS(@"Auf dem Gerät erzeugt, im Player und in der Webseite.")],
+        @[@"list.bullet.rectangle", BLS(@"Zusammenfassen und fragen"), BLS(@"Seite in wenigen Sätzen, passende Stelle anspringen.")],
+        @[@"translate", BLS(@"Übersetzen"), BLS(@"Hinweis bei fremdsprachigen Seiten, ein Druck genügt.")],
+        @[@"mic", BLS(@"Sprachbefehle"), BLS(@"„Reader“, „zurück“ oder „suche Wetter“ per Siri-Taste.")],
+        @[@"star", BLS(@"Favoriten im Adressfeld"), BLS(@"Favoriten, oft und zuletzt besuchte Seiten auf einen Blick.")],
+        @[@"network", BLS(@"Cloudflare-DNS"), BLS(@"Verschlüsselte Namensauflösung, abschaltbar.")],
     ];
 }
 
@@ -84,7 +85,7 @@
     }
 
     UILabel *title = [[UILabel alloc] init];
-    title.text = @"So bedienst du den Browser";
+    title.text = BLS(@"So bedienst du den Browser");
     title.font = [UIFont systemFontOfSize:48.0 weight:UIFontWeightBold];
     title.textColor = UIColor.whiteColor;
     title.textAlignment = NSTextAlignmentCenter;
@@ -95,27 +96,27 @@
     // Höchstens ca. 7 Zeilen, damit die Karte auf den Bildschirm passt. Belegung siehe docs/ERWEITERUNGEN.md, Abschnitt 8.2.
     // Weitere Zeilen (z. B. „Sprachbefehle“) einfach unten anhängen; es ist Platz für eine mehr.
     NSArray<NSArray<NSString *> *> *items = @[
-        @[@"hand.point.up.left", @"Zeigen und klicken", @"Über das Clickpad wischen, zum Klicken drücken."],
-        @[@"arrow.up.arrow.down", @"Scrollen und Adresse", @"Oben oder unten drücken scrollt. Zweimal oben: Adressleiste. Zweimal unten: Leiste klein."],
-        @[@"arrow.left.arrow.right", @"Von Knopf zu Knopf", @"Links/rechts drücken, halten: weiter. Zweimal rechts: Menü. Im Video: 10 s spulen."],
-        @[@"playpause", @"Play/Pause", @"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü."],
-        @[@"chevron.backward", @"Zurück", @"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück."],
-        @[@"text.page", @"Reader und mehr", @"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••."],
-        @[@"mic", @"Sprachbefehle", @"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“ oder „suche Wetter“ sagen."],
+        @[@"hand.point.up.left", BLS(@"Zeigen und klicken"), BLS(@"Über das Clickpad wischen, zum Klicken drücken.")],
+        @[@"arrow.up.arrow.down", BLS(@"Scrollen und Adresse"), BLS(@"Oben oder unten drücken scrollt. Zweimal oben: Adressleiste. Zweimal unten: Leiste klein.")],
+        @[@"arrow.left.arrow.right", BLS(@"Von Knopf zu Knopf"), BLS(@"Links/rechts drücken, halten: weiter. Zweimal rechts: Menü. Im Video: 10 s spulen.")],
+        @[@"playpause", BLS(@"Play/Pause"), BLS(@"Video starten oder stoppen, sonst Eingabe. Halten: suchen und sprechen. Zweimal: Menü.")],
+        @[@"chevron.backward", BLS(@"Zurück"), BLS(@"Menü-Taste: Adressleiste schließen, Reader beenden, dann eine Seite zurück.")],
+        @[@"text.page", BLS(@"Reader und mehr"), BLS(@"Reader-Knopf links von •••. Werbeblocker und Einstellungen findest du unter •••.")],
+        @[@"mic", BLS(@"Sprachbefehle"), BLS(@"Im Adressfeld Siri-Taste halten und z. B. „Reader“, „zurück“ oder „suche Wetter“ sagen.")],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self rowWithSymbol:item[0] title:item[1] text:item[2]]];
     }
 
     UILabel *tips = [[UILabel alloc] init];
-    tips.text = @"Kreisbewegung am Rand des Clickpads: von Element zu Element. Geht auch mit iPhone/iPad.";
+    tips.text = BLS(@"Kreisbewegung am Rand des Clickpads: von Element zu Element. Geht auch mit iPhone/iPad.");
     tips.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightRegular];
     tips.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
     tips.textAlignment = NSTextAlignmentCenter;
     tips.numberOfLines = 0;
 
-    self.primaryButton = [self buttonWithTitle:@"Los geht's" prominent:YES action:@selector(closeTapped)];
-    NSString *secondTitle = self.dontShowOnLaunch ? @"Beim Start anzeigen" : @"Nicht mehr anzeigen";
+    self.primaryButton = [self buttonWithTitle:BLS(@"Los geht's") prominent:YES action:@selector(closeTapped)];
+    NSString *secondTitle = self.dontShowOnLaunch ? BLS(@"Beim Start anzeigen") : BLS(@"Nicht mehr anzeigen");
     UIButton *secondary = [self buttonWithTitle:secondTitle prominent:NO action:@selector(toggleTapped)];
     UIStackView *buttons = [[UIStackView alloc] initWithArrangedSubviews:@[self.primaryButton, secondary]];
     buttons.axis = UILayoutConstraintAxisHorizontal;
@@ -143,13 +144,13 @@
 
 - (void)buildWhatsNewInCard:(UIVisualEffectView *)card {
     UILabel *title = [[UILabel alloc] init];
-    title.text = @"Was ist neu";
+    title.text = BLS(@"Was ist neu");
     title.font = [UIFont systemFontOfSize:52.0 weight:UIFontWeightBold];
     title.textColor = UIColor.whiteColor;
     title.textAlignment = NSTextAlignmentCenter;
 
     UILabel *subtitle = [[UILabel alloc] init];
-    subtitle.text = @"Diese Fassung des tvOS Browser bringt gegenüber dem Original mit:";
+    subtitle.text = BLS(@"Diese Fassung des tvOS Browser bringt gegenüber dem Original mit:");
     subtitle.font = [UIFont systemFontOfSize:27.0 weight:UIFontWeightRegular];
     subtitle.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
     subtitle.textAlignment = NSTextAlignmentCenter;
@@ -176,8 +177,8 @@
     columns.layoutMarginsRelativeArrangement = YES;
     columns.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(0.0, 20.0, 0.0, 20.0);
 
-    self.primaryButton = [self buttonWithTitle:@"Weiter" prominent:YES action:@selector(closeTapped)];
-    UIButton *secondary = [self buttonWithTitle:@"Bedienung ansehen" prominent:NO action:@selector(showGuideTapped)];
+    self.primaryButton = [self buttonWithTitle:BLS(@"Weiter") prominent:YES action:@selector(closeTapped)];
+    UIButton *secondary = [self buttonWithTitle:BLS(@"Bedienung ansehen") prominent:NO action:@selector(showGuideTapped)];
     UIStackView *buttons = [[UIStackView alloc] initWithArrangedSubviews:@[self.primaryButton, secondary]];
     buttons.axis = UILayoutConstraintAxisHorizontal;
     buttons.spacing = 32.0;

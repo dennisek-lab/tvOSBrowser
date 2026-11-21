@@ -7,6 +7,7 @@
 #import "BrowserTopBarView.h"
 #import "BrowserViewModel.h"
 #import "BrowserWebView.h"
+#import "BrowserLocalization.h"
 
 static CGFloat const kThumbnailStagingOffset = 4096.0;
 /// Breite der Vorschau in der Tab-Übersicht (kTabCardWidth in BrowserTabOverviewController.m) in Punkten.
@@ -356,7 +357,7 @@ NSString *BrowserShortSiteName(NSString *siteName, NSString *title, NSString *ho
     } else if (host.length > 0) {
         [self.topMenuView setDisplayTitle:host domain:nil secure:secure];
     } else {
-        [self.topMenuView setDisplayTitle:(currentURL.length > 0 ? currentURL : @"Neuer Tab") domain:nil secure:NO];
+        [self.topMenuView setDisplayTitle:(currentURL.length > 0 ? currentURL : BLS(@"Neuer Tab")) domain:nil secure:NO];
     }
 
     if (request != nil) {
@@ -746,10 +747,10 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
 }
 
 - (void)showMaxTabsAlert {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Zu viele Tabs"
-                                                                             message:@"Es können höchstens zehn Tabs gleichzeitig offen sein."
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Zu viele Tabs")
+                                                                             message:BLS(@"Es können höchstens zehn Tabs gleichzeitig offen sein.")
                                                                       preferredStyle:UIAlertControllerStyleAlert];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Schließen"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Schließen")
                                                         style:UIAlertActionStyleCancel
                                                       handler:nil]];
     [self.host browserTabCoordinatorPresentViewController:alertController];
@@ -813,7 +814,7 @@ static BOOL BrowserTabShowsHomePage(NSString *urlString, NSURL *home) {
     NSString *URLString = request.URL.absoluteString ?: @"";
     tab.requestURL = URLString;
     tab.URLString = URLString;
-    tab.title = request.URL.host.length > 0 ? request.URL.host : @"Neuer Tab";
+    tab.title = request.URL.host.length > 0 ? request.URL.host : BLS(@"Neuer Tab");
     // Noch nicht laden: keine WebView, kein Seitenprozess. Erst beim Öffnen (Einblendung oder Tab-Übersicht) lädt
     // switchToTabAtIndex: die Anfrage. So verdrängt ein Pop-up keinen anderen Tab aus dem Speicher.
     tab.pendingRequest = request;

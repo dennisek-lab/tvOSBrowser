@@ -13,6 +13,7 @@
 #import <dlfcn.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import "BrowserLocalization.h"
 
 static NSString * const kBrowserWebViewClassName = @"WKWebView";
 static NSString * const kBrowserWebViewConfigurationClassName = @"WKWebViewConfiguration";
@@ -1570,7 +1571,7 @@ static NSUInteger const BrowserRenderingFirstPaintWithSignificantArea = 1 << 2;
     if (repeated) {
         if ([self.delegate respondsToSelector:@selector(webView:didFailLoadWithError:)]) {
             NSError *error = [NSError errorWithDomain:@"BrowserWebContentProcess" code:reason userInfo:@{
-                NSLocalizedDescriptionKey: @"Die Seite ist wiederholt abgestürzt (meist zu viel Speicher für das Apple TV).",
+                NSLocalizedDescriptionKey: BLS(@"Die Seite ist wiederholt abgestürzt (meist zu viel Speicher für das Apple TV)."),
                 NSURLErrorFailingURLErrorKey: self.request.URL ?: url,
             }];
             [self.delegate webView:self didFailLoadWithError:error];

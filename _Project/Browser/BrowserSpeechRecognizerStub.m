@@ -1,4 +1,5 @@
 #import "BrowserSpeechRecognizerStub.h"
+#import "BrowserLocalization.h"
 
 #include <math.h>
 
@@ -37,7 +38,7 @@
     } else {
         double decibels = 20.0 * log10(MAX(rms, 1e-9));
         NSString *level = [[NSString stringWithFormat:@"%.0f", decibels] stringByReplacingOccurrencesOfString:@"-" withString:@"−"];
-        text = [NSString stringWithFormat:@"[Ton erkannt: %@ s · %@ dB]", seconds, level];
+        text = [NSString stringWithFormat:BLS(@"[Ton erkannt: %@ s · %@ dB]"), seconds, level];
     }
     NSArray *cues = @[[BrowserWebSubtitleCue cueWithStart:startTime end:startTime + duration text:text]];
     if (self.simulatedProcessingTime > 0.0) {

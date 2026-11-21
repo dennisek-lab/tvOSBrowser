@@ -9,6 +9,7 @@
 #import "BrowserMotion.h"
 #import "BrowserWebView.h"
 #import "BrowserAppleTranslator.h"
+#import "BrowserLocalization.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -103,7 +104,7 @@ static UIFont *BrowserIntelligenceBodyFont(CGFloat size, UIFontWeight weight) {
         [_contentView addSubview:_iconView];
 
         _headingLabel = [UILabel new];
-        _headingLabel.text = @"Zusammenfassung";
+        _headingLabel.text = BLS(@"Zusammenfassung");
         _headingLabel.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightBold];
         _headingLabel.textColor = UIColor.whiteColor;
         [_contentView addSubview:_headingLabel];
@@ -124,7 +125,7 @@ static UIFont *BrowserIntelligenceBodyFont(CGFloat size, UIFontWeight weight) {
         [_contentView addSubview:_spinner];
 
         _statusLabel = [UILabel new];
-        _statusLabel.text = @"Wird zusammengefasst …";
+        _statusLabel.text = BLS(@"Wird zusammengefasst …");
         _statusLabel.font = [UIFont systemFontOfSize:30.0 weight:UIFontWeightMedium];
         _statusLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.8];
         [_contentView addSubview:_statusLabel];
@@ -655,7 +656,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
     BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
     UIView *container = self.containerProvider ? self.containerProvider() : nil;
     if (webView == nil || container == nil || webView.request.URL == nil) {
-        [self feedback:@"Keine Seite geladen" symbol:@"text.line.3.summary" success:NO];
+        [self feedback:BLS(@"Keine Seite geladen") symbol:@"text.line.3.summary" success:NO];
         return;
     }
     [self dismissTranslationHint];
@@ -679,7 +680,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
         if (summary == nil || summary.sentences.count == 0) {
             [card dismissWithCompletion:nil];
             NSString *message = error.code == BrowserIntelligenceErrorTooShort || error.code == BrowserIntelligenceErrorNoText
-                ? @"Zu wenig Text zum Zusammenfassen" : (error.localizedDescription ?: @"Zusammenfassen nicht möglich");
+                ? BLS(@"Zu wenig Text zum Zusammenfassen") : (error.localizedDescription ?: BLS(@"Zusammenfassen nicht möglich"));
             [self_ feedback:message symbol:@"text.line.3.summary" success:NO];
             return;
         }
@@ -710,18 +711,18 @@ static const CGFloat kAnswerPaddingY = 34.0;
     NSURL *url = webView.request.URL;
     [self dismissTranslationHint];
     if (url == nil) {
-        [self feedback:@"Keine Seite geladen" symbol:@"translate" success:NO];
+        [self feedback:BLS(@"Keine Seite geladen") symbol:@"translate" success:NO];
         return NO;
     }
     if ([BrowserIntelligence isTranslationProxyURL:url] || [self appleTranslationForWebView:webView] != nil) {
-        [self feedback:@"Seite ist schon übersetzt" symbol:@"translate" success:YES];
+        [self feedback:BLS(@"Seite ist schon übersetzt") symbol:@"translate" success:YES];
         return NO;
     }
     NSString *target = BrowserIntelligence.systemLanguageCode;
     NSURL *proxy = [BrowserIntelligence translationProxyURLForURL:url targetLanguage:target];
     NSLog(@"[AI] übersetzen %@ (Google-Rückfall %@)", url.absoluteString, proxy.absoluteString ?: @"nicht möglich");
     if (proxy == nil && (forceGoogle || ![url.scheme.lowercaseString hasPrefix:@"http"])) {
-        [self feedback:@"Diese Seite lässt sich nicht übersetzen" symbol:@"translate" success:NO];
+        [self feedback:BLS(@"Diese Seite lässt sich nicht übersetzen") symbol:@"translate" success:NO];
         return NO;
     }
     // Seiten, die schon in der Systemsprache sind, nicht übersetzen (der Hinweis erscheint dort ohnehin nicht).
@@ -732,7 +733,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
         BOOL sure = info.confidence >= 0.65 && info.language.length > 0;
         if (!fromHint && sure && [info.language.lowercaseString hasPrefix:target]) {
             NSLog(@"[AI] übersetzen: Seite ist schon %@", info.language);
-            [self feedback:[NSString stringWithFormat:@"Seite ist schon auf %@", [BrowserIntelligence displayNameForLanguage:target]]
+            [self feedback:[NSString stringWithFormat:BLS(@"Seite ist schon auf %@"), [BrowserIntelligence displayNameForLanguage:target]]
                     symbol:@"translate" success:YES];
             return;
         }
@@ -768,13 +769,13 @@ static const CGFloat kAnswerPaddingY = 34.0;
             if (proxy != nil) {
                 [self loadTranslation:proxy inWebView:webView target:target];
             } else {
-                [self feedback:@"Diese Seite lässt sich nicht übersetzen" symbol:@"translate" success:NO];
+                [self feedback:BLS(@"Diese Seite lässt sich nicht übersetzen") symbol:@"translate" success:NO];
             }
             return;
         }
         BrowserPageTranslation *translation = [[BrowserPageTranslation alloc] initWithWebView:webView sourceLanguage:language targetLanguage:target];
         [self.pageTranslations setObject:translation forKey:webView];
-        [self feedback:@"Wird übersetzt …" symbol:@"translate" success:YES];
+        [self feedback:BLS(@"Wird übersetzt …") symbol:@"translate" success:YES];
         CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
         __weak typeof(self) weakSelf = self;
         [translation startWithFirstBatchHandler:^(BOOL ok, NSError *error) {
@@ -791,14 +792,14 @@ static const CGFloat kAnswerPaddingY = 34.0;
                 return;
             }
             if (error.code == BrowserAppleTranslatorErrorNoText) {
-                [self_ feedback:@"Kein Text zum Übersetzen" symbol:@"translate" success:NO];
+                [self_ feedback:BLS(@"Kein Text zum Übersetzen") symbol:@"translate" success:NO];
                 return;
             }
             if (proxy != nil) {
-                [self_ feedback:@"Apple-Übersetzung nicht möglich, nehme Google" symbol:@"translate" success:NO];
+                [self_ feedback:BLS(@"Apple-Übersetzung nicht möglich, nehme Google") symbol:@"translate" success:NO];
                 [webView loadRequest:[NSURLRequest requestWithURL:proxy]];
             } else {
-                [self_ feedback:@"Übersetzung nicht möglich" symbol:@"translate" success:NO];
+                [self_ feedback:BLS(@"Übersetzung nicht möglich") symbol:@"translate" success:NO];
             }
         }];
     }];
@@ -829,17 +830,17 @@ static const CGFloat kAnswerPaddingY = 34.0;
         [translation stopRestoringOriginal:YES completion:^(NSUInteger restored) {
             NSLog(@"[AI] Original wiederhergestellt: %lu Textknoten", (unsigned long)restored);
         }];
-        [self feedback:@"Original" symbol:@"translate" success:YES];
+        [self feedback:BLS(@"Original") symbol:@"translate" success:YES];
         return YES;
     }
     NSURL *original = [BrowserIntelligence originalURLForTranslationProxyURL:webView.request.URL];
     NSLog(@"[AI] Übersetzung beenden %@ -> %@", webView.request.URL.absoluteString, original.absoluteString ?: @"(keine)");
     if (original == nil) {
-        [self feedback:@"Seite ist nicht übersetzt" symbol:@"translate" success:NO];
+        [self feedback:BLS(@"Seite ist nicht übersetzt") symbol:@"translate" success:NO];
         return NO;
     }
     [webView loadRequest:[NSURLRequest requestWithURL:original]];
-    [self feedback:@"Original wird geladen" symbol:@"translate" success:YES];
+    [self feedback:BLS(@"Original wird geladen") symbol:@"translate" success:YES];
     return YES;
 }
 
@@ -850,7 +851,7 @@ static const CGFloat kAnswerPaddingY = 34.0;
 - (void)loadTranslation:(NSURL *)proxy inWebView:(BrowserWebView *)webView target:(NSString *)target {
     // Logins und Cookies der Originalseite gelten auf translate.goog nicht; Google sieht die Seite.
     [webView loadRequest:[NSURLRequest requestWithURL:proxy]];
-    [self feedback:@"Wird übersetzt …"
+    [self feedback:BLS(@"Wird übersetzt …")
             symbol:@"translate" success:YES];
 }
 
@@ -861,8 +862,8 @@ static const CGFloat kAnswerPaddingY = 34.0;
     }
     [self.hintView dismissWithCompletion:nil];
     NSString *name = [BrowserIntelligence displayNameForLanguage:language];
-    NSString *title = @"Seite übersetzen?";
-    NSString *detail = [NSString stringWithFormat:@"%@  ·  Play/Pause zum Übersetzen", name];
+    NSString *title = BLS(@"Seite übersetzen?");
+    NSString *detail = [NSString stringWithFormat:BLS(@"%@  ·  Play/Pause zum Übersetzen"), name];
     BrowserTranslateHintView *hint = [[BrowserTranslateHintView alloc] initWithTitle:title detail:detail];
     [hint presentInView:container];
     self.hintView = hint;
@@ -893,11 +894,11 @@ static const NSTimeInterval kAnswerDuration = 25.0;
     BrowserWebView *webView = self.webViewProvider ? self.webViewProvider() : nil;
     NSString *trimmed = [question stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (webView == nil || webView.request.URL == nil) {
-        [self feedback:@"Keine Seite geladen" symbol:@"text.magnifyingglass" success:NO];
+        [self feedback:BLS(@"Keine Seite geladen") symbol:@"text.magnifyingglass" success:NO];
         return;
     }
     if (trimmed.length == 0) {
-        [self feedback:@"Was soll ich die Seite fragen?" symbol:@"text.magnifyingglass" success:NO];
+        [self feedback:BLS(@"Was soll ich die Seite fragen?") symbol:@"text.magnifyingglass" success:NO];
         return;
     }
     [self dismissTranslationHint];
@@ -913,9 +914,9 @@ static const NSTimeInterval kAnswerDuration = 25.0;
             return; // neue Seite oder neue Frage
         }
         if (answer.passages.count == 0) {
-            NSString *message = error.code == BrowserIntelligenceErrorQuestionTooShort ? @"Frage zu kurz"
+            NSString *message = error.code == BrowserIntelligenceErrorQuestionTooShort ? BLS(@"Frage zu kurz")
                 : (error.code == BrowserIntelligenceErrorNoText || error.code == BrowserIntelligenceErrorTooShort
-                   ? @"Kein Text auf der Seite" : @"Keine passende Stelle gefunden");
+                   ? BLS(@"Kein Text auf der Seite") : BLS(@"Keine passende Stelle gefunden"));
             NSLog(@"[AI] frag: %@", message);
             [self_ feedback:message symbol:@"text.magnifyingglass" success:NO];
             return;
@@ -931,8 +932,8 @@ static const NSTimeInterval kAnswerDuration = 25.0;
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
     NSUInteger count = self.answer.passages.count;
     if (count > 1) {
-        [parts addObject:[NSString stringWithFormat:@"%lu von %lu", (unsigned long)index + 1, (unsigned long)count]];
-        [parts addObject:@"Play/Pause: nächste Stelle"];
+        [parts addObject:[NSString stringWithFormat:BLS(@"%lu von %lu"), (unsigned long)index + 1, (unsigned long)count]];
+        [parts addObject:BLS(@"Play/Pause: nächste Stelle")];
     }
     (void)found;
     return [parts componentsJoinedByString:@"  ·  "];
@@ -952,7 +953,7 @@ static const NSTimeInterval kAnswerDuration = 25.0;
             return;
         }
         BOOL found = [result[@"found"] boolValue];
-        NSString *question = [NSString stringWithFormat:@"Frage: %@", answer.question];
+        NSString *question = [NSString stringWithFormat:BLS(@"Frage: %@"), answer.question];
         NSString *footer = [self_ answerFooterForIndex:index found:found];
         NSLog(@"[AI] Antwort %lu/%lu markiert=%d (%@): %@", (unsigned long)index + 1, (unsigned long)answer.passages.count, found,
               result[@"how"] ?: result[@"why"] ?: @"-", passage.text);
@@ -1070,7 +1071,7 @@ static const NSTimeInterval kAnswerDuration = 25.0;
             NSLog(@"[AI] Übersetzen abgelehnt für %@", host);
         }
         [self dismissTranslationHint];
-        [self feedback:@"Wird hier nicht mehr angeboten" symbol:@"translate" success:YES];
+        [self feedback:BLS(@"Wird hier nicht mehr angeboten") symbol:@"translate" success:YES];
         return YES;
     }
     return NO;

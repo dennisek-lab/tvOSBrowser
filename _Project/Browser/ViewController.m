@@ -46,6 +46,7 @@
 #import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
 #import "BrowserFilterListUpdater.h"
+#import "BrowserLocalization.h"
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
 /// Spike Siri-Steuerung: BrowserAppIntents.swift schickt Befehle über diese Notification (siehe docs/SIRI_STEUERUNG.md).
@@ -854,7 +855,7 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                             if (action.state == UIMenuElementStateOn) {
                                 [menuState addObject:[NSString stringWithFormat:@"%@: %@ ✓", menu.title, action.title]];
                             }
-                            if (wanted != nil && [menu.title isEqualToString:@"Automatische Untertitel"] &&
+                            if (wanted != nil && ([menu.title isEqualToString:@"Automatische Untertitel"] || [menu.title isEqualToString:BLS(@"Automatische Untertitel")]) &&
                                 [action.title.lowercaseString isEqualToString:wanted.lowercaseString] &&
                                 [action respondsToSelector:NSSelectorFromString(@"performWithSender:target:")]) {
                                 NSLog(@"[SelfTest] nsubs löst „%@“ aus", action.title);
@@ -1339,7 +1340,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     BrowserTabViewModel *tab = [self.tabCoordinator createBackgroundTabWithRequest:request];
     if (tab == nil) {
         NSLog(@"[Popup] nicht geöffnet, schon %lu Tabs: %@", (unsigned long)self.viewModel.tabs.count, url.absoluteString);
-        [self.commandRouter showFeedback:popup ? @"Pop-up nicht geöffnet: höchstens zehn Tabs" : @"Nicht geöffnet: höchstens zehn Tabs"
+        [self.commandRouter showFeedback:popup ? BLS(@"Pop-up nicht geöffnet: höchstens zehn Tabs") : BLS(@"Nicht geöffnet: höchstens zehn Tabs")
                               symbolName:@"square.on.square"
                                  success:NO];
         return YES;
@@ -1485,11 +1486,11 @@ static NSString *BrowserDisplayHost(NSString *host) {
             break;
         case BrowserTopBarActionFullscreen:
             if (self.viewModel.topNavigationBarVisible) {
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Obere Leiste ausblenden?"
-                                                                                         message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Obere Leiste ausblenden?")
+                                                                                         message:BLS(@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause.")
                                                                                   preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Ausblenden"
+                [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
+                [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Ausblenden")
                                                                     style:UIAlertActionStyleDestructive
                                                                   handler:^(__unused UIAlertAction *action) {
                     [self browserHideTopNav];
@@ -1869,12 +1870,12 @@ static NSString *BrowserDisplayHost(NSString *host) {
 
 - (void)requestURLorSearchInput {
     NSString *host = self.webview.request.URL.host;
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Schnellmenü"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Schnellmenü")
                                                                              message:host.length > 0 ? host : @""
                                                                       preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
 
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Adresse oder Suche")
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf beginAddressEditing];
@@ -1883,7 +1884,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     NSURL *currentURL = self.webview.request.URL;
     if ([BrowserHistoryStore hostKeyForURL:currentURL] != nil) {
         BOOL isFavorite = [BrowserHistoryStore.sharedStore isFavoriteURL:currentURL];
-        [alertController addAction:[UIAlertAction actionWithTitle:isFavorite ? @"Aus Favoriten entfernen" : @"Zu Favoriten hinzufügen"
+        [alertController addAction:[UIAlertAction actionWithTitle:isFavorite ? BLS(@"Aus Favoriten entfernen") : BLS(@"Zu Favoriten hinzufügen")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             if (isFavorite) {
@@ -1897,7 +1898,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
 
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Neu laden")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             weakSelf.tabCoordinator.previousURL = @"";
@@ -1906,7 +1907,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
 
     if (self.webview.canGoForward) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Vor"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Vor")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf.webview goForward];
@@ -1914,35 +1915,35 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
 
     if ([self.videoPlaybackCoordinator pageHasVideo]) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Im Player öffnen"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Im Player öffnen")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf.videoPlaybackCoordinator openPageVideoInNativePlayer];
         }]];
     }
 
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Neuer Tab"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Neuer Tab")
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf browserCreateNewTabLoadingHomePage:YES];
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Tabs anzeigen"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Tabs anzeigen")
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf browserShowTabOverview];
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Startseite"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Startseite")
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf loadHomePage];
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Weitere Einstellungen …"
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Weitere Einstellungen …")
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(__unused UIAlertAction *action) {
         [weakSelf showAdvancedMenu];
     }]];
 
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 
@@ -2520,10 +2521,10 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
     BrowserWhisperSpeechRecognizer *whisper = [[BrowserWhisperSpeechRecognizer alloc] initWithLanguage:whisperWanted];
     if (whisper == nil) {
-        NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: @"nicht verfügbar";
+        NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: BLS(@"nicht verfügbar");
         NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@, Modellordner %@): Untertitel in der Webseite aus",
               reason, wanted, [BrowserSubtitleEngine modelsDirectory] ?: @"fehlt");
-        self.webSubtitleRecognizerHint = [NSString stringWithFormat:@"Untertitel: %@", reason];
+        self.webSubtitleRecognizerHint = [NSString stringWithFormat:BLS(@"Untertitel: %@"), reason];
         [controller stop];
         return NO;
     }
@@ -2569,10 +2570,10 @@ static NSString *BrowserDisplayHost(NSString *host) {
         return;
     }
     if (![self prepareWebSubtitleControllerUsingStub:NO language:nil]) {
-        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Untertitel nicht möglich"
+        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Untertitel nicht möglich")
                                                                                  message:self.webSubtitleRecognizerHint
                                                                           preferredStyle:UIAlertControllerStyleAlert];
-        [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"OK") style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:alertController animated:YES completion:nil];
         return;
     }
@@ -3149,7 +3150,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
         NSString *host = BrowserDisplayHost(popupWebView.committedURL.host ?: popupWebView.request.URL.host);
         NSString *title = popupWebView.reportedPageTitle.length > 0 ? popupWebView.reportedPageTitle : popupTab.title;
         NSString *name = BrowserShortSiteName(popupWebView.reportedSiteName, title, host);
-        if (popupTab != nil && name.length > 0 && ![name isEqualToString:@"Neuer Tab"]) {
+        if (popupTab != nil && name.length > 0 && ![name isEqualToString:@"Neuer Tab"] && ![name isEqualToString:BLS(@"Neuer Tab")]) {
             [self.popupNotice updateDisplayName:name forTabWithIdentifier:popupTab.identifier];
         }
     }
@@ -3205,12 +3206,12 @@ static NSString *BrowserDisplayHost(NSString *host) {
         return;
     }
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Seite konnte nicht geladen werden"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Seite konnte nicht geladen werden")
                                                                              message:error.localizedDescription
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     if (tab.requestURL.length > 1) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Bei Google suchen"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Bei Google suchen")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForFailedRequestURLString:tab.requestURL];
@@ -3220,20 +3221,20 @@ static NSString *BrowserDisplayHost(NSString *host) {
         }]];
     }
     if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Neu laden"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Neu laden")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             weakSelf.tabCoordinator.previousURL = @"";
             [weakSelf.webview reload];
         }]];
     } else {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Adresse oder Suche"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Adresse oder Suche")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             [weakSelf beginAddressEditing];
         }]];
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alertController animated:YES completion:nil];
 }
 

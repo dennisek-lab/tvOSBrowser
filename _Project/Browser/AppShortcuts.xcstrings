@@ -14,6 +14,18 @@
             "state": "translated",
             "value": "Start reader in ${applicationName}"
           }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar lector en ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer le lecteur dans ${applicationName}"
+          }
         }
       }
     },
@@ -29,6 +41,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open reader in ${applicationName}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia el lector en ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lance le lecteur dans ${applicationName}"
           }
         }
       }
@@ -46,6 +70,18 @@
             "state": "translated",
             "value": "${applicationName} reader"
           }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lector de ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecteur ${applicationName}"
+          }
         }
       }
     },
@@ -61,6 +97,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open address in ${applicationName}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir dirección en ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir une adresse dans ${applicationName}"
           }
         }
       }
@@ -78,6 +126,18 @@
             "state": "translated",
             "value": "Search in ${applicationName}"
           }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans ${applicationName}"
+          }
         }
       }
     },
@@ -94,6 +154,18 @@
             "state": "translated",
             "value": "${command} in ${applicationName}"
           }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${command} en ${applicationName}"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${command} dans ${applicationName}"
+          }
         }
       }
     },
@@ -106,6 +178,18 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} ${command}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} ${command}"
+          }
+        },
+        "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "${applicationName} ${command}"

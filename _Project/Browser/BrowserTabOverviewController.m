@@ -4,6 +4,7 @@
 
 #import "BrowserTabViewModel.h"
 #import "BrowserViewModel.h"
+#import "BrowserLocalization.h"
 
 static CGFloat const kTopBarHorizontalInset = 40.0;
 static CGFloat const kTopBarMaxWidth = 1760.0;
@@ -162,8 +163,8 @@ static CGFloat const kTabCardURLHeight = 64.0;
     self.thumbnailView.image = nil;
     self.placeholderLabel.hidden = YES;
     self.addIconBackdropView.hidden = NO;
-    self.titleLabel.text = @"Neuer Tab";
-    self.urlLabel.text = @"Startseite öffnen";
+    self.titleLabel.text = BLS(@"Neuer Tab");
+    self.urlLabel.text = BLS(@"Startseite öffnen");
     self.hintLabel.hidden = YES;
     [self updateAppearance];
 }
@@ -186,16 +187,16 @@ static CGFloat const kTabCardURLHeight = 64.0;
                 NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.8],
             }]];
         }
-        [text appendAttributedString:[[NSAttributedString alloc] initWithString:@"Keine Vorschau" attributes:@{
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:BLS(@"Keine Vorschau") attributes:@{
             NSFontAttributeName: [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1],
             NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.5],
         }]];
         self.placeholderLabel.attributedText = text;
     }
     self.addIconBackdropView.hidden = YES;
-    self.titleLabel.text = tab.title.length > 0 ? tab.title : @"Neuer Tab";
-    self.urlLabel.text = tab.URLString.length > 0 ? tab.URLString : @"Startseite";
-    self.hintLabel.text = @"Play/Pause: Schließen";
+    self.titleLabel.text = tab.title.length > 0 ? tab.title : BLS(@"Neuer Tab");
+    self.urlLabel.text = tab.URLString.length > 0 ? tab.URLString : BLS(@"Startseite");
+    self.hintLabel.text = BLS(@"Play/Pause: Schließen");
     self.hintLabel.hidden = !self.isFocused;
     [self updateAppearance];
 }
@@ -288,7 +289,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
     UILabel *titleLabel = [UILabel new];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    titleLabel.text = @"Tabs";
+    titleLabel.text = BLS(@"Tabs");
     titleLabel.textColor = UIColor.whiteColor;
     titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
     [panelView.contentView addSubview:titleLabel];
@@ -323,7 +324,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
     UILabel *footerLabel = [UILabel new];
     footerLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    footerLabel.text = @"Auswahl: Öffnen   Play/Pause: Tab schließen   Menü: Zurück";
+    footerLabel.text = BLS(@"Auswahl: Öffnen   Play/Pause: Tab schließen   Menü: Zurück");
     footerLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.62];
     footerLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     footerLabel.textAlignment = NSTextAlignmentCenter;
@@ -406,7 +407,7 @@ static CGFloat const kTabCardURLHeight = 64.0;
 
 - (void)updateSubtitle {
     NSUInteger tabCount = self.overviewController.viewModel.tabs.count;
-    self.subtitleLabel.text = tabCount == 1 ? @"1 Tab" : [NSString stringWithFormat:@"%lu Tabs", (unsigned long)tabCount];
+    self.subtitleLabel.text = tabCount == 1 ? BLS(@"1 Tab") : [NSString stringWithFormat:BLS(@"%lu Tabs"), (unsigned long)tabCount];
 }
 
 - (void)updateCardAtTabIndex:(NSInteger)tabIndex {

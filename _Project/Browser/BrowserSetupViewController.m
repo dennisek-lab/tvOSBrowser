@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #import "BrowserDNSProxy.h"
 #import "BrowserHistoryStore.h"
+#import "BrowserLocalization.h"
 #import "BrowserMotion.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserShape.h"
@@ -230,7 +231,7 @@ static const NSUInteger kSetupGridColumns = 4;
             [self.buttonRow removeArrangedSubview:subview];
             [subview removeFromSuperview];
         }
-        self.stepLabel.text = page == BrowserSetupPageWelcome ? @"Einrichtung" : [NSString stringWithFormat:@"Schritt %ld von %ld", (long)page, (long)(BrowserSetupPageCount - 1)];
+        self.stepLabel.text = page == BrowserSetupPageWelcome ? BLS(@"Einrichtung") : [NSString stringWithFormat:BLS(@"Schritt %ld von %ld"), (long)page, (long)(BrowserSetupPageCount - 1)];
         UIView *body = [self buildBodyForPage:page];
         body.translatesAutoresizingMaskIntoConstraints = NO;
         [self.bodyContainer addSubview:body];
@@ -274,11 +275,11 @@ static const NSUInteger kSetupGridColumns = 4;
     __weak typeof(self) weakSelf = self;
     UIButton *back;
     if (page == BrowserSetupPageWelcome) {
-        back = [self buttonWithTitle:@"Überspringen" handler:^{ [weakSelf finish]; }];
+        back = [self buttonWithTitle:BLS(@"Überspringen") handler:^{ [weakSelf finish]; }];
     } else {
-        back = [self buttonWithTitle:@"Zurück" handler:^{ [weakSelf goBack]; }];
+        back = [self buttonWithTitle:BLS(@"Zurück") handler:^{ [weakSelf goBack]; }];
     }
-    NSString *nextTitle = page == BrowserSetupPageWelcome ? @"Einrichten" : (page == BrowserSetupPageDesign ? @"Fertig" : @"Weiter");
+    NSString *nextTitle = page == BrowserSetupPageWelcome ? BLS(@"Einrichten") : (page == BrowserSetupPageDesign ? BLS(@"Fertig") : BLS(@"Weiter"));
     self.nextButton = [self buttonWithTitle:nextTitle handler:^{ [weakSelf goForward]; }];
     [self.buttonRow addArrangedSubview:back];
     [self.buttonRow addArrangedSubview:self.nextButton];
@@ -304,17 +305,17 @@ static const NSUInteger kSetupGridColumns = 4;
 #pragma mark - Inhalte
 
 - (UIView *)welcomeBody {
-    self.titleLabel.text = @"Willkommen";
-    self.subtitleLabel.text = @"In ein paar Schritten richtest du den Browser ein.\nAlles lässt sich später in der Seitenleiste ändern.";
+    self.titleLabel.text = BLS(@"Willkommen");
+    self.subtitleLabel.text = [NSString stringWithFormat:@"%@\n%@", BLS(@"In ein paar Schritten richtest du den Browser ein."), BLS(@"Alles lässt sich später in der Seitenleiste ändern.")];
     UIStackView *rows = [[UIStackView alloc] init];
     rows.axis = UILayoutConstraintAxisVertical;
     rows.spacing = 18.0;
     NSArray<NSArray<NSString *> *> *items = @[
-        @[@"star", @"Favoriten", @"Seiten, die du oft besuchst"],
-        @[@"house", @"Startseite", @"Was beim Öffnen der App erscheint"],
-        @[@"checkmark.shield", @"Schutz", @"Werbeblocker, Cloudflare-DNS, Cookie-Banner"],
-        @[@"captions.bubble", @"Videos", @"Automatische Untertitel und Apple-Player"],
-        @[@"paintbrush", @"Design", @"Liquid Glass oder das alte Design"],
+        @[@"star", BLS(@"Favoriten"), BLS(@"Seiten, die du oft besuchst")],
+        @[@"house", BLS(@"Startseite"), BLS(@"Was beim Öffnen der App erscheint")],
+        @[@"checkmark.shield", BLS(@"Schutz"), BLS(@"Werbeblocker, Cloudflare-DNS, Cookie-Banner")],
+        @[@"captions.bubble", BLS(@"Videos"), BLS(@"Automatische Untertitel und Apple-Player")],
+        @[@"paintbrush", BLS(@"Design"), BLS(@"Liquid Glass oder das alte Design")],
     ];
     for (NSArray<NSString *> *item in items) {
         [rows addArrangedSubview:[self infoRowWithSymbol:item[0] title:item[1] text:item[2]]];
@@ -332,8 +333,8 @@ static const NSUInteger kSetupGridColumns = 4;
 }
 
 - (UIView *)favoritesBody {
-    self.titleLabel.text = @"Favoriten";
-    self.subtitleLabel.text = @"Welche Seiten willst du über diesen Browser öfter besuchen?";
+    self.titleLabel.text = BLS(@"Favoriten");
+    self.subtitleLabel.text = BLS(@"Welche Seiten willst du über diesen Browser öfter besuchen?");
     __weak typeof(self) weakSelf = self;
     NSMutableArray<UIButton *> *cells = [NSMutableArray array];
     NSMutableArray<NSArray<NSString *> *> *items = [[BrowserSetupViewController suggestions] mutableCopy];
@@ -348,8 +349,8 @@ static const NSUInteger kSetupGridColumns = 4;
         [cells addObject:button];
     }
     if (self.customFavorites.count < kSetupMaxCustomFavorites) {
-        UIButton *add = [self optionButtonWithTitle:@"Eigene Seite" subtitle:nil symbolOn:@"plus.circle" symbolOff:@"plus.circle" selected:NO handler:^{
-            [weakSelf promptForAddressWithTitle:@"Favorit hinzufügen" completion:^(NSString *URLString) {
+        UIButton *add = [self optionButtonWithTitle:BLS(@"Eigene Seite") subtitle:nil symbolOn:@"plus.circle" symbolOff:@"plus.circle" selected:NO handler:^{
+            [weakSelf promptForAddressWithTitle:BLS(@"Favorit hinzufügen") completion:^(NSString *URLString) {
                 [weakSelf addCustomFavoriteWithURLString:URLString];
             }];
         }];
@@ -360,8 +361,8 @@ static const NSUInteger kSetupGridColumns = 4;
 }
 
 - (UIView *)homeBody {
-    self.titleLabel.text = @"Startseite";
-    self.subtitleLabel.text = @"Welche Seite soll beim Starten der App als Erstes geöffnet werden?";
+    self.titleLabel.text = BLS(@"Startseite");
+    self.subtitleLabel.text = BLS(@"Welche Seite soll beim Starten der App als Erstes geöffnet werden?");
     __weak typeof(self) weakSelf = self;
     NSMutableArray<NSArray<NSString *> *> *items = [NSMutableArray arrayWithObject:@[kSetupGoogleURL, @"Google"]];
     NSMutableSet<NSString *> *hosts = [NSMutableSet setWithObject:@"google.com"];
@@ -390,8 +391,8 @@ static const NSUInteger kSetupGridColumns = 4;
             self.preferredFocusView = button;
         }
     }
-    UIButton *other = [self optionButtonWithTitle:@"Andere Seite" subtitle:nil symbolOn:@"keyboard" symbolOff:@"keyboard" selected:NO handler:^{
-        [weakSelf promptForAddressWithTitle:@"Startseite" completion:^(NSString *URLString) {
+    UIButton *other = [self optionButtonWithTitle:BLS(@"Andere Seite") subtitle:nil symbolOn:@"keyboard" symbolOff:@"keyboard" selected:NO handler:^{
+        [weakSelf promptForAddressWithTitle:BLS(@"Startseite") completion:^(NSString *URLString) {
             weakSelf.homePageURLString = URLString;
             [weakSelf showPage:BrowserSetupPageHome animated:NO];
         }];
@@ -420,36 +421,36 @@ static const NSUInteger kSetupGridColumns = 4;
 }
 
 - (UIView *)protectionBody {
-    self.titleLabel.text = @"Schutz";
-    self.subtitleLabel.text = @"Was soll der Browser für dich abwehren?";
+    self.titleLabel.text = BLS(@"Schutz");
+    self.subtitleLabel.text = BLS(@"Was soll der Browser für dich abwehren?");
     __weak typeof(self) weakSelf = self;
     return [self toggleListWithItems:@[
-        @[@"Werbeblocker", @"Blendet Werbung und Tracker aus (Filterlisten von uBlock Origin Lite).", ^BOOL{ return weakSelf.adBlock; }, ^{ weakSelf.adBlock = !weakSelf.adBlock; }],
-        @[@"Cloudflare-DNS", @"Für freies Internet: verschlüsselte Namensauflösung über Cloudflare statt über den Anbieter, DNS-Sperren greifen nicht.", ^BOOL{ return weakSelf.cloudflareDNS; }, ^{ weakSelf.cloudflareDNS = !weakSelf.cloudflareDNS; }],
-        @[@"Cookie-Banner ablehnen", @"Lehnt Cookie-Banner automatisch ab, soweit es die Seite zulässt.", ^BOOL{ return weakSelf.cookieBanner; }, ^{ weakSelf.cookieBanner = !weakSelf.cookieBanner; }],
+        @[BLS(@"Werbeblocker"), BLS(@"Blendet Werbung und Tracker aus (Filterlisten von uBlock Origin Lite)."), ^BOOL{ return weakSelf.adBlock; }, ^{ weakSelf.adBlock = !weakSelf.adBlock; }],
+        @[BLS(@"Cloudflare-DNS"), BLS(@"Für freies Internet: verschlüsselte Namensauflösung über Cloudflare statt über den Anbieter, DNS-Sperren greifen nicht."), ^BOOL{ return weakSelf.cloudflareDNS; }, ^{ weakSelf.cloudflareDNS = !weakSelf.cloudflareDNS; }],
+        @[BLS(@"Cookie-Banner ablehnen"), BLS(@"Lehnt Cookie-Banner automatisch ab, soweit es die Seite zulässt."), ^BOOL{ return weakSelf.cookieBanner; }, ^{ weakSelf.cookieBanner = !weakSelf.cookieBanner; }],
     ]];
 }
 
 - (UIView *)videoBody {
-    self.titleLabel.text = @"Videos";
-    self.subtitleLabel.text = @"Wie sollen Videos abgespielt werden?";
+    self.titleLabel.text = BLS(@"Videos");
+    self.subtitleLabel.text = BLS(@"Wie sollen Videos abgespielt werden?");
     __weak typeof(self) weakSelf = self;
     return [self toggleListWithItems:@[
-        @[@"Videos im Apple-Player", @"Videos öffnen sich im Player von tvOS, mit Bild-in-Bild und Steuerung über das iPhone.", ^BOOL{ return weakSelf.nativePlayer; }, ^{ weakSelf.nativePlayer = !weakSelf.nativePlayer; }],
-        @[@"Automatische Untertitel", @"Erzeugt im Apple-Player Untertitel auf dem Gerät, wenn ein Video keine hat.", ^BOOL{ return weakSelf.autoSubtitles; }, ^{ weakSelf.autoSubtitles = !weakSelf.autoSubtitles; }],
-        @[@"Untertitel in der Webseite", @"Auch für Videos, die in der Seite laufen. Braucht etwas mehr Leistung.", ^BOOL{ return weakSelf.webSubtitles; }, ^{ weakSelf.webSubtitles = !weakSelf.webSubtitles; }],
+        @[BLS(@"Videos im Apple-Player"), BLS(@"Videos öffnen sich im Player von tvOS, mit Bild-in-Bild und Steuerung über das iPhone."), ^BOOL{ return weakSelf.nativePlayer; }, ^{ weakSelf.nativePlayer = !weakSelf.nativePlayer; }],
+        @[BLS(@"Automatische Untertitel"), BLS(@"Erzeugt im Apple-Player Untertitel auf dem Gerät, wenn ein Video keine hat."), ^BOOL{ return weakSelf.autoSubtitles; }, ^{ weakSelf.autoSubtitles = !weakSelf.autoSubtitles; }],
+        @[BLS(@"Untertitel in der Webseite"), BLS(@"Auch für Videos, die in der Seite laufen. Braucht etwas mehr Leistung."), ^BOOL{ return weakSelf.webSubtitles; }, ^{ weakSelf.webSubtitles = !weakSelf.webSubtitles; }],
     ]];
 }
 
 - (UIView *)designBody {
-    self.titleLabel.text = @"Design";
-    self.subtitleLabel.text = @"Wie soll der Browser aussehen?";
+    self.titleLabel.text = BLS(@"Design");
+    self.subtitleLabel.text = BLS(@"Wie soll der Browser aussehen?");
     __weak typeof(self) weakSelf = self;
-    UIButton *glass = [self designButtonWithSymbol:@"drop" title:@"Liquid Glass" text:@"Neues Design: Glas, federnde Animationen, leuchtende Hervorhebung." selected:!self.classicDesign handler:^{
+    UIButton *glass = [self designButtonWithSymbol:@"drop" title:BLS(@"Liquid Glass") text:BLS(@"Neues Design: Glas, federnde Animationen, leuchtende Hervorhebung.") selected:!self.classicDesign handler:^{
         weakSelf.classicDesign = NO;
         [weakSelf refreshDesignSelection];
     }];
-    UIButton *classic = [self designButtonWithSymbol:@"rectangle.topthird.inset.filled" title:@"Altes Design" text:@"Wie in der ursprünglichen Fassung des Browsers." selected:self.classicDesign handler:^{
+    UIButton *classic = [self designButtonWithSymbol:@"rectangle.topthird.inset.filled" title:BLS(@"Altes Design") text:BLS(@"Wie in der ursprünglichen Fassung des Browsers.") selected:self.classicDesign handler:^{
         weakSelf.classicDesign = YES;
         [weakSelf refreshDesignSelection];
     }];
@@ -532,15 +533,15 @@ static const NSUInteger kSetupGridColumns = 4;
 }
 
 - (void)promptForAddressWithTitle:(NSString *)title completion:(void (^)(NSString *URLString))completion {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:@"Adresse der Seite, z. B. tagesschau.de" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:BLS(@"Adresse der Seite, z. B. tagesschau.de") preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeURL;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        textField.placeholder = @"z. B. tagesschau.de";
+        textField.placeholder = BLS(@"z. B. tagesschau.de");
     }];
     __weak UIAlertController *weakAlert = alert;
-    [alert addAction:[UIAlertAction actionWithTitle:@"Sichern" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:BLS(@"Sichern") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *text = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         if (text.length == 0) {
             return;
@@ -554,7 +555,7 @@ static const NSUInteger kSetupGridColumns = 4;
         }
         completion(url.absoluteString);
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -621,7 +622,7 @@ static const NSUInteger kSetupGridColumns = 4;
     } : nil;
     button.configuration = config;
     button.selected = NO; // eigenes Erscheinungsbild; der Systemzustand „selected“ würde die Glasfläche umfärben
-    button.accessibilityValue = selected ? @"ausgewählt" : @"nicht ausgewählt";
+    button.accessibilityValue = selected ? BLS(@"ausgewählt") : BLS(@"nicht ausgewählt");
 }
 
 - (UIView *)gridWithButtons:(NSArray<UIButton *> *)buttons {

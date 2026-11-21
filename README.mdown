@@ -8,12 +8,13 @@ tvOS Browser
 > - **Native video player** with picture in picture and **automatic subtitles** generated on the device (whisper.cpp)
 > - **Page translation** with Apple's translation, done in place on the page
 > - Reworked **Liquid Glass UI**, new pointer, tab management, voice commands via dictation, first-run setup
+> - Interface in **English, German, Spanish and French**
 >
 > All changes are in the commit history: [compare with upstream](https://github.com/dennisek-lab/tvOSBrowser/compare/jvanakker:tvOSBrowser:master...main).
 
 A web browser for Apple TV (tvOS 17 to 27) with **Magnetic Buttons**, a Liquid Glass interface, pointer control on the clickpad, ad and cookie banner blocking, a native video player, Apple's translation for web pages and automatic subtitles created on the device.
 
-The app's interface is in **German**; menu names below are given in German with a translation.
+The app's interface follows the Apple TV's language: **English, German, Spanish or French** (other languages fall back to English). Menu names below are given in German with an English translation.
 
 ![Start page with Liquid Glass bar](/screen01.png?raw=true "Start page (Google) with Liquid Glass bar, pointer and glow around the search field")
 
@@ -73,7 +74,7 @@ Controls
 
 The Siri button cannot officially be read by apps. The app detects a short Siri press because tvOS reports it as a very short press to the right without a clickpad click.
 
-**Address bar:** Pressing the bar (or twice up) opens the keyboard right below it, with favorites, frequently and recently visited sites underneath. Without another click, hold the Siri button and say an address, a search term or a **voice command** (in German), e.g. “Reader”, “zurück” (back), “neuer Tab” (new tab), “suche Wetter” (search weather), “öffne heise punkt de” (open heise.de), “30 Sekunden zurück” (30 seconds back), “fasse zusammen” (summarize), “übersetzen” (translate), “Übersetzung beenden” (end translation).
+**Address bar:** Pressing the bar (or twice up) opens the keyboard right below it, with favorites, frequently and recently visited sites underneath. Without another click, hold the Siri button and say an address, a search term or a **voice command** (in English, German, Spanish or French), e.g. “back”, “new tab”, “search weather”, “open heise dot de”, or in German “Reader”, “zurück” (back), “neuer Tab” (new tab), “suche Wetter” (search weather), “öffne heise punkt de” (open heise.de), “30 Sekunden zurück” (30 seconds back), “fasse zusammen” (summarize), “übersetzen” (translate), “Übersetzung beenden” (end translation).
 
 **Text input:** For every text field the iPhone offers a keyboard notification; you can also paste passwords that way.
 

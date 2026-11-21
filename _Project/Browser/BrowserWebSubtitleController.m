@@ -1,4 +1,5 @@
 #import "BrowserWebSubtitleController.h"
+#import "BrowserLocalization.h"
 
 #import "BrowserAppleSpeechTranscriber.h"
 #import "BrowserPreferencesStore.h"
@@ -391,7 +392,7 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
     BOOL tapWorks = self.capture.status == BrowserWebAudioCaptureStatusRunning;
     if (!tapWorks && self.showsStatusHints) {
         // Web Audio liefert hier nichts (sonst wäre die App gar nicht erst selbst losgezogen): echte Grenze.
-        [self.overlay showHint:protected ? @"Untertitel: Video ist kopiergeschützt" : @"Untertitel für dieses Video nicht möglich" duration:6.0];
+        [self.overlay showHint:protected ? BLS(@"Untertitel: Video ist kopiergeschützt") : BLS(@"Untertitel für dieses Video nicht möglich") duration:6.0];
     }
 }
 
@@ -548,32 +549,32 @@ typedef NS_ENUM(NSInteger, BrowserWebSubtitleMode) {
         case BrowserWebAudioCaptureStatusStopped:
             return nil;
         case BrowserWebAudioCaptureStatusWaitingForInteraction:
-            return @"Untertitel: Video einmal anklicken";
+            return BLS(@"Untertitel: Video einmal anklicken");
         case BrowserWebAudioCaptureStatusSilent:
             if ([detail isEqualToString:@"cors"]) {
-                return @"Untertitel: Kein Ton. Seite neu laden";
+                return BLS(@"Untertitel: Kein Ton. Seite neu laden");
             }
             if ([detail isEqualToString:@"muted"]) {
-                return @"Untertitel: Video ist stumm";
+                return BLS(@"Untertitel: Video ist stumm");
             }
             if ([detail isEqualToString:@"hls"]) {
-                return @"Untertitel für dieses Video nicht möglich";
+                return BLS(@"Untertitel für dieses Video nicht möglich");
             }
-            return @"Untertitel: Kein Ton";
+            return BLS(@"Untertitel: Kein Ton");
         case BrowserWebAudioCaptureStatusNoVideo:
-            return @"Untertitel: Kein Video gefunden";
+            return BLS(@"Untertitel: Kein Video gefunden");
         case BrowserWebAudioCaptureStatusBlocked:
             if ([detail isEqualToString:@"drm"]) {
-                return @"Untertitel: Video ist kopiergeschützt";
+                return BLS(@"Untertitel: Video ist kopiergeschützt");
             }
-            return @"Untertitel für dieses Video nicht möglich";
+            return BLS(@"Untertitel für dieses Video nicht möglich");
         case BrowserWebAudioCaptureStatusUnsupported:
-            return @"Untertitel für dieses Video nicht möglich";
+            return BLS(@"Untertitel für dieses Video nicht möglich");
         case BrowserWebAudioCaptureStatusError:
             if ([detail hasPrefix:@"source"]) {
-                return @"Untertitel für dieses Video nicht möglich";
+                return BLS(@"Untertitel für dieses Video nicht möglich");
             }
-            return @"Untertitel ließen sich nicht starten";
+            return BLS(@"Untertitel ließen sich nicht starten");
     }
     return nil;
 }

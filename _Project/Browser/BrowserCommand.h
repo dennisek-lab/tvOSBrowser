@@ -3,7 +3,7 @@
 //  Browser
 //
 //  Zentrale Befehlstabelle (siehe docs/SIRI_STEUERUNG.md, Abschnitt 5): Name, Titel, Symbol,
-//  Argumentart und Sprachphrasen (Deutsch und Englisch). Einzige Quelle für Befehlsnamen und
+//  Argumentart und Sprachphrasen (Deutsch, Englisch, Spanisch, Französisch). Einzige Quelle für Befehlsnamen und
 //  Phrasen; Siri (BrowserAppIntents.swift), Diktat, Selbsttest und später das iPhone nutzen sie.
 //  Rein Foundation, ohne UI.
 //

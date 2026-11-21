@@ -1,4 +1,5 @@
 #import "BrowserNativeVideoPlayerViewController.h"
+#import "BrowserLocalization.h"
 #import "BrowserShape.h"
 #import "BrowserNativeVideoAssetLoader.h"
 #import "BrowserNowPlayingController.h"
@@ -661,20 +662,20 @@ static BOOL BrowserLanguageMatches(NSString *candidate, NSString *wanted) {
     if (@available(tvOS 15.0, *)) {
         __weak typeof(self) weakSelf = self;
         NSMutableArray<UIMenuElement *> *actions = [NSMutableArray array];
-        UIAction *off = [UIAction actionWithTitle:@"Aus" image:nil identifier:@"off" handler:^(__unused UIAction *action) {
+        UIAction *off = [UIAction actionWithTitle:BLS(@"Aus") image:nil identifier:@"off" handler:^(__unused UIAction *action) {
             [weakSelf activateSidecarTrack:nil];
         }];
         off.state = self.activeSidecarTrack == nil ? UIMenuElementStateOn : UIMenuElementStateOff;
         [actions addObject:off];
         for (BrowserNativeVideoTextTrack *track in self.pageTextTracks) {
-            NSString *title = track.label.length > 0 ? track.label : (track.language.length > 0 ? track.language : @"Untertitel");
+            NSString *title = track.label.length > 0 ? track.label : (track.language.length > 0 ? track.language : BLS(@"Untertitel"));
             UIAction *action = [UIAction actionWithTitle:title image:nil identifier:track.URL.absoluteString handler:^(__unused UIAction *a) {
                 [weakSelf activateSidecarTrack:track];
             }];
             action.state = self.activeSidecarTrack == track ? UIMenuElementStateOn : UIMenuElementStateOff;
             [actions addObject:action];
         }
-        UIMenu *menu = [UIMenu menuWithTitle:@"Untertitel der Seite"
+        UIMenu *menu = [UIMenu menuWithTitle:BLS(@"Untertitel der Seite")
                                        image:[UIImage systemImageNamed:@"captions.bubble"]
                                   identifier:nil
                                      options:UIMenuOptionsSingleSelection

@@ -3,6 +3,7 @@
 //
 
 #import "BrowserAddressInputController.h"
+#import "BrowserLocalization.h"
 
 /// Unsichtbares, fokussierbares Feld unter der Tastatur: Bekommt es den Fokus (Wischen nach unten aus der
 /// Tastatur), geht es zu den Kacheln der Aufklapp-Karte.
@@ -182,7 +183,7 @@ static CGFloat const kInputContentInset = 6.0;
     search.delegate = self;
     search.obscuresBackgroundDuringPresentation = NO;
     search.searchBar.delegate = self;
-    search.searchBar.placeholder = @"Suchbegriff oder Adresse";
+    search.searchBar.placeholder = BLS(@"Suchbegriff oder Adresse");
     self.searchController = search;
 
     UISearchContainerViewController *container = [[UISearchContainerViewController alloc] initWithSearchController:search];
@@ -291,7 +292,7 @@ static CGFloat const kInputContentInset = 6.0;
         return;
     }
     NSString *trimmed = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    [self.resultsController setSubmitTitle:trimmed.length > 0 ? [NSString stringWithFormat:@"Los: „%@“", trimmed] : nil];
+    [self.resultsController setSubmitTitle:trimmed.length > 0 ? [NSString stringWithFormat:BLS(@"Los: „%@“"), trimmed] : nil];
 
     NSUInteger previousLength = self.lastText.length;
     self.lastText = text;

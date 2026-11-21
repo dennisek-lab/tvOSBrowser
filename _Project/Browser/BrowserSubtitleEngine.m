@@ -1,4 +1,5 @@
 #import "BrowserSubtitleEngine.h"
+#import "BrowserLocalization.h"
 
 #import "BrowserSubtitleTranslator.h"
 
@@ -207,10 +208,9 @@ static NSMapTable<NSString *, BrowserWhisperSharedModel *> *BrowserWhisperModelT
 
 + (NSString *)displayNameForLanguage:(NSString *)language {
     if (language.length == 0 || [language isEqualToString:@"auto"]) {
-        return @"Automatisch";
+        return BLS(@"Automatisch");
     }
-    NSLocale *german = [NSLocale localeWithLocaleIdentifier:@"de_DE"];
-    NSString *name = [german localizedStringForLanguageCode:language];
+    NSString *name = [[NSLocale localeWithLocaleIdentifier:BLSLanguage()] localizedStringForLanguageCode:language];
     if (name.length == 0) {
         return language;
     }
@@ -406,7 +406,7 @@ static NSMapTable<NSString *, BrowserWhisperSharedModel *> *BrowserWhisperModelT
         _context = NULL;
         NSLog(@"%@ Modell konnte nicht geladen werden: %@", kSubtitleLogPrefix, self.modelPath);
         if (error != NULL) {
-            *error = [NSError errorWithDomain:@"BrowserSubtitleEngine" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Modell konnte nicht geladen werden"}];
+            *error = [NSError errorWithDomain:@"BrowserSubtitleEngine" code:1 userInfo:@{NSLocalizedDescriptionKey: BLS(@"Modell konnte nicht geladen werden")}];
         }
         return NO;
     }
@@ -421,7 +421,7 @@ static NSMapTable<NSString *, BrowserWhisperSharedModel *> *BrowserWhisperModelT
     return YES;
 #else
     if (error != NULL) {
-        *error = [NSError errorWithDomain:@"BrowserSubtitleEngine" code:2 userInfo:@{NSLocalizedDescriptionKey: @"whisper.cpp ist nicht eingebunden (tools/build_whisper.sh)"}];
+        *error = [NSError errorWithDomain:@"BrowserSubtitleEngine" code:2 userInfo:@{NSLocalizedDescriptionKey: BLS(@"whisper.cpp ist nicht eingebunden (tools/build_whisper.sh)")}];
     }
     return NO;
 #endif

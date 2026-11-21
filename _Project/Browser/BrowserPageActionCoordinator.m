@@ -4,6 +4,7 @@
 #import "BrowserNavigationService.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserWebView.h"
+#import "BrowserLocalization.h"
 
 @interface BrowserPageActionCoordinator ()
 
@@ -206,7 +207,7 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
     NSString *autocomplete = [info[@"autocomplete"] isKindOfClass:NSString.class] ? info[@"autocomplete"] : @"";
     NSString *host = [info[@"host"] isKindOfClass:NSString.class] ? info[@"host"] : @"";
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title.length > 0 ? title : @"Eingabe"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title.length > 0 ? title : BLS(@"Eingabe")
                                                                              message:host
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
@@ -230,13 +231,13 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
              "return 'true';", escaped, submit ? @"__bSubmit(target);" : @""];
         [weakSelf.domInteractionService evaluateEditableElementJavaScriptAtPoint:point webView:webView body:script];
     };
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Übernehmen" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Übernehmen") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         apply(NO);
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Übernehmen und absenden" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Übernehmen und absenden") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         apply(YES);
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPageActionCoordinatorPresentViewController:alertController];
 
     UITextField *inputTextField = alertController.textFields.firstObject;
@@ -255,21 +256,21 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
     NSString *autocomplete = [info[@"autocomplete"] isKindOfClass:NSString.class] ? info[@"autocomplete"] : @"";
     BOOL newPassword = [autocomplete.lowercaseString containsString:@"new-password"];
 
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Anmelden"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Anmelden")
                                                                              message:host
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         BrowserConfigureKeyboard(textField, [userType isEqualToString:@"text"] ? @"email" : userType);
         textField.keyboardType = [userType isEqualToString:@"tel"] ? UIKeyboardTypePhonePad : UIKeyboardTypeEmailAddress;
         textField.textContentType = BrowserTextContentType(userAutocomplete, userType, YES);
-        textField.placeholder = @"Benutzername oder E-Mail";
+        textField.placeholder = BLS(@"Benutzername oder E-Mail");
         textField.text = userValue;
         textField.returnKeyType = UIReturnKeyNext;
     }];
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         BrowserConfigureKeyboard(textField, @"password");
         textField.textContentType = newPassword ? UITextContentTypeNewPassword : UITextContentTypePassword;
-        textField.placeholder = @"Passwort";
+        textField.placeholder = BLS(@"Passwort");
         textField.returnKeyType = UIReturnKeyDone;
     }];
 
@@ -292,13 +293,13 @@ static void BrowserConfigureKeyboard(UITextField *textField, NSString *fieldType
              "return 'true';", user, pass, submit ? @"__bSubmit(login.pass);" : @""];
         [weakSelf.domInteractionService evaluateEditableElementJavaScriptAtPoint:point webView:webView body:script];
     };
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Anmelden" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Anmelden") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         apply(YES);
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Nur eintragen" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Nur eintragen") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         apply(NO);
     }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPageActionCoordinatorPresentViewController:alertController];
 
     UITextField *first = alertController.textFields[userValue.length > 0 ? 1 : 0];

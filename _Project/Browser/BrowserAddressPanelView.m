@@ -11,6 +11,7 @@
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
 #endif
+#import "BrowserLocalization.h"
 
 // Aufbau, hier leicht änderbar. Kacheln bleiben unter 420 × 140 pt, damit der Zeiger mittig einrastet.
 static NSUInteger const kPanelTilesPerSection = 4;          // 2 × 2
@@ -275,9 +276,9 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
     NSArray<BrowserSiteEntry *> *recent = [self recentEntriesAvoiding:frequent];
 
     NSArray *sections = @[
-        @[@"Favoriten", @"star.fill", UIColor.systemYellowColor, favorites, @NO],
-        @[@"Oft besucht", @"chart.bar.fill", [UIColor colorWithWhite:1.0 alpha:0.7], frequent, @YES],
-        @[@"Zuletzt", @"clock.fill", [UIColor colorWithWhite:1.0 alpha:0.7], recent, @YES],
+        @[BLS(@"Favoriten"), @"star.fill", UIColor.systemYellowColor, favorites, @NO],
+        @[BLS(@"Oft besucht"), @"chart.bar.fill", [UIColor colorWithWhite:1.0 alpha:0.7], frequent, @YES],
+        @[BLS(@"Zuletzt"), @"clock.fill", [UIColor colorWithWhite:1.0 alpha:0.7], recent, @YES],
     ];
     NSMutableArray<UIView *> *columns = [NSMutableArray array];
     for (NSArray *section in sections) {
@@ -320,7 +321,7 @@ static UIColor *BrowserAddressPanelColorForHost(NSString *host) {
             empty.textAlignment = NSTextAlignmentCenter;
             empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
             empty.textColor = [UIColor colorWithWhite:1.0 alpha:0.5];
-            empty.text = small ? @"Noch kein Verlauf" : @"Stern in der Leiste\nmerkt eine Seite vor";
+            empty.text = small ? BLS(@"Noch kein Verlauf") : BLS(@"Stern in der Leiste\nmerkt eine Seite vor");
             [column addSubview:empty];
         }
         [self.contentHostView addSubview:column];

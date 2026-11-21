@@ -1,5 +1,6 @@
 #import "BrowserContentBlocker.h"
 #import "BrowserFilterListUpdater.h"
+#import "BrowserLocalization.h"
 #import "BrowserPreferencesStore.h"
 #import "BrowserPerf.h"
 
@@ -438,7 +439,7 @@ static NSString *BrowserAdblockWallSource(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (json == nil) {
                 NSLog(@"[AdBlock] %@ nicht lesbar", entry[@"name"]);
-                completion(nil, @"nicht lesbar");
+                completion(nil, BLS(@"nicht lesbar"));
                 return;
             }
             NSDate *start = [NSDate date];
@@ -449,7 +450,7 @@ static NSString *BrowserAdblockWallSource(void) {
                         completion(list, nil);
                     } else {
                         NSLog(@"[AdBlock] %@ Fehler %ld: %@", entry[@"name"], (long)error.code, error.userInfo);
-                        completion(nil, [NSString stringWithFormat:@"WebKit-Fehler %ld", (long)error.code]);
+                        completion(nil, [NSString stringWithFormat:BLS(@"WebKit-Fehler %ld"), (long)error.code]);
                     }
                 });
             };
@@ -466,7 +467,7 @@ static NSString *BrowserAdblockWallSource(void) {
                        completion:(void (^)(BOOL ok, NSString *error))completion {
     [self prepare];
     if (self.store == nil) {
-        completion(NO, @"Werbeblocker nicht verfügbar");
+        completion(NO, BLS(@"Werbeblocker nicht verfügbar"));
         return;
     }
     if (self.busy) {
@@ -518,7 +519,7 @@ static NSString *BrowserAdblockWallSource(void) {
     NSDictionary *entry = lists[index];
     [self lookUpOrCompileEntry:entry directory:directory completion:^(id list, NSString *problem) {
         if (list == nil) {
-            completion([NSString stringWithFormat:@"%@: %@", entry[@"name"], problem ?: @"Fehler"]);
+            completion([NSString stringWithFormat:@"%@: %@", entry[@"name"], problem ?: BLS(@"Fehler")]);
             return;
         }
         [compiled addObject:list];

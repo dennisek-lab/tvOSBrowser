@@ -1,4 +1,5 @@
 #import "BrowserTabViewModel.h"
+#import "BrowserLocalization.h"
 
 @implementation BrowserTabViewModel
 
@@ -8,7 +9,7 @@
         _identifier = [[[NSUUID UUID] UUIDString] copy];
         _requestURL = @"";
         _previousURL = @"";
-        _title = @"Neuer Tab";
+        _title = BLS(@"Neuer Tab");
         _URLString = @"";
         _savedScrollOffset = CGPointZero;
         _hasSavedScrollOffset = NO;
@@ -27,7 +28,7 @@
     
     NSString *requestURL = [sessionRepresentation[@"requestURL"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"requestURL"] : @"";
     NSString *previousURL = [sessionRepresentation[@"previousURL"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"previousURL"] : @"";
-    NSString *title = [sessionRepresentation[@"title"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"title"] : @"Neuer Tab";
+    NSString *title = [sessionRepresentation[@"title"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"title"] : BLS(@"Neuer Tab");
     NSString *URLString = [sessionRepresentation[@"URLString"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"URLString"] : @"";
     NSNumber *scrollOffsetX = [sessionRepresentation[@"scrollOffsetX"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetX"] : nil;
     NSNumber *scrollOffsetY = [sessionRepresentation[@"scrollOffsetY"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetY"] : nil;
@@ -38,7 +39,9 @@
     self.requestURL = requestURL;
     self.previousURL = previousURL;
     // Alte Sitzungen haben „New Tab“ gespeichert.
-    self.title = (title.length > 0 && ![title isEqualToString:@"New Tab"]) ? title : @"Neuer Tab";
+    // Platzhaltertitel aus einer Sitzung in anderer Sprache durch den aktuellen ersetzen.
+    BOOL placeholder = [title isEqualToString:@"New Tab"] || [title isEqualToString:@"Neuer Tab"] || [title isEqualToString:BLS(@"Neuer Tab")];
+    self.title = (title.length > 0 && !placeholder) ? title : BLS(@"Neuer Tab");
     self.URLString = URLString;
     if (scrollOffsetX != nil && scrollOffsetY != nil) {
         self.savedScrollOffset = CGPointMake(scrollOffsetX.doubleValue, scrollOffsetY.doubleValue);
@@ -59,7 +62,7 @@
     NSMutableDictionary *representation = [NSMutableDictionary dictionary];
     representation[@"requestURL"] = self.requestURL ?: @"";
     representation[@"previousURL"] = self.previousURL ?: @"";
-    representation[@"title"] = self.title ?: @"Neuer Tab";
+    representation[@"title"] = self.title ?: BLS(@"Neuer Tab");
     representation[@"URLString"] = self.URLString ?: @"";
     if (self.hasSavedScrollOffset) {
         representation[@"scrollOffsetX"] = @(self.savedScrollOffset.x);

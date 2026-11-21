@@ -1,4 +1,5 @@
 #import "BrowserReaderMode.h"
+#import "BrowserLocalization.h"
 #import "BrowserWebView.h"
 
 /// Zusammengesetztes Installationsskript (Readability-readerable, Readability, reader.js), einmal gelesen.
@@ -32,6 +33,25 @@ static BrowserReaderState BrowserReaderStateFromResult(id result) {
     return BrowserReaderStateUnavailable;
 }
 
+/// Sichtbare Texte des Reader-Overlays (reader.js liest sie aus window.__browserReaderTexts), als JS-Objekt.
+/// %d in readingTime ersetzt reader.js durch die Minuten.
+static NSString *BrowserReaderTextsJSON(void) {
+    static NSString *json;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSDictionary *texts = @{
+            @"readingTime": BLS(@"%d Min. Lesezeit"),
+            @"original": BLS(@"Original: "),
+        };
+        NSData *data = [NSJSONSerialization dataWithJSONObject:texts options:0 error:nil];
+        json = data != nil ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+        if (json.length == 0) {
+            json = @"{}";
+        }
+    });
+    return json;
+}
+
 const NSUInteger BrowserReaderDefaultTextLength = 6000;
 
 @implementation BrowserReaderMode
@@ -45,8 +65,8 @@ const NSUInteger BrowserReaderDefaultTextLength = 6000;
     }
     CGFloat viewWidth = CGRectGetWidth(webView.bounds);
     NSString *full = [NSString stringWithFormat:
-        @"(function(){try{if(!window.__browserReader){window.__browserReaderViewWidth=%.0f;%@}"
-         "return window.__browserReader.%@;}catch(e){return 'e:'+e;}})()", viewWidth, script, call];
+        @"(function(){try{if(!window.__browserReader){window.__browserReaderViewWidth=%.0f;window.__browserReaderTexts=%@;%@}"
+         "return window.__browserReader.%@;}catch(e){return 'e:'+e;}})()", viewWidth, BrowserReaderTextsJSON(), script, call];
     [webView evaluateJavaScriptAsync:full completion:completion];
 }
 

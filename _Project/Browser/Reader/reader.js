@@ -9,6 +9,9 @@
   if (window.__browserReader) { return; }
 
   var state = { active: false, savedY: 0, savedTitle: null };
+  // Sichtbare Texte in der Sprache der App; BrowserReaderMode.m stellt window.__browserReaderTexts voran (aus BLS).
+  var T = window.__browserReaderTexts || {};
+  function tx(key, fallback) { return typeof T[key] === 'string' && T[key] ? T[key] : fallback; }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -124,7 +127,7 @@
     var when = dateText(article.publishedTime);
     if (when) { parts.push(when); }
     parts.push(host);
-    parts.push(minutes + ' Min. Lesezeit');
+    parts.push(tx('readingTime', '%d Min. Lesezeit').replace('%d', String(minutes)));
     col.appendChild(el('span', 'rd-meta', parts.join('  ·  ')));
 
     var body = el('div', 'rd-body');
@@ -133,7 +136,7 @@
     col.appendChild(body);
 
     var foot = el('div', 'rd-foot');
-    foot.appendChild(document.createTextNode('Original: '));
+    foot.appendChild(document.createTextNode(tx('original', 'Original: ')));
     var a = el('a', null, location.href);
     a.href = location.href;
     foot.appendChild(a);

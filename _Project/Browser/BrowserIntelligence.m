@@ -9,6 +9,7 @@
 #import "BrowserReaderMode.h"
 #import "BrowserWebView.h"
 #import "BrowserAppleTranslator.h"
+#import "BrowserLocalization.h"
 #import <NaturalLanguage/NaturalLanguage.h>
 
 NSString * const BrowserIntelligenceErrorDomain = @"BrowserIntelligence";
@@ -184,14 +185,31 @@ static NSData *BrowserNLContextualVector(NLContextualEmbedding *embedding, NSStr
     return data;
 }
 
+/// Sprachen für NLLanguageRecognizer bei kurzen Texten (Fragen, Befehle): immer Deutsch und Englisch wie bisher,
+/// Spanisch und Französisch nur, wenn Systemsprache (Diktat), Oberfläche oder Seite sie nutzen. Sonst raten kurze
+/// deutsche Sätze öfter falsch, und für Deutsch bleibt alles wie vorher.
+static NSArray<NSString *> *BrowserNLShortTextLanguages(NSString *pageLanguage) {
+    NSMutableArray<NSString *> *languages = [NSMutableArray arrayWithObjects:NLLanguageGerman, NLLanguageEnglish, nil];
+    NSString *system = NSLocale.preferredLanguages.firstObject ?: @"";
+    for (NSString *candidate in @[system, BLSLanguage(), pageLanguage ?: @""]) {
+        NSString *lower = candidate.lowercaseString;
+        NSString *language = [lower hasPrefix:@"es"] ? NLLanguageSpanish : ([lower hasPrefix:@"fr"] ? NLLanguageFrench : nil);
+        if (language != nil && ![languages containsObject:language]) {
+            [languages addObject:language];
+        }
+    }
+    return languages;
+}
+
 /// Der Satz-Tokenizer trennt deutsche Ordnungszahlen und Abkürzungen ("am 13. September", "z. B.", "Nr. 5"):
-/// solche Stücke an den vorigen Satz hängen.
+/// solche Stücke an den vorigen Satz hängen. Dazu spanische und französische Abkürzungen („Sr.“, „p. ej.“, „M.“, „av.“).
 static BOOL BrowserNLShouldJoinSentences(NSString *previous, NSString *next) {
     static NSRegularExpression *abbreviation;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         abbreviation = [NSRegularExpression regularExpressionWithPattern:
-            @"(^|[\\s(])([0-9]{1,2}|[A-Za-zÄÖÜ]|z\\. ?B|d\\. ?h|u\\. ?a|bzw|ca|vgl|Nr|Dr|Prof|St|Jh|Jhd|usw|etc|bspw|evtl|ggf|inkl|sog|Mio|Mrd|Abs|Bd|Hrsg)\\.$"
+            @"(^|[\\s(])([0-9]{1,2}|[A-Za-zÄÖÜ]|z\\. ?B|d\\. ?h|u\\. ?a|bzw|ca|vgl|Nr|Dr|Prof|St|Jh|Jhd|usw|etc|bspw|evtl|ggf|inkl|sog|Mio|Mrd|Abs|Bd|Hrsg"
+             "|Sr|Sra|Srta|Dra|Ud|Uds|Vd|p\\. ?ej|pág|núm|aprox|Av|Avda|Mme|Mlle|Mlles|av|apr|J\\.-C|cf|éd|n°)\\.$"
                                                                  options:0 error:nil];
     });
     if (previous.length == 0 || next.length == 0) {
@@ -231,7 +249,9 @@ static BOOL BrowserNLSentenceLooksUsable(NSString *sentence, NSUInteger words) {
         boilerplate = [NSRegularExpression regularExpressionWithPattern:
             @"(follow (topics|us|authors)|sign up|subscribe|newsletter|we use cookies|wir verwenden cookies|all rights reserved|read more|click here|share this|"
              "folgen sie|abonnier|weiterlesen|mehr zum thema|alle rechte|melden sie sich|"
-             "mit ihrer zustimmung|ihre (zustimmung|einwilligung)|externe[rn]? (inhalt|podcast|video)|datenschutz|erfahren sie,? wie|your consent|privacy policy)"
+             "mit ihrer zustimmung|ihre (zustimmung|einwilligung)|externe[rn]? (inhalt|podcast|video)|datenschutz|erfahren sie,? wie|your consent|privacy policy|"
+             "suscríbete|suscribirse|utilizamos cookies|usamos cookies|leer más|todos los derechos|política de privacidad|síguenos|haz clic aquí|"
+             "abonnez|inscrivez|nous utilisons des cookies|lire la suite|tous droits réservés|politique de confidentialité|suivez-nous|cliquez ici|votre consentement)"
                                                                 options:NSRegularExpressionCaseInsensitive error:nil];
     });
     return [boilerplate firstMatchInString:sentence options:0 range:NSMakeRange(0, length)] == nil;
@@ -431,7 +451,7 @@ static NSString *BrowserNLCleanText(NSString *rawText) {
     if (candidates.count < 3) {
         if (error != NULL) {
             *error = [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorTooShort
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Zu wenig zusammenhängender Text"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: BLS(@"Zu wenig zusammenhängender Text")}];
         }
         return nil;
     }
@@ -592,10 +612,21 @@ static NSSet<NSString *> *BrowserNLQuestionStopTerms(void) {
             @"when", @"who", @"whom", @"what", @"how", @"where", @"why", @"which", @"much", @"many", @"be", @"is", @"are", @"was",
             @"were", @"do", @"does", @"did", @"have", @"has", @"had", @"can", @"could", @"will", @"would", @"get", @"say", @"page",
             @"article", @"tell", @"know", @"call", @"called",
+            // Spanisch und Französisch (Lemmata und häufige Formen)
+            @"qué", @"que", @"quién", @"quien", @"cómo", @"como", @"cuándo", @"cuando", @"dónde", @"donde", @"cuál", @"cual",
+            @"cuánto", @"cuanto", @"cuántos", @"cuantos", @"cuánta", @"cuántas", @"por", @"porqué", @"ser", @"es", @"fue",
+            @"estar", @"está", @"haber", @"hay", @"ha", @"tener", @"tiene", @"poder", @"puede", @"hacer", @"decir", @"página",
+            @"artículo", @"pregunta", @"llamar", @"llama",
+            @"qui", @"quoi", @"quand", @"où", @"comment", @"combien", @"pourquoi", @"quel", @"quelle", @"quels", @"quelles",
+            @"lequel", @"laquelle", @"être", @"est", @"sont", @"était", @"avoir", @"a", @"ont", @"faire", @"fait", @"pouvoir", @"peut",
+            @"dire", @"page", @"article", @"question", @"appeler", @"appelle", @"ce", @"ça", @"qu", @"c", @"y",
             // Funktionswörter, falls der Tagger sie als Inhaltswort liefert (deutsches Lemma fehlt im Simulator).
             @"der", @"die", @"das", @"den", @"dem", @"des", @"ein", @"eine", @"einen", @"einem", @"einer", @"und", @"oder", @"von",
             @"mit", @"für", @"auf", @"im", @"am", @"um", @"es", @"er", @"sie", @"man", @"the", @"an", @"of", @"to", @"in", @"on",
-            @"and", @"or", @"it", @"its", @"for", @"with"]];
+            @"and", @"or", @"it", @"its", @"for", @"with",
+            @"el", @"la", @"los", @"las", @"lo", @"un", @"una", @"unos", @"unas", @"de", @"del", @"al", @"y", @"o", @"en", @"con",
+            @"para", @"se", @"su", @"sus", @"le", @"les", @"une", @"des", @"du", @"au", @"aux", @"et", @"ou", @"dans", @"pour",
+            @"avec", @"sur", @"il", @"elle", @"on", @"l", @"d", @"s"]];
     });
     return terms;
 }
@@ -676,10 +707,12 @@ static NSDictionary<NSString *, NSArray<NSString *> *> *BrowserNLTranslations(vo
 static NSString *BrowserNLQuestionType(NSString *question) {
     NSString *lower = question.lowercaseString;
     NSArray<NSArray *> *rules = @[
-        @[@"datum", @"^(seit |bis |ab |)wann\\b|\\b(in )?welchem jahr\\b|\\bwelches (jahr|datum)\\b|^(since |until |)when\\b|\\bwhat (year|date)\\b|\\bwhich year\\b|\\bwie alt\\b|\\bhow old\\b"],
-        @[@"zahl", @"\\bwie (viel|viele|teuer|groß|hoch|lang|schwer|weit|schnell|breit)\\b|\\bwieviel|\\bkoste|\\bpreis|\\bhow (much|many|big|large|long|tall|heavy|far|fast)\\b|\\bprice\\b|\\bcost"],
-        @[@"ort", @"^(wo|woher|wohin)\\b|^where\\b|\\bin welche[mr]? (land|stadt|ort)\\b"],
-        @[@"person", @"^(wer|wem|wen|wessen)\\b|^(who|whom|whose)\\b"],
+        @[@"datum", @"^(seit |bis |ab |)wann\\b|\\b(in )?welchem jahr\\b|\\bwelches (jahr|datum)\\b|^(since |until |)when\\b|\\bwhat (year|date)\\b|\\bwhich year\\b|\\bwie alt\\b|\\bhow old\\b"
+                    "|^¿?(desde |hasta |)cu[aá]ndo\\b|\\b(en )?qu[eé] (año|fecha)\\b|^(depuis |jusqu.|)quand\\b|\\b(en )?quelle (année|date)\\b"],
+        @[@"zahl", @"\\bwie (viel|viele|teuer|groß|hoch|lang|schwer|weit|schnell|breit)\\b|\\bwieviel|\\bkoste|\\bpreis|\\bhow (much|many|big|large|long|tall|heavy|far|fast)\\b|\\bprice\\b|\\bcost"
+                   "|\\bcu[aá]nt[oa]s?\\b|\\bcuesta|\\bprecio|\\bcombien\\b|\\bco[uû]te|\\bprix\\b"],
+        @[@"ort", @"^(wo|woher|wohin)\\b|^where\\b|\\bin welche[mr]? (land|stadt|ort)\\b|^¿?(a|de|)d[oó]nde\\b|^(d.)?o[uù]\\b|\\ben quel(le)? (pays|ville)\\b"],
+        @[@"person", @"^(wer|wem|wen|wessen)\\b|^(who|whom|whose)\\b|^¿?(a |de |)qui[eé]n(es)?\\b|^(à |de |)qui\\b"],
     ];
     for (NSArray *rule in rules) {
         if ([lower rangeOfString:rule[1] options:NSRegularExpressionSearch].location != NSNotFound) {
@@ -697,7 +730,9 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
         dispatch_once(&once, ^{
             date = [NSRegularExpression regularExpressionWithPattern:
                 @"\\b(1[5-9][0-9]{2}|20[0-9]{2})\\b|\\b(januar|jänner|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember|"
-                 "january|february|march|may|june|july|october|december)\\b" options:NSRegularExpressionCaseInsensitive error:nil];
+                 "january|february|march|may|june|july|october|december|"
+                 "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|"
+                 "janvier|février|fevrier|mars|avril|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)\\b" options:NSRegularExpressionCaseInsensitive error:nil];
         });
         return [date firstMatchInString:sentence options:0 range:NSMakeRange(0, sentence.length)] != nil;
     }
@@ -745,9 +780,10 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
     NSString *text = BrowserNLCleanText(rawText);
     double confidence = 0.0;
     NSString *language = [self dominantLanguageForText:text confidence:&confidence];
-    // Kurze Fragen erkennt NLLanguageRecognizer schlecht: auf Deutsch/Englisch beschränken, Seitensprache als Hinweis.
+    // Kurze Fragen erkennt NLLanguageRecognizer schlecht: auf Deutsch/Englisch (plus Spanisch/Französisch, wenn System,
+    // Oberfläche oder Seite sie nutzen) beschränken, Seitensprache als Hinweis.
     NLLanguageRecognizer *recognizer = [NLLanguageRecognizer new];
-    recognizer.languageConstraints = @[NLLanguageGerman, NLLanguageEnglish];
+    recognizer.languageConstraints = BrowserNLShortTextLanguages(language);
     if (language != nil) {
         recognizer.languageHints = @{language: @0.6, ([language isEqualToString:NLLanguageGerman] ? NLLanguageEnglish : NLLanguageGerman): @0.4};
     }
@@ -773,7 +809,7 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
     if (questionTerms.count == 0) {
         if (error != NULL) {
             *error = [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorQuestionTooShort
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Frage zu kurz"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: BLS(@"Frage zu kurz")}];
         }
         return nil;
     }
@@ -806,7 +842,7 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
     if (candidates.count == 0) {
         if (error != NULL) {
             *error = [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorTooShort
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Zu wenig Text auf der Seite"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: BLS(@"Zu wenig Text auf der Seite")}];
         }
         return nil;
     }
@@ -979,9 +1015,10 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
                           cacheKey:(NSString *)cacheKey
                         completion:(void (^)(NSArray<NSNumber *> *, NSString *))completion {
     dispatch_async(self.workQueue, ^{
-        // Kurze Sätze: auf Deutsch/Englisch beschränken (sonst rät der Erkenner bei „Tabs vs Spaces“ irgendwas).
+        // Kurze Sätze: auf Deutsch/Englisch beschränken (sonst rät der Erkenner bei „Tabs vs Spaces“ irgendwas);
+        // Spanisch/Französisch nur dazu, wenn System- oder Oberflächensprache es sind (Diktat kommt in der Systemsprache).
         NLLanguageRecognizer *recognizer = [NLLanguageRecognizer new];
-        recognizer.languageConstraints = @[NLLanguageGerman, NLLanguageEnglish];
+        recognizer.languageConstraints = BrowserNLShortTextLanguages(nil);
         [recognizer processString:text];
         NSString *language = recognizer.dominantLanguage;
         NLEmbedding *embedding = [self sentenceEmbeddingForLanguage:language];
@@ -1020,7 +1057,7 @@ static BOOL BrowserNLSentenceMatchesType(NSString *sentence, NSString *type, NSS
 - (NSString *)diagnosticsDescription {
     __block NSMutableArray<NSString *> *lines = [NSMutableArray array];
     dispatch_sync(self.workQueue, ^{
-        for (NSString *language in @[NLLanguageGerman, NLLanguageEnglish]) {
+        for (NSString *language in @[NLLanguageGerman, NLLanguageEnglish, NLLanguageSpanish, NLLanguageFrench]) {
             NLEmbedding *sentence = [self sentenceEmbeddingForLanguage:language];
             NLEmbedding *word = [NLEmbedding wordEmbeddingForLanguage:language];
             NSString *contextual = @"nicht verfügbar (vor tvOS 17)";
@@ -1065,7 +1102,12 @@ static NSSet<NSString *> *BrowserCommandStopWords(void) {
             @"mir", @"mich", @"uns", @"du", @"dir", @"ich", @"wir", @"ihr", @"kannst", @"könntest", @"kann", @"können", @"würdest",
             @"würde", @"möchte", @"möchtest", @"will", @"willst", @"soll", @"sollst", @"noch", @"einmal", @"bitte", @"mal", @"gerne",
             @"diese", @"diesen", @"dieser", @"dieses", @"this", @"that", @"the", @"a", @"to", @"of", @"me", @"my", @"us", @"you",
-            @"can", @"could", @"would", @"will", @"i", @"want", @"wanna", @"lets", @"let", @"please", @"just", @"for", @"it"]];
+            @"can", @"could", @"would", @"will", @"i", @"want", @"wanna", @"lets", @"let", @"please", @"just", @"for", @"it",
+            // Spanisch und Französisch: Artikel, Pronomen, Höflichkeit, Modalverben („¿puedes …?“, „je voudrais …“)
+            @"el", @"la", @"los", @"las", @"lo", @"una", @"unos", @"unas", @"del", @"al", @"esta", @"este", @"esto", @"mi", @"me",
+            @"puedes", @"podrías", @"podrias", @"quiero", @"quisiera", @"por", @"favor", @"le", @"les", @"une", @"du", @"au", @"aux",
+            @"ce", @"cet", @"cette", @"moi", @"je", @"tu", @"vous", @"peux", @"pouvez", @"veux", @"voudrais", @"aimerais", @"il",
+            @"plaît", @"plait", @"l", @"d", @"s"]];
     });
     return words;
 }
@@ -1254,7 +1296,7 @@ static NSString *BrowserBaseLanguage(NSString *language) {
               completion:(void (^)(BrowserAISummary *, NSDictionary<NSString *, id> *, NSError *))completion {
     if (webView == nil) {
         completion(nil, nil, [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorNoPage
-                                             userInfo:@{NSLocalizedDescriptionKey: @"Keine Seite geladen"}]);
+                                             userInfo:@{NSLocalizedDescriptionKey: BLS(@"Keine Seite geladen")}]);
         return;
     }
     CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
@@ -1264,7 +1306,7 @@ static NSString *BrowserBaseLanguage(NSString *language) {
         if (text.length < 200) {
             NSLog(@"[AI] zusammenfassen: kein Text (%lu Zeichen, Quelle %@)", (unsigned long)text.length, info[@"source"] ?: @"-");
             completion(nil, info, [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorNoText
-                                                  userInfo:@{NSLocalizedDescriptionKey: @"Kein Artikeltext gefunden"}]);
+                                                  userInfo:@{NSLocalizedDescriptionKey: BLS(@"Kein Artikeltext gefunden")}]);
             return;
         }
         // Erst die Kandidatenzahl grob schätzen (Satzzeichen), dann 4 bis 6 Sätze.
@@ -1426,7 +1468,7 @@ static const NSUInteger kAskTextLength = 30000;
     id<BrowserAIProvider> provider = self.provider;
     if (webView == nil || ![provider respondsToSelector:@selector(findPassagesForQuestion:inText:maxResults:completion:)]) {
         completion(nil, nil, [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorNoPage
-                                             userInfo:@{NSLocalizedDescriptionKey: @"Keine Seite geladen"}]);
+                                             userInfo:@{NSLocalizedDescriptionKey: BLS(@"Keine Seite geladen")}]);
         return;
     }
     CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
@@ -1436,7 +1478,7 @@ static const NSUInteger kAskTextLength = 30000;
         if (text.length < 80) {
             NSLog(@"[AI] frag: kein Text (%lu Zeichen, Quelle %@)", (unsigned long)text.length, info[@"source"] ?: @"-");
             completion(nil, info, [NSError errorWithDomain:BrowserIntelligenceErrorDomain code:BrowserIntelligenceErrorNoText
-                                                  userInfo:@{NSLocalizedDescriptionKey: @"Kein Text auf der Seite gefunden"}]);
+                                                  userInfo:@{NSLocalizedDescriptionKey: BLS(@"Kein Text auf der Seite gefunden")}]);
             return;
         }
         [provider findPassagesForQuestion:question inText:text maxResults:3 completion:^(BrowserAIAnswer *answer, NSError *error) {

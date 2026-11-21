@@ -1,4 +1,5 @@
 #import "BrowserSubtitleHLSAudioSource.h"
+#import "BrowserLocalization.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -260,7 +261,7 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
 
 - (void)loadPlaylist:(NSURL *)URL depth:(NSUInteger)depth {
     if (depth > 3) {
-        [self failWithReason:@"HLS: zu viele verschachtelte Playlists"];
+        [self failWithReason:BLS(@"HLS: zu viele verschachtelte Playlists")];
         return;
     }
     [self fetchURL:URL range:NSMakeRange(0, 0) completion:^(NSData *data, NSString *error) {
@@ -269,13 +270,13 @@ static NSData *BrowserHLSDataFromHex(NSString *hex) {
         }
         NSString *text = data != nil ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
         if (text == nil || ![text hasPrefix:@"#EXTM3U"]) {
-            [self failWithReason:[NSString stringWithFormat:@"HLS: Playlist nicht lesbar (%@)", error ?: @"kein #EXTM3U"]];
+            [self failWithReason:[NSString stringWithFormat:BLS(@"HLS: Playlist nicht lesbar (%@)"), error ?: @"kein #EXTM3U"]];
             return;
         }
         if ([text containsString:@"#EXT-X-STREAM-INF"]) {
             NSURL *media = [self audioPlaylistURLFromMaster:text baseURL:URL];
             if (media == nil) {
-                [self failWithReason:@"HLS: keine passende Audio-Playlist gefunden"];
+                [self failWithReason:BLS(@"HLS: keine passende Audio-Playlist gefunden")];
                 return;
             }
             [self loadPlaylist:media depth:depth + 1];
@@ -462,7 +463,7 @@ static NSTimeInterval BrowserHLSParseDate(NSString *value) {
     }
     BOOL firstLoad = !self.ready;
     if (segments.count == 0 && firstLoad) {
-        [self failWithReason:@"HLS: Playlist ohne Segmente"];
+        [self failWithReason:BLS(@"HLS: Playlist ohne Segmente")];
         return;
     }
     self.targetDuration = targetDuration;

@@ -10,6 +10,7 @@
 #import "BrowserCookieConsentBlocker.h"
 #import "BrowserSubtitleEngine.h"
 #import "BrowserWebView.h"
+#import "BrowserLocalization.h"
 
 static UIColor *MenuTextColor(void) {
     if (@available(tvOS 13, *)) {
@@ -289,7 +290,8 @@ static BOOL BrowserMenuItemKeepsMenuOpen(NSString *title, BOOL hasDetail) {
 
 - (void)configureWithItem:(BrowserAdvancedMenuItem *)item tint:(UIColor *)tint {
     BOOL destructive = item.style == UIAlertActionStyleDestructive;
-    _titleLabel.text = item.title;
+    // item.title bleibt die deutsche Kennung (Symbol, Offen-bleiben); übersetzt wird erst hier.
+    _titleLabel.text = BLS(item.title);
     _destructive = destructive;
     _iconCircle.backgroundColor = destructive ? UIColor.systemRedColor : tint;
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:23.0 weight:UIImageSymbolWeightSemibold];
@@ -587,7 +589,7 @@ static BOOL BrowserMenuItemKeepsMenuOpen(NSString *title, BOOL hasDetail) {
            viewForSupplementaryElementOfKind:(NSString *)kind
                                  atIndexPath:(NSIndexPath *)indexPath {
     BrowserAdvancedMenuHeader *header = [collectionView dequeueReusableSupplementaryViewOfKind:kind withReuseIdentifier:@"header" forIndexPath:indexPath];
-    header.label.text = [self.sections[(NSUInteger)indexPath.section].title uppercaseString];
+    header.label.text = [BLS(self.sections[(NSUInteger)indexPath.section].title) uppercaseString];
     return header;
 }
 
@@ -726,7 +728,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (UIAlertAction *)browserCancelAction {
-    return [self browserActionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil];
+    return [self browserActionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil];
 }
 
 - (BOOL)stringHasVisibleContent:(NSString *)string {
@@ -768,8 +770,8 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
 - (void)presentDeleteFavoriteMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit löschen"
-                                                                       message:@"Welchen Favoriten möchtest du löschen?"];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Favorit löschen")
+                                                                       message:BLS(@"Welchen Favoriten möchtest du löschen?")];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -797,20 +799,20 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     NSString *pageTitle = [[self.host browserWebView] title];
     NSURLRequest *request = [[self.host browserWebView] request];
     NSString *currentURL = request.URL.absoluteString ?: @"";
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favorit benennen"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Favorit benennen")
                                                                        message:currentURL];
     __weak typeof(self) weakSelf = self;
     __weak UIAlertController *weakAlert = alertController;  // Aktion im Dialog: schwach, sonst Zyklus
     
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeDefault;
-        textField.placeholder = @"Name des Favoriten";
+        textField.placeholder = BLS(@"Name des Favoriten");
         textField.text = pageTitle;
         textField.textColor = MenuTextColor();
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
     
-    [alertController addAction:[self browserActionWithTitle:@"Sichern"
+    [alertController addAction:[self browserActionWithTitle:BLS(@"Sichern")
                                                       style:UIAlertActionStyleDestructive
                                                     handler:^(__unused UIAlertAction *action) {
         UITextField *titleTextField = weakAlert.textFields.firstObject;
@@ -833,7 +835,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
 - (void)presentFavoritesMenu {
     NSArray *favorites = [[NSUserDefaults standardUserDefaults] arrayForKey:@"FAVORITES"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Favoriten" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Favoriten") message:@""];
     __weak typeof(self) weakSelf = self;
     
     [favorites enumerateObjectsUsingBlock:^(NSArray *entry, NSUInteger index, BOOL *stop) {
@@ -852,14 +854,14 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     }];
     
     if (favorites.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Favorit löschen"
+        [alertController addAction:[self browserActionWithTitle:BLS(@"Favorit löschen")
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [weakSelf presentDeleteFavoriteMenu];
         }]];
     }
     
-    [alertController addAction:[self browserActionWithTitle:@"Diese Seite zu Favoriten hinzufügen"
+    [alertController addAction:[self browserActionWithTitle:BLS(@"Diese Seite zu Favoriten hinzufügen")
                                                       style:UIAlertActionStyleDefault
                                                     handler:^(__unused UIAlertAction *action) {
         [weakSelf presentAddFavoritePrompt];
@@ -870,11 +872,11 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
 - (void)presentHistoryMenu {
     NSArray *historyEntries = [[NSUserDefaults standardUserDefaults] arrayForKey:@"HISTORY"];
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Verlauf" message:@""];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Verlauf") message:@""];
     __weak typeof(self) weakSelf = self;
     
     if (historyEntries.count > 0) {
-        [alertController addAction:[self browserActionWithTitle:@"Verlauf löschen"
+        [alertController addAction:[self browserActionWithTitle:BLS(@"Verlauf löschen")
                                                           style:UIAlertActionStyleDestructive
                                                         handler:^(__unused UIAlertAction *action) {
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"HISTORY"];
@@ -1033,8 +1035,8 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 - (void)presentMediaDiagnostics {
     NSDictionary *diagnostics = [self mediaDiagnosticsDictionary];
     if (diagnostics == nil) {
-        UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
-                                                                           message:@"Die Seite hat keine Diagnosedaten geliefert."];
+        UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Medien-Diagnose")
+                                                                           message:BLS(@"Die Seite hat keine Diagnosedaten geliefert.")];
         [alertController addAction:[self browserCancelAction]];
         [self.host browserPresentViewController:alertController];
         return;
@@ -1093,7 +1095,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
     NSLog(@"%@ %@", kBrowserMediaDiagnosticsLogPrefix, message);
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Medien-Diagnose"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Medien-Diagnose")
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -1102,17 +1104,17 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 - (void)presentWebKitRuntimeMediaPreferences {
     NSString *report = [[self.host browserWebView] runtimeMediaPreferenceReport];
     if (![self stringHasVisibleContent:report]) {
-        report = @"Es wurden keine WebKit-Medieneinstellungen geliefert.";
+        report = BLS(@"Es wurden keine WebKit-Medieneinstellungen geliefert.");
     }
 
     NSLog(@"%@ %@", kBrowserWebKitMediaPrefsLogPrefix, report);
 
     NSString *message = report;
     if (message.length > 1800) {
-        message = [[message substringToIndex:1800] stringByAppendingString:@"\n\nDer vollständige Bericht steht in der Konsole."];
+        message = [[message substringToIndex:1800] stringByAppendingString:BLS(@"\n\nDer vollständige Bericht steht in der Konsole.")];
     }
 
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"WebKit-Medieneinstellungen"
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"WebKit-Medieneinstellungen")
                                                                        message:message];
     [alertController addAction:[self browserCancelAction]];
     [self.host browserPresentViewController:alertController];
@@ -1123,12 +1125,12 @@ referenceSizeForHeaderInSection:(NSInteger)section {
                                     detail:self.host.browserTopMenuShowing ? @"An" : @"Aus"
                                    handler:^{
         if (self.host.browserTopMenuShowing) {
-            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Obere Leiste ausblenden?"
-                                                                               message:@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause."];
-            [alertController addAction:[self browserActionWithTitle:@"Abbrechen"
+            UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Obere Leiste ausblenden?")
+                                                                               message:BLS(@"Das Menü öffnest du weiterhin mit doppeltem Druck auf Play/Pause.")];
+            [alertController addAction:[self browserActionWithTitle:BLS(@"Abbrechen")
                                                               style:UIAlertActionStyleCancel
                                                             handler:nil]];
-            [alertController addAction:[self browserActionWithTitle:@"Ausblenden"
+            [alertController addAction:[self browserActionWithTitle:BLS(@"Ausblenden")
                                                               style:UIAlertActionStyleDestructive
                                                             handler:^(__unused UIAlertAction *action) {
                 [self.host browserHideTopNav];
@@ -1160,7 +1162,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
         ? [self.host browserTranslationProviderName] : nil;
     if ([self.host respondsToSelector:@selector(browserCurrentPageIsTranslated)] && [self.host browserCurrentPageIsTranslated] &&
         [self.host respondsToSelector:@selector(browserShowOriginalPage)]) {
-        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzung beenden" detail:provider ?: @"Original" handler:^{
+        [items addObject:[self advancedMenuItemWithTitle:@"Übersetzung beenden" detail:provider ?: BLS(@"Original") handler:^{
             [self.host browserShowOriginalPage];
         }]];
     } else if ([self.host respondsToSelector:@selector(browserTranslatePage)]) {
@@ -1226,8 +1228,8 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (void)presentHomePageChooser {
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Startseite"
-                                                                       message:[NSString stringWithFormat:@"Aktuell: %@", [self homePageDisplayName]]];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Startseite")
+                                                                       message:[NSString stringWithFormat:BLS(@"Aktuell: %@"), [self homePageDisplayName]]];
     __weak typeof(self) weakSelf = self;
 
     [alertController addAction:[self browserActionWithTitle:@"Google"
@@ -1248,14 +1250,14 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     NSString *currentURL = [[self.host browserWebView] request].URL.absoluteString;
     if ([self stringHasVisibleContent:currentURL] && [currentURL hasPrefix:@"http"]) {
         NSString *host = [NSURL URLWithString:currentURL].host ?: currentURL;
-        [alertController addAction:[self browserActionWithTitle:[NSString stringWithFormat:@"Diese Seite (%@)", host]
+        [alertController addAction:[self browserActionWithTitle:[NSString stringWithFormat:BLS(@"Diese Seite (%@)"), host]
                                                           style:UIAlertActionStyleDefault
                                                         handler:^(__unused UIAlertAction *action) {
             [weakSelf setHomePageURLStringAndRefresh:currentURL];
         }]];
     }
 
-    [alertController addAction:[self browserActionWithTitle:@"Adresse eingeben …"
+    [alertController addAction:[self browserActionWithTitle:BLS(@"Adresse eingeben …")
                                                       style:UIAlertActionStyleDefault
                                                     handler:^(__unused UIAlertAction *action) {
         [weakSelf presentHomePageAddressPrompt];
@@ -1265,20 +1267,20 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (void)presentHomePageAddressPrompt {
-    UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Startseite" message:@"Adresse der Startseite"];
+    UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Startseite") message:BLS(@"Adresse der Startseite")];
     __weak typeof(self) weakSelf = self;
     __weak UIAlertController *weakAlert = alertController;  // Aktion im Dialog: schwach, sonst Zyklus
     NSString *current = self.preferencesStore.homePageURLString;
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.keyboardType = UIKeyboardTypeURL;
-        textField.placeholder = @"z. B. google.com";
+        textField.placeholder = BLS(@"z. B. google.com");
         textField.text = current;
         textField.textColor = MenuTextColor();
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         [textField setReturnKeyType:UIReturnKeyDone];
     }];
-    [alertController addAction:[self browserActionWithTitle:@"Sichern"
+    [alertController addAction:[self browserActionWithTitle:BLS(@"Sichern")
                                                       style:UIAlertActionStyleDefault
                                                     handler:^(__unused UIAlertAction *action) {
         NSString *text = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -1322,7 +1324,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (UIAlertAction *)wkWebViewProofOfConceptAction {
-    return [self browserActionWithTitle:@"WKWebView-Test öffnen"
+    return [self browserActionWithTitle:BLS(@"WKWebView-Test öffnen")
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         Class proofOfConceptControllerClass = NSClassFromString(@"BrowserWKWebViewProofOfConceptViewController");
@@ -1331,8 +1333,8 @@ referenceSizeForHeaderInSection:(NSInteger)section {
             viewController = [proofOfConceptControllerClass new];
             viewController.modalPresentationStyle = UIModalPresentationFullScreen;
         } else {
-            viewController = [UIAlertController alertControllerWithTitle:@"WKWebView-Test fehlt"
-                                                                 message:@"Der Test-Controller ist in diesem Build nicht enthalten."
+            viewController = [UIAlertController alertControllerWithTitle:BLS(@"WKWebView-Test fehlt")
+                                                                 message:BLS(@"Der Test-Controller ist in diesem Build nicht enthalten.")
                                                           preferredStyle:UIAlertControllerStyleAlert];
             [(UIAlertController *)viewController addAction:[self browserCancelAction]];
         }
@@ -1384,7 +1386,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 
 - (BrowserAdvancedMenuItem *)userAgentModeMenuItem {
     BOOL mobileModeEnabled = self.preferencesStore.mobileModeEnabled;
-    NSString *detail = mobileModeEnabled ? @"Mobil" : @"Desktop";
+    NSString *detail = mobileModeEnabled ? BLS(@"Mobil") : BLS(@"Desktop");
     NSString *userAgent = mobileModeEnabled ? BrowserPreferencesStore.desktopUserAgent : BrowserPreferencesStore.mobileUserAgent;
     BOOL mobileMode = !mobileModeEnabled;
     
@@ -1433,14 +1435,14 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 /// Zeigt den Stand der Werbeblocker-Listen und prüft auf Wunsch sofort auf neue (BrowserFilterListUpdater).
 - (BrowserAdvancedMenuItem *)filterListUpdateMenuItem {
     BrowserFilterListUpdater *updater = [BrowserFilterListUpdater sharedUpdater];
-    NSString *detail = updater.isChecking ? @"Prüft …"
-        : [@"Stand " stringByAppendingString:[BrowserFilterListUpdater displayStringForDate:updater.activeListsDate]];
+    NSString *detail = updater.isChecking ? BLS(@"Prüft …")
+        : [NSString stringWithFormat:BLS(@"Stand %@"), [BrowserFilterListUpdater displayStringForDate:updater.activeListsDate]];
     return [self advancedMenuItemWithTitle:@"Filterlisten aktualisieren"
                                     detail:detail
                                    handler:^{
         [updater checkNowWithCompletion:^(BOOL updated, NSString *message) {
-            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Filterlisten" message:message];
-            [alertController addAction:[self browserActionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+            UIAlertController *alertController = [self browserAlertControllerWithTitle:BLS(@"Filterlisten") message:message];
+            [alertController addAction:[self browserActionWithTitle:BLS(@"OK") style:UIAlertActionStyleCancel handler:nil]];
             [self.host browserPresentViewController:alertController];
             if (updated) {
                 [[self.host browserWebView] reload];
@@ -1456,7 +1458,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     BOOL excepted = [[BrowserContentBlocker sharedBlocker] isExceptionForURL:url];
     BOOL automatic = excepted && [[BrowserContentBlocker sharedBlocker] isAutoExceptionForURL:url];
     return [self advancedMenuItemWithTitle:@"Werbeblocker hier"
-                                    detail:host == nil ? @"–" : (automatic ? @"Pausiert (Sperre)" : (excepted ? @"Aus" : @"An"))
+                                    detail:host == nil ? @"–" : (automatic ? BLS(@"Pausiert (Sperre)") : (excepted ? @"Aus" : @"An"))
                                    handler:^{
         if (host == nil) {
             return;
@@ -1493,7 +1495,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 - (BrowserAdvancedMenuItem *)designMenuItem {
     BOOL classic = self.preferencesStore.classicDesignEnabled;
     return [self advancedMenuItemWithTitle:@"Design"
-                                    detail:classic ? @"Alt" : @"Liquid Glass"
+                                    detail:classic ? BLS(@"Alt") : @"Liquid Glass"
                                    handler:^{
         self.preferencesStore.classicDesignEnabled = !classic;
         [self.host browserBringCursorToFront];
@@ -1560,7 +1562,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
         }
     }
     return [self advancedMenuItemWithTitle:@"Seitenzoom"
-                                    detail:[NSString stringWithFormat:@"%.0f %% → %.0f %%", current * 100.0, next * 100.0]
+                                    detail:[NSString stringWithFormat:BLS(@"%.0f %% → %.0f %%"), current * 100.0, next * 100.0]
                                    handler:^{
         self.preferencesStore.pageZoom = next;
         [[self.host browserWebView] setPageZoom:next];
@@ -1577,7 +1579,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 }
 
 - (UIAlertAction *)playVideoUnderCursorAction {
-    return [self browserActionWithTitle:@"Aktives Video abspielen"
+    return [self browserActionWithTitle:BLS(@"Aktives Video abspielen")
                                   style:UIAlertActionStyleDefault
                                 handler:^(__unused UIAlertAction *action) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1609,7 +1611,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 - (BrowserAdvancedMenuItem *)autoSubtitlesLanguageMenuItem {
     NSString *current = self.preferencesStore.autoSubtitlesLanguage;
     if (![BrowserSubtitleEngine hasMultilingualModel]) {
-        return [self advancedMenuItemWithTitle:@"Untertitelsprache" detail:@"Nur Englisch (Modell)" handler:^{}];
+        return [self advancedMenuItemWithTitle:@"Untertitelsprache" detail:BLS(@"Nur Englisch (Modell)") handler:^{}];
     }
     NSArray<NSString *> *languages = [BrowserSubtitleEngine selectableLanguages];
     NSUInteger index = [languages indexOfObject:current];
@@ -1636,7 +1638,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 /// Zeigertempo durchschalten: Langsam → Normal → Schnell → Sehr schnell.
 - (BrowserAdvancedMenuItem *)pointerSpeedMenuItem {
     NSArray<NSNumber *> *speeds = @[@0.7, @1.0, @1.4, @2.0];
-    NSArray<NSString *> *names = @[@"Langsam", @"Normal", @"Schnell", @"Sehr schnell"];
+    NSArray<NSString *> *names = @[BLS(@"Langsam"), BLS(@"Normal"), BLS(@"Schnell"), BLS(@"Sehr schnell")];
     double current = self.preferencesStore.pointerSpeed;
     NSUInteger index = 1;
     double best = DBL_MAX;
@@ -1673,7 +1675,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
 /// Zeigerstil durchschalten: macOS dunkel → macOS hell → SF Symbols.
 - (BrowserAdvancedMenuItem *)cursorStyleMenuItem {
     NSUInteger style = self.preferencesStore.cursorStyle % 3;
-    NSArray<NSString *> *names = @[@"Dunkel", @"Hell", @"Symbol"];
+    NSArray<NSString *> *names = @[BLS(@"Dunkel"), BLS(@"Hell"), BLS(@"Symbol")];
     return [self advancedMenuItemWithTitle:@"Zeiger"
                                     detail:names[style]
                                    handler:^{
@@ -1816,7 +1818,7 @@ referenceSizeForHeaderInSection:(NSInteger)section {
     BOOL hasVersion = [self stringHasVisibleContent:version];
 
     if (hasVersion) {
-        return [NSString stringWithFormat:@"Version %@", version];
+        return [NSString stringWithFormat:BLS(@"Version %@"), version];
     }
     return @"";
 }

@@ -6,6 +6,7 @@
 #import "BrowserCommandRouter.h"
 #import "BrowserMotion.h"
 #import "BrowserCommandParser.h"
+#import "BrowserLocalization.h"
 
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
@@ -107,7 +108,7 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
     NSString *sourceName = [BrowserCommand nameForSource:source];
     if (command == nil) {
         NSLog(@"[Command] %@ arg=%@ quelle=%@ unbekannt", name, argument ?: @"-", sourceName);
-        [self showFeedback:@"Unbekannter Befehl" symbolName:@"questionmark.circle" success:NO];
+        [self showFeedback:BLS(@"Unbekannter Befehl") symbolName:@"questionmark.circle" success:NO];
         return NO;
     }
     id<BrowserCommandHost> host = self.host;
@@ -122,18 +123,18 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
     if ([key isEqualToString:@"reader"]) {
         BOOL active = host.browserCommandReaderActive;
         if (desired != nil && desired.boolValue == active) {
-            feedback = active ? @"Reader ist schon an" : @"Reader ist schon aus";
+            feedback = active ? BLS(@"Reader ist schon an") : BLS(@"Reader ist schon aus");
         } else if (!active && !host.browserCommandReaderAvailable) {
             ok = NO;
-            feedback = @"Reader für diese Seite nicht verfügbar";
+            feedback = BLS(@"Reader für diese Seite nicht verfügbar");
         } else {
             [host browserCommandToggleReader];
-            feedback = active ? @"Reader ausgeschaltet" : @"Reader eingeschaltet";
+            feedback = active ? BLS(@"Reader ausgeschaltet") : BLS(@"Reader eingeschaltet");
         }
     } else if ([key isEqualToString:@"address"]) {
         if (argument.length > 0) {
             [host browserCommandOpenAddressOrSearch:argument];
-            feedback = [NSString stringWithFormat:@"Öffne „%@“", argument];
+            feedback = [NSString stringWithFormat:BLS(@"Öffne „%@“"), argument];
         } else {
             [host browserCommandBeginAddressEditing];
         }
@@ -142,65 +143,65 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             [host browserCommandBeginAddressEditing];
         } else {
             [host browserCommandSearch:argument];
-            feedback = [NSString stringWithFormat:@"Suche: %@", argument];
+            feedback = [NSString stringWithFormat:BLS(@"Suche: %@"), argument];
         }
     } else if ([key isEqualToString:@"open"]) {
         NSString *address = argument.length > 0 ? [BrowserCommandParser addressFromSpokenText:argument] : nil;
         if (address != nil && [host browserCommandOpenAddress:address]) {
-            feedback = [NSString stringWithFormat:@"Öffne %@", address];
+            feedback = [NSString stringWithFormat:BLS(@"Öffne %@"), address];
         } else if (argument.length > 0) {
             [host browserCommandSearch:argument];
-            feedback = [NSString stringWithFormat:@"Suche: %@", argument];
+            feedback = [NSString stringWithFormat:BLS(@"Suche: %@"), argument];
         } else {
             [host browserCommandBeginAddressEditing];
         }
     } else if ([key isEqualToString:@"back"]) {
         ok = [host browserCommandGoBack];
-        feedback = ok ? @"Zurück" : @"Keine vorige Seite";
+        feedback = ok ? BLS(@"Zurück") : BLS(@"Keine vorige Seite");
     } else if ([key isEqualToString:@"forward"]) {
         ok = [host browserCommandGoForward];
-        feedback = ok ? @"Vor" : @"Keine nächste Seite";
+        feedback = ok ? BLS(@"Vor") : BLS(@"Keine nächste Seite");
     } else if ([key isEqualToString:@"reload"]) {
         ok = [host browserCommandReload];
-        feedback = ok ? @"Neu laden" : @"Keine Seite geladen";
+        feedback = ok ? BLS(@"Neu laden") : BLS(@"Keine Seite geladen");
     } else if ([key isEqualToString:@"home"]) {
         [host browserCommandGoHome];
-        feedback = @"Startseite";
+        feedback = BLS(@"Startseite");
     } else if ([key isEqualToString:@"newtab"]) {
         [host browserCommandNewTab];
-        feedback = @"Neuer Tab";
+        feedback = BLS(@"Neuer Tab");
     } else if ([key isEqualToString:@"closetab"]) {
         [host browserCommandCloseTab];
-        feedback = @"Tab geschlossen";
+        feedback = BLS(@"Tab geschlossen");
     } else if ([key isEqualToString:@"tabs"]) {
         [host browserCommandShowTabs];
     } else if ([key isEqualToString:@"favorite"]) {
         NSNumber *state = [host browserCommandSetFavorite:desired];
         ok = state != nil;
-        feedback = state == nil ? @"Diese Seite kann kein Favorit werden"
-            : (state.boolValue ? @"Zu Favoriten hinzugefügt" : @"Aus Favoriten entfernt");
+        feedback = state == nil ? BLS(@"Diese Seite kann kein Favorit werden")
+            : (state.boolValue ? BLS(@"Zu Favoriten hinzugefügt") : BLS(@"Aus Favoriten entfernt"));
     } else if ([key isEqualToString:@"adblock-site"]) {
         NSString *site = [host browserCommandAdBlockSiteName];
         if (site == nil) {
             ok = NO;
-            feedback = @"Keine Seite geladen";
+            feedback = BLS(@"Keine Seite geladen");
         } else {
             BOOL active = [host browserCommandAdBlockActiveForSite];
             BOOL target = desired != nil ? desired.boolValue : !active;
             if (target != active) {
                 [host browserCommandSetAdBlockActiveForSite:target];
             }
-            feedback = [NSString stringWithFormat:@"Werbeblocker für %@ %@", site, target ? @"an" : @"aus"];
+            feedback = [NSString stringWithFormat:target ? BLS(@"Werbeblocker für %@ an") : BLS(@"Werbeblocker für %@ aus"), site];
         }
     } else if ([key isEqualToString:@"top"]) {
         ok = [host browserCommandScrollToTop];
-        feedback = ok ? @"Nach oben" : @"Schon ganz oben";
+        feedback = ok ? BLS(@"Nach oben") : BLS(@"Schon ganz oben");
     } else if ([key isEqualToString:@"down"]) {
         ok = [host browserCommandScrollPageByFraction:0.8];
-        feedback = ok ? @"Seite runter" : @"Schon am Seitenende";
+        feedback = ok ? BLS(@"Seite runter") : BLS(@"Schon am Seitenende");
     } else if ([key isEqualToString:@"up"]) {
         ok = [host browserCommandScrollPageByFraction:-0.8];
-        feedback = ok ? @"Seite hoch" : @"Schon ganz oben";
+        feedback = ok ? BLS(@"Seite hoch") : BLS(@"Schon ganz oben");
     } else if ([key isEqualToString:@"menu"]) {
         [host browserCommandShowMenu];
     } else if ([key isEqualToString:@"help"]) {
@@ -214,7 +215,7 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             ok = [host browserCommandTranslate];
         } else {
             ok = NO;
-            feedback = @"Befehl nicht verfügbar";
+            feedback = BLS(@"Befehl nicht verfügbar");
         }
     } else if ([key isEqualToString:@"original"]) {
         // Rückmeldung kommt vom BrowserIntelligenceController.
@@ -222,39 +223,39 @@ static NSNumber *BrowserCommandDesiredState(NSString *argument) {
             ok = [host browserCommandShowOriginal];
         } else {
             ok = NO;
-            feedback = @"Befehl nicht verfügbar";
+            feedback = BLS(@"Befehl nicht verfügbar");
         }
     } else if ([key isEqualToString:@"ask"]) {
         // Rückmeldung (Antwort-Karte oder „Keine passende Stelle“) kommt vom BrowserIntelligenceController.
         if (argument.length == 0) {
             ok = NO;
-            feedback = @"Was soll ich die Seite fragen?";
+            feedback = BLS(@"Was soll ich die Seite fragen?");
         } else if ([host respondsToSelector:@selector(browserCommandAskPage:)]) {
             [host browserCommandAskPage:argument];
         } else {
             ok = NO;
-            feedback = @"Befehl nicht verfügbar";
+            feedback = BLS(@"Befehl nicht verfügbar");
         }
     } else if (command.requiresVideo && ![host browserCommandPageHasVideo]) {
         ok = NO;
-        feedback = @"Kein Video auf der Seite";
+        feedback = BLS(@"Kein Video auf der Seite");
     } else if ([key isEqualToString:@"player"]) {
         [host browserCommandOpenVideoInPlayer];
-        feedback = @"Video im Player";
+        feedback = BLS(@"Video im Player");
     } else if ([key isEqualToString:@"playpause"]) {
         NSString *videoCommand = desired == nil ? @"toggle" : (desired.boolValue ? @"play" : @"pause");
         [host browserCommandSendVideoCommand:videoCommand];
-        feedback = desired == nil ? @"Wiedergabe umgeschaltet" : (desired.boolValue ? @"Wiedergabe" : @"Pause");
+        feedback = desired == nil ? BLS(@"Wiedergabe umgeschaltet") : (desired.boolValue ? BLS(@"Wiedergabe") : BLS(@"Pause"));
     } else if ([key isEqualToString:@"seek"]) {
         NSInteger seconds = argument.length > 0 ? argument.integerValue : 10;
         if (seconds == 0) {
             seconds = 10;
         }
         [host browserCommandSendVideoCommand:[NSString stringWithFormat:@"seek:%ld", (long)seconds]];
-        feedback = [NSString stringWithFormat:@"%ld s %@", (long)labs(seconds), seconds < 0 ? @"zurück" : @"vor"];
+        feedback = [NSString stringWithFormat:seconds < 0 ? BLS(@"%ld s zurück") : BLS(@"%ld s vor"), (long)labs(seconds)];
     } else {
         ok = NO;
-        feedback = @"Befehl nicht verfügbar";
+        feedback = BLS(@"Befehl nicht verfügbar");
     }
 
     NSLog(@"[Command] %@ arg=%@ quelle=%@ %@%@", command.name, argument ?: @"-", sourceName, ok ? @"ok" : @"nicht möglich",

@@ -5,6 +5,7 @@
 #if __has_include(<UIKit/UIGlassEffect.h>)
 #import <UIKit/UIGlassEffect.h>
 #endif
+#import "BrowserLocalization.h"
 
 static CGFloat const kTopBarHorizontalInset = 40.0;
 /// Luft über der ausgeklappten Leiste (die Ansicht ist 116 pt hoch: 18 oben, 86 Leiste, 12 unten).
@@ -227,15 +228,15 @@ static CGFloat const kTopBarClassicVerticalInset = 8.0;
         [self.chromeEffectView.contentView addSubview:imageView];
     }
 
-    _backFocusButton = [self newFocusButtonForAction:BrowserTopBarActionBack accessibilityLabel:@"Back"];
-    _refreshFocusButton = [self newFocusButtonForAction:BrowserTopBarActionRefresh accessibilityLabel:@"Reload"];
-    _forwardFocusButton = [self newFocusButtonForAction:BrowserTopBarActionForward accessibilityLabel:@"Forward"];
-    _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFavorite accessibilityLabel:@"Favorit"];
-    _tabsFocusButton = [self newFocusButtonForAction:BrowserTopBarActionTabs accessibilityLabel:@"Tabs"];
-    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:@"Adresse oder Suche"];
-    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:@"Obere Leiste ein- oder ausblenden"];
-    _menuFocusButton = [self newFocusButtonForAction:BrowserTopBarActionMenu accessibilityLabel:@"Menu"];
-    _readerFocusButton = [self newFocusButtonForAction:BrowserTopBarActionReader accessibilityLabel:@"Reader"];
+    _backFocusButton = [self newFocusButtonForAction:BrowserTopBarActionBack accessibilityLabel:BLS(@"Back")];
+    _refreshFocusButton = [self newFocusButtonForAction:BrowserTopBarActionRefresh accessibilityLabel:BLS(@"Reload")];
+    _forwardFocusButton = [self newFocusButtonForAction:BrowserTopBarActionForward accessibilityLabel:BLS(@"Forward")];
+    _homeFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFavorite accessibilityLabel:BLS(@"Favorit")];
+    _tabsFocusButton = [self newFocusButtonForAction:BrowserTopBarActionTabs accessibilityLabel:BLS(@"Tabs")];
+    _URLFocusButton = [self newFocusButtonForAction:BrowserTopBarActionURL accessibilityLabel:BLS(@"Adresse oder Suche")];
+    _fullscreenFocusButton = [self newFocusButtonForAction:BrowserTopBarActionFullscreen accessibilityLabel:BLS(@"Obere Leiste ein- oder ausblenden")];
+    _menuFocusButton = [self newFocusButtonForAction:BrowserTopBarActionMenu accessibilityLabel:BLS(@"Menu")];
+    _readerFocusButton = [self newFocusButtonForAction:BrowserTopBarActionReader accessibilityLabel:BLS(@"Reader")];
     _focusButtons = @[
         _backFocusButton,
         _refreshFocusButton,
@@ -969,7 +970,7 @@ static CGFloat const kTopBarClassicVerticalInset = 8.0;
     [self.dictationFieldView addSubview:self.dictationIconView];
 
     self.dictationLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.dictationLabel.text = @"Sprechen, um zu diktieren";
+    self.dictationLabel.text = BLS(@"Sprechen, um zu diktieren");
     self.dictationLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     [self.dictationFieldView addSubview:self.dictationLabel];
     [self applyAddressEditingStyle];
@@ -1119,7 +1120,7 @@ static CGFloat const kTopBarClassicVerticalInset = 8.0;
 /// Der Knopf neben „Vor“ ist im alten Design „Startseite“, sonst der Favoriten-Stern.
 - (void)applyClassicFocusActions {
     self.homeFocusButton.topBarAction = self.classicDesign ? BrowserTopBarActionHome : BrowserTopBarActionFavorite;
-    self.homeFocusButton.accessibilityLabel = self.classicDesign ? @"Startseite" : @"Favorit";
+    self.homeFocusButton.accessibilityLabel = self.classicDesign ? BLS(@"Startseite") : BLS(@"Favorit");
 }
 
 @end

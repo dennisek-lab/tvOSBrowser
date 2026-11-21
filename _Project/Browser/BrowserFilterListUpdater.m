@@ -1,4 +1,5 @@
 #import "BrowserFilterListUpdater.h"
+#import "BrowserLocalization.h"
 #import "BrowserContentBlocker.h"
 #import "BrowserScriptletInjector.h"
 
@@ -325,8 +326,8 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
         return @"–";
     }
     NSDateFormatter *formatter = [NSDateFormatter new];
-    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"de_DE"];
-    formatter.dateFormat = @"dd.MM.yyyy";
+    formatter.locale = NSLocale.currentLocale;
+    [formatter setLocalizedDateFormatFromTemplate:@"ddMMyyyy"];
     return [formatter stringFromDate:date];
 }
 
@@ -389,11 +390,11 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
         NSString *problem = nil;
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
         if (error != nil) {
-            problem = [NSString stringWithFormat:@"Server nicht erreichbar (%@)", error.localizedDescription];
+            problem = [NSString stringWithFormat:BLS(@"Server nicht erreichbar (%@)"), error.localizedDescription];
         } else if (status != 200) {
-            problem = [NSString stringWithFormat:@"Server antwortet mit %ld", (long)status];
+            problem = [NSString stringWithFormat:BLS(@"Server antwortet mit %ld"), (long)status];
         } else if (data.length == 0 || data.length > maxBytes) {
-            problem = @"unerwartete Dateigröße";
+            problem = BLS(@"unerwartete Dateigröße");
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             completion(problem == nil ? data : nil, problem);
@@ -415,7 +416,7 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
     allowedScheme = allowedScheme || [scheme isEqualToString:@"http"];
 #endif
     if (manifestURL == nil || !allowedScheme) {
-        [self finishWithUpdated:NO message:@"Keine gültige Adresse für die Filterlisten."];
+        [self finishWithUpdated:NO message:BLS(@"Keine gültige Adresse für die Filterlisten.")];
         return;
     }
     self.checking = YES;
@@ -423,17 +424,17 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
     NSLog(@"[FilterLists] prüfe %@", manifestURL.absoluteString);
     [self fetchURL:manifestURL maxBytes:kMaxManifestBytes completion:^(NSData *data, NSString *error) {
         if (data == nil) {
-            [self finishWithUpdated:NO message:[NSString stringWithFormat:@"Aktualisierung nicht möglich: %@. Die bisherigen Listen bleiben aktiv.", error]];
+            [self finishWithUpdated:NO message:[NSString stringWithFormat:BLS(@"Aktualisierung nicht möglich: %@. Die bisherigen Listen bleiben aktiv."), error]];
             return;
         }
         id manifest = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         if (![manifest isKindOfClass:NSDictionary.class] || ![manifest[@"minAppFormat"] isKindOfClass:NSNumber.class]) {
-            [self finishWithUpdated:NO message:@"Aktualisierung nicht möglich: Manifest unlesbar. Die bisherigen Listen bleiben aktiv."];
+            [self finishWithUpdated:NO message:BLS(@"Aktualisierung nicht möglich: Manifest unlesbar. Die bisherigen Listen bleiben aktiv.")];
             return;
         }
         [NSUserDefaults.standardUserDefaults setObject:[NSDate date] forKey:kLastCheckKey];
         if ([manifest[@"minAppFormat"] integerValue] > kFilterListAppFormat) {
-            [self finishWithUpdated:NO message:@"Neue Listen brauchen eine neuere App-Version. Die bisherigen Listen bleiben aktiv."];
+            [self finishWithUpdated:NO message:BLS(@"Neue Listen brauchen eine neuere App-Version. Die bisherigen Listen bleiben aktiv.")];
             return;
         }
         [self updateFromManifest:manifest manifestURL:manifestURL];
@@ -458,7 +459,7 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
           remoteBlocker[@"version"], blockerNewer ? @"neuer" : @"nicht neuer",
           remoteScriptlets[@"version"], scriptletsNewer ? @"neuer" : @"nicht neuer");
     if (!blockerNewer && !scriptletsNewer) {
-        [self finishWithUpdated:NO message:[NSString stringWithFormat:@"Die Filterlisten sind aktuell (Stand %@).",
+        [self finishWithUpdated:NO message:[NSString stringWithFormat:BLS(@"Die Filterlisten sind aktuell (Stand %@)."),
                                             [BrowserFilterListUpdater displayStringForDate:self.activeListsDate]]];
         return;
     }
@@ -467,12 +468,13 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
     void (^finish)(void) = ^{
         NSString *message;
         if (problems.count == 0) {
-            message = [NSString stringWithFormat:@"Neue Filterlisten aktiv (Stand %@).",
+            message = [NSString stringWithFormat:BLS(@"Neue Filterlisten aktiv (Stand %@)."),
                        [BrowserFilterListUpdater displayStringForDate:self.activeListsDate]];
         } else {
-            message = [NSString stringWithFormat:@"%@ (%@). Wo nichts Neues geladen wurde, bleiben die bisherigen Listen aktiv.",
-                       anyUpdated ? @"Teilweise aktualisiert" : @"Aktualisierung fehlgeschlagen",
-                       [problems componentsJoinedByString:@"; "]];
+            NSString *format = anyUpdated
+                ? BLS(@"Teilweise aktualisiert (%@). Wo nichts Neues geladen wurde, bleiben die bisherigen Listen aktiv.")
+                : BLS(@"Aktualisierung fehlgeschlagen (%@). Wo nichts Neues geladen wurde, bleiben die bisherigen Listen aktiv.");
+            message = [NSString stringWithFormat:format, [problems componentsJoinedByString:@"; "]];
         }
         [self finishWithUpdated:anyUpdated message:message];
     };
@@ -483,7 +485,7 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
         }
         [self installScriptlets:remoteScriptlets manifestURL:manifestURL completion:^(NSString *error) {
             if (error != nil) {
-                [problems addObject:[@"Scriptlets: " stringByAppendingString:error]];
+                [problems addObject:[NSString stringWithFormat:BLS(@"Scriptlets: %@"), error]];
             } else {
                 anyUpdated = YES;
             }
@@ -496,7 +498,7 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
     }
     [self installContentBlocker:remoteBlocker manifestURL:manifestURL completion:^(NSString *error) {
         if (error != nil) {
-            [problems addObject:[@"Regelsätze: " stringByAppendingString:error]];
+            [problems addObject:[NSString stringWithFormat:BLS(@"Regelsätze: %@"), error]];
         } else {
             anyUpdated = YES;
         }
@@ -547,20 +549,20 @@ static BOOL BrowserFilterListValidLists(id lists, BOOL requireDigest) {
 /// Liefert den entpackten Inhalt oder nil.
 static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSString **problem) {
     if (packed.length != [entry[@"bytes"] unsignedLongLongValue]) {
-        *problem = @"Dateigröße stimmt nicht";
+        *problem = BLS(@"Dateigröße stimmt nicht");
         return nil;
     }
     if (![BrowserFilterListSHA256(packed) isEqualToString:entry[@"sha256"]]) {
-        *problem = @"Prüfsumme (SHA-256) stimmt nicht";
+        *problem = BLS(@"Prüfsumme (SHA-256) stimmt nicht");
         return nil;
     }
     NSData *json = [packed decompressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib error:nil];
     if (json == nil) {
-        *problem = @"Datei lässt sich nicht entpacken";
+        *problem = BLS(@"Datei lässt sich nicht entpacken");
         return nil;
     }
     if (entry[@"hash"] != nil && ![[BrowserFilterListSHA256(json) substringToIndex:12] isEqualToString:entry[@"hash"]]) {
-        *problem = @"Inhaltskennung stimmt nicht";
+        *problem = BLS(@"Inhaltskennung stimmt nicht");
         return nil;
     }
     return json;
@@ -568,7 +570,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
 
 - (void)installContentBlocker:(NSDictionary *)remote manifestURL:(NSURL *)manifestURL completion:(void (^)(NSString *error))completion {
     if (!BrowserFilterListValidLists(remote[@"lists"], YES) || BrowserFilterListGeneratedAt(remote) <= 0) {
-        completion(@"Manifest unvollständig");
+        completion(BLS(@"Manifest unvollständig"));
         return;
     }
     NSURL *staging = [self freshStagingDirectoryForComponent:kContentBlockerFolder];
@@ -601,7 +603,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
             BOOL ok = BrowserFilterListVerify(data, entry, &problem) != nil;
             if (ok && ![data writeToURL:[staging URLByAppendingPathComponent:entry[@"file"]] atomically:YES]) {
                 ok = NO;
-                problem = @"Speichern fehlgeschlagen";
+                problem = BLS(@"Speichern fehlgeschlagen");
             }
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!ok) {
@@ -620,20 +622,20 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
     NSData *manifestData = [NSJSONSerialization dataWithJSONObject:remote options:NSJSONWritingPrettyPrinted error:nil];
     if (manifestData == nil || ![manifestData writeToURL:[staging URLByAppendingPathComponent:kLocalManifestName] atomically:YES]) {
         [NSFileManager.defaultManager removeItemAtURL:staging error:nil];
-        completion(@"Speichern fehlgeschlagen");
+        completion(BLS(@"Speichern fehlgeschlagen"));
         return;
     }
     NSString *name = [self directoryNameForManifest:remote];
     NSURL *directory = [self promoteStaging:staging toName:name component:kContentBlockerFolder key:kContentBlockerDirKey];
     if (directory == nil) {
-        completion(@"Speichern fehlgeschlagen");
+        completion(BLS(@"Speichern fehlgeschlagen"));
         return;
     }
     // Erst vollständig kompilieren, dann umschalten. Schlägt etwas fehl, bleibt der bisherige Stand aktiv.
     [[BrowserContentBlocker sharedBlocker] installListSetAtDirectory:directory manifest:remote completion:^(BOOL ok, NSString *error) {
         if (!ok) {
             [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
-            completion(error ?: @"Kompilieren fehlgeschlagen");
+            completion(error ?: BLS(@"Kompilieren fehlgeschlagen"));
             return;
         }
         [NSUserDefaults.standardUserDefaults setObject:name forKey:kContentBlockerDirKey];
@@ -647,7 +649,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
     if (!BrowserFilterListSafeName(remote[@"file"]) || !BrowserFilterListHex(remote[@"sha256"], 64) ||
         ![remote[@"bytes"] isKindOfClass:NSNumber.class] || [remote[@"bytes"] unsignedLongLongValue] > kMaxFileBytes ||
         BrowserFilterListGeneratedAt(remote) <= 0) {
-        completion(@"Manifest unvollständig");
+        completion(BLS(@"Manifest unvollständig"));
         return;
     }
     NSURL *url = [NSURL URLWithString:remote[@"file"] relativeToURL:manifestURL].absoluteURL;
@@ -664,7 +666,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
             if (BrowserFilterListVerify(data, entry, &problem) != nil) {
                 parsed = [BrowserScriptletInjector scriptletDataFromPackedData:data];
                 if (parsed == nil) {
-                    problem = @"Inhalt unlesbar";
+                    problem = BLS(@"Inhalt unlesbar");
                 }
             }
             NSURL *staging = nil;
@@ -673,7 +675,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
                 NSData *manifestData = [NSJSONSerialization dataWithJSONObject:remote options:NSJSONWritingPrettyPrinted error:nil];
                 if (![data writeToURL:[staging URLByAppendingPathComponent:remote[@"file"]] atomically:YES] ||
                     ![manifestData writeToURL:[staging URLByAppendingPathComponent:kLocalManifestName] atomically:YES]) {
-                    problem = @"Speichern fehlgeschlagen";
+                    problem = BLS(@"Speichern fehlgeschlagen");
                     parsed = nil;
                 }
             }
@@ -688,7 +690,7 @@ static NSData *BrowserFilterListVerify(NSData *packed, NSDictionary *entry, NSSt
                 }
                 NSString *name = [self directoryNameForManifest:remote];
                 if ([self promoteStaging:staging toName:name component:kScriptletsFolder key:kScriptletsDirKey] == nil) {
-                    completion(@"Speichern fehlgeschlagen");
+                    completion(BLS(@"Speichern fehlgeschlagen"));
                     return;
                 }
                 [NSUserDefaults.standardUserDefaults setObject:name forKey:kScriptletsDirKey];

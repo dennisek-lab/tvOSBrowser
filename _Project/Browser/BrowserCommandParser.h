@@ -2,7 +2,8 @@
 //  BrowserCommandParser.h
 //  Browser
 //
-//  Erkennt Sprachbefehle im diktierten oder getippten Text des Adressfelds (Deutsch und Englisch).
+//  Erkennt Sprachbefehle im diktierten oder getippten Text des Adressfelds (Deutsch, Englisch, Spanisch, Französisch;
+//  immer alle Sprachen, unabhängig von der Oberflächensprache).
 //  Konservativ: Nur ganze Phrasen aus der Befehlstabelle (BrowserCommand) gelten als Befehl,
 //  dazu Präfixe für erzwungene Suche („suche X“, „google X“) und Adresse („öffne X“, „gehe zu X“)
 //  sowie „30 Sekunden zurück“. Alles andere bleibt Suche oder Adresse. Ohne UI, im Selbsttest

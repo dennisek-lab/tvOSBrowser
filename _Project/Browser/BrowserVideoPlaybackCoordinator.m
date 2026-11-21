@@ -1,4 +1,5 @@
 #import "BrowserVideoPlaybackCoordinator.h"
+#import "BrowserLocalization.h"
 
 #import "BrowserDOMInteractionService.h"
 #import "BrowserNativeVideoPlayerViewController.h"
@@ -430,15 +431,15 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     if (reason != NULL) {
         NSString *page = [probe[@"page"] isKindOfClass:[NSString class]] ? probe[@"page"] : @"";
         if ([self isYouTubePage:page]) {
-            *reason = @"Dieses Video läuft nur in der Webseite.";
+            *reason = BLS(@"Dieses Video läuft nur in der Webseite.");
         } else if (hasDASH) {
-            *reason = @"Dieses Video läuft nur in der Webseite.";
+            *reason = BLS(@"Dieses Video läuft nur in der Webseite.");
         } else if (hasUnsupportedFile) {
-            *reason = @"Dieses Video läuft nur in der Webseite.";
+            *reason = BLS(@"Dieses Video läuft nur in der Webseite.");
         } else if (blobSource) {
-            *reason = @"Dieses Video läuft nur in der Webseite.";
+            *reason = BLS(@"Dieses Video läuft nur in der Webseite.");
         } else {
-            *reason = @"Dieses Video läuft nur in der Webseite.";
+            *reason = BLS(@"Dieses Video läuft nur in der Webseite.");
         }
     }
     NSLog(@"[NativeVideoPlayer] keine Adresse: cs=%@ hls=%@ dash=%@ reportedHLS=%@ reportedDASH=%@",
@@ -542,7 +543,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 return;
             }
             if (!automatic) {
-                [strongSelf presentNativePlayerNoticeWithMessage:@"Auf dieser Seite wurde kein Video gefunden."];
+                [strongSelf presentNativePlayerNoticeWithMessage:BLS(@"Auf dieser Seite wurde kein Video gefunden.")];
             }
             return;
         }
@@ -632,7 +633,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 innerSelf.activePlayer = nil;
                 innerSelf.handoverInProgress = NO;
                 [failedPlayer dismissViewControllerAnimated:YES completion:^{
-                    [innerSelf presentNativePlayerNoticeWithMessage:@"Dieses Video läuft nur in der Webseite."];
+                    [innerSelf presentNativePlayerNoticeWithMessage:BLS(@"Dieses Video läuft nur in der Webseite.")];
                 }];
             });
         };
@@ -828,7 +829,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
                 if (error.code == BrowserYouTubeHDErrorIndex || error.code == BrowserYouTubeHDErrorNoFormat) {
                     [strongSelf fallBackFromYouTubeHDWithReason:error.localizedDescription];
                 } else if (!automatic) {
-                    [strongSelf presentNativePlayerNoticeWithMessage:@"Das YouTube-Video ist noch nicht bereit."];
+                    [strongSelf presentNativePlayerNoticeWithMessage:BLS(@"Das YouTube-Video ist noch nicht bereit.")];
                 }
             }
             return;
@@ -929,10 +930,10 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
         NSString *dash = [self.frameVideo[@"dash"] isKindOfClass:[NSString class]] ? self.frameVideo[@"dash"] : @"";
         NSString *frame = [self.frameVideo[@"frame"] isKindOfClass:[NSString class]] ? self.frameVideo[@"frame"] : @"";
         NSString *message = [self isYouTubePage:frame]
-            ? @"Dieses Video läuft nur in der Webseite."
+            ? BLS(@"Dieses Video läuft nur in der Webseite.")
             : (dash.length > 0
-               ? @"Dieses Video läuft nur in der Webseite."
-               : @"Dieses Video läuft nur in der Webseite.");
+               ? BLS(@"Dieses Video läuft nur in der Webseite.")
+               : BLS(@"Dieses Video läuft nur in der Webseite."));
         [self presentNativePlayerNoticeWithMessage:message];
         return;
     }
@@ -976,7 +977,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             innerSelf.activePlayer = nil;
             innerSelf.handoverInProgress = NO;
             [failedPlayer dismissViewControllerAnimated:YES completion:^{
-                [innerSelf presentNativePlayerNoticeWithMessage:@"Dieses Video läuft nur in der Webseite."];
+                [innerSelf presentNativePlayerNoticeWithMessage:BLS(@"Dieses Video läuft nur in der Webseite.")];
             }];
         });
     };
@@ -986,10 +987,10 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
 }
 
 - (void)presentNativePlayerNoticeWithMessage:(NSString *)message {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Im Player öffnen"
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Im Player öffnen")
                                                                              message:message
                                                                       preferredStyle:UIAlertControllerStyleAlert];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPresentViewController:alertController];
 }
 
@@ -1073,26 +1074,26 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
     if (sources.count > 0) {
         sourceSummary = [sources componentsJoinedByString:@"\n"];
     } else if (videoInfo.count > 0) {
-        sourceSummary = @"Keine";
+        sourceSummary = BLS(@"Keine");
     } else {
-        sourceSummary = @"Kein Video unter dem Zeiger";
+        sourceSummary = BLS(@"Kein Video unter dem Zeiger");
     }
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Nativer Player nicht verfügbar"
-                                                                             message:[NSString stringWithFormat:@"Dieses Video läuft nur in der Webseite.\n\nQuellen:\n%@", sourceSummary]
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"Nativer Player nicht verfügbar")
+                                                                             message:[NSString stringWithFormat:BLS(@"Dieses Video läuft nur in der Webseite.\n\nQuellen:\n%@"), sourceSummary]
                                                                       preferredStyle:UIAlertControllerStyleAlert];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPresentViewController:alertController];
 }
 
 - (void)presentYouTubeExtractionError:(NSError *)error fallbackVideoInfo:(NSDictionary *)videoInfo {
-    NSString *message = error.localizedDescription ?: @"Das Video konnte nicht geladen werden.";
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"YouTube-Video nicht lesbar"
+    NSString *message = error.localizedDescription ?: BLS(@"Das Video konnte nicht geladen werden.");
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:BLS(@"YouTube-Video nicht lesbar")
                                                                              message:message
                                                                       preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     NSString *fallbackURLString = [videoInfo[@"src"] isKindOfClass:[NSString class]] ? videoInfo[@"src"] : @"";
     if ([self isNativePlayableVideoURLString:fallbackURLString]) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Aktuelle Adresse abspielen"
+        [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"Aktuelle Adresse abspielen")
                                                             style:UIAlertActionStyleDefault
                                                           handler:^(__unused UIAlertAction *action) {
             NSURL *fallbackURL = [NSURL URLWithString:fallbackURLString];
@@ -1100,7 +1101,7 @@ static NSString * const kBrowserHandoverResumeScript = @"(function(){ var v=wind
             [weakSelf presentNativeVideoPlayerForURL:fallbackURL title:title];
         }]];
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:BLS(@"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self.host browserPresentViewController:alertController];
 }
 

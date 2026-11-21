@@ -5,6 +5,7 @@
 #import "BrowserStartViewController.h"
 #import "BrowserShape.h"
 #import "BrowserHistoryStore.h"
+#import "BrowserLocalization.h"
 
 // Aufbau der Kachelabschnitte, hier leicht änderbar.
 static NSUInteger const kStartTileRows = 2;
@@ -225,7 +226,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
     self.searchField = [UITextField new];
     self.searchField.delegate = self;
     self.searchField.font = [UIFont systemFontOfSize:40];
-    self.searchField.placeholder = @"Suchen oder Adresse eingeben";
+    self.searchField.placeholder = BLS(@"Suchen oder Adresse eingeben");
     self.searchField.keyboardType = UIKeyboardTypeWebSearch;
     self.searchField.returnKeyType = UIReturnKeySearch;
     self.searchField.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -237,7 +238,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
     self.hintLabel.font = [UIFont systemFontOfSize:28];
     self.hintLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
     self.hintLabel.textAlignment = NSTextAlignmentCenter;
-    self.hintLabel.text = @"Siri-Taste gedrückt halten und sprechen";
+    self.hintLabel.text = BLS(@"Siri-Taste gedrückt halten und sprechen");
     [self.scrollView addSubview:self.hintLabel];
 
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(searchFieldDidChange:) name:UITextFieldTextDidChangeNotification object:self.searchField];
@@ -278,7 +279,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
     return @[
         @{@"title": @"Zuletzt besucht", @"entries": [store recentEntries:MIN(kStartRecentCount, kStartMaxTilesPerSection)]},
         @{@"title": @"Meistbesucht", @"entries": [store topEntries:MIN(kStartTopCount, kStartMaxTilesPerSection)]},
-        @{@"title": @"Favoriten", @"entries": favorites, @"hint": @"Favoriten im Schnellmenü hinzufügen"},
+        @{@"title": @"Favoriten", @"entries": favorites, @"hint": BLS(@"Favoriten im Schnellmenü hinzufügen")},
     ];
 }
 
@@ -296,7 +297,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
         if (entries.count == 0 && hint == nil) {
             continue;
         }
-        UILabel *title = [self sectionTitleLabel:section[@"title"]];
+        UILabel *title = [self sectionTitleLabel:BLS(section[@"title"])]; // section[@"title"] bleibt Kennung (Vergleich „Favoriten“ unten)
         [self.scrollView addSubview:title];
         [self.sectionViews addObject:title];
         NSMutableArray<BrowserStartTileView *> *sectionTiles = [NSMutableArray array];
@@ -397,7 +398,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
                                                                    message:tile.entry.host
                                                             preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"Aus Favoriten entfernen"
+    [alert addAction:[UIAlertAction actionWithTitle:BLS(@"Aus Favoriten entfernen")
                                               style:UIAlertActionStyleDestructive
                                             handler:^(__unused UIAlertAction *action) {
         NSURL *url = [NSURL URLWithString:tile.entry.urlString];
@@ -406,7 +407,7 @@ static UIColor *BrowserStartColorForHost(NSString *host) {
         }
         [weakSelf reloadSections];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Abbrechen" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:BLS(@"Abbrechen") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 

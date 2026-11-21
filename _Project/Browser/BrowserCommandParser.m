@@ -31,13 +31,47 @@
     static NSSet<NSString *> *words;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        words = [NSSet setWithArray:@[@"bitte", @"please", @"mal", @"doch", @"jetzt", @"hey", @"ok", @"okay", @"siri", @"now"]];
+        words = [NSSet setWithArray:@[@"bitte", @"please", @"mal", @"doch", @"jetzt", @"hey", @"ok", @"okay", @"siri", @"now",
+                                      @"ahora", @"oye", @"porfa", @"maintenant", @"svp", @"stp"]];
     });
     return words;
 }
 
+/// Füllwörter aus mehreren Wörtern („por favor“, „s'il vous plaît“ nach der Normalisierung).
++ (NSArray<NSArray<NSString *> *> *)fillerSequences {
+    static NSArray<NSArray<NSString *> *> *sequences;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sequences = @[@[@"por", @"favor"], @[@"s", @"il", @"vous", @"plaît"], @[@"s", @"il", @"vous", @"plait"],
+                      @[@"s", @"il", @"te", @"plaît"], @[@"s", @"il", @"te", @"plait"]];
+    });
+    return sequences;
+}
+
+/// Länge der Füllwortfolge, mit der words ab index beginnt (0 = keine).
++ (NSUInteger)fillerSequenceLengthInWords:(NSArray<NSString *> *)words atIndex:(NSUInteger)index {
+    for (NSArray<NSString *> *sequence in [self fillerSequences]) {
+        if (index + sequence.count <= words.count &&
+            [[words subarrayWithRange:NSMakeRange(index, sequence.count)] isEqualToArray:sequence]) {
+            return sequence.count;
+        }
+    }
+    return 0;
+}
+
+/// Französische Elision: „l'onglet“, „d'accueil“, „qu'est-ce“ werden zwei Wörter („l onglet“). Andere Apostrophe
+/// („geht's“, „don't“) fallen wie bisher einfach weg.
++ (BOOL)isElisionStem:(NSString *)stem {
+    static NSSet<NSString *> *stems;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        stems = [NSSet setWithArray:@[@"l", @"d", @"j", @"n", @"s", @"c", @"m", @"t", @"qu", @"jusqu", @"lorsqu", @"puisqu"]];
+    });
+    return [stems containsObject:stem];
+}
+
 /// Einzelnes Wort normalisieren: klein, Satzzeichen weg (Punkt zwischen Buchstaben bleibt, z. B. heise.de),
-/// Bindestrich und Schrägstrich werden Leerzeichen.
+/// Bindestrich und Schrägstrich werden Leerzeichen, französische Elision wird getrennt (siehe isElisionStem:).
 + (NSString *)normalizedToken:(NSString *)token {
     NSString *lower = [token lowercaseString];
     NSMutableString *result = [NSMutableString stringWithCapacity:lower.length];
@@ -50,6 +84,9 @@
             [result appendFormat:@"%C", c];
         } else if ([spaceLike characterIsMember:c]) {
             [result appendString:@" "];
+        } else if ((c == '\'' || c == 0x2019) && i + 1 < length && [alnum characterIsMember:[lower characterAtIndex:i + 1]] &&
+                   [self isElisionStem:[[result componentsSeparatedByString:@" "] lastObject]]) {
+            [result appendString:@" "];
         } else if (c == '.' && i > 0 && i + 1 < length &&
                    [alnum characterIsMember:[lower characterAtIndex:i - 1]] && [alnum characterIsMember:[lower characterAtIndex:i + 1]]) {
             [result appendString:@"."];
@@ -61,13 +98,22 @@
 
 /// Wörter des Textes nach der Normalisierung, ohne Füllwörter.
 + (NSArray<NSString *> *)normalizedWordsOfText:(NSString *)text {
-    NSMutableArray<NSString *> *words = [NSMutableArray array];
+    NSMutableArray<NSString *> *all = [NSMutableArray array];
     for (NSString *raw in [text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]) {
         NSString *normalized = [self normalizedToken:raw];
         for (NSString *word in [normalized componentsSeparatedByString:@" "]) {
-            if (word.length > 0 && ![[self fillerWords] containsObject:word]) {
-                [words addObject:word];
+            if (word.length > 0) {
+                [all addObject:word];
             }
+        }
+    }
+    NSMutableArray<NSString *> *words = [NSMutableArray array];
+    for (NSUInteger i = 0; i < all.count; i++) {
+        NSUInteger skip = [self fillerSequenceLengthInWords:all atIndex:i];
+        if (skip > 0) {
+            i += skip - 1;
+        } else if (![[self fillerWords] containsObject:all[i]]) {
+            [words addObject:all[i]];
         }
     }
     return words;
@@ -92,7 +138,7 @@
     while (lower.length > 0 && [@".!?,;:" containsString:[lower substringFromIndex:lower.length - 1]]) {
         lower = [lower substringToIndex:lower.length - 1];
     }
-    for (NSString *spoken in @[@" punkt ", @" dot "]) {
+    for (NSString *spoken in @[@" punkt ", @" dot ", @" punto ", @" point "]) {
         lower = [lower stringByReplacingOccurrencesOfString:spoken withString:@"."];
     }
     if (![lower containsString:@"://"]) {
@@ -101,7 +147,7 @@
     return [self textLooksLikeAddress:lower] ? lower : nil;
 }
 
-/// Zahl aus Ziffern oder Zahlwort (Deutsch/Englisch), sonst -1.
+/// Zahl aus Ziffern oder Zahlwort (Deutsch, Englisch, Spanisch, Französisch), sonst -1.
 + (NSInteger)numberFromWord:(NSString *)word {
     NSScanner *scanner = [NSScanner scannerWithString:word];
     NSInteger value = 0;
@@ -114,25 +160,43 @@
         @"zehn": @10, @"ten": @10, @"fünfzehn": @15, @"fifteen": @15, @"zwanzig": @20, @"twenty": @20,
         @"dreißig": @30, @"dreissig": @30, @"thirty": @30, @"vierzig": @40, @"forty": @40,
         @"fünfzig": @50, @"fifty": @50, @"sechzig": @60, @"sixty": @60, @"neunzig": @90, @"ninety": @90,
+        // Spanisch
+        @"uno": @1, @"una": @1, @"un": @1, @"dos": @2, @"tres": @3, @"cuatro": @4, @"cinco": @5, @"seis": @6, @"siete": @7,
+        @"ocho": @8, @"nueve": @9, @"diez": @10, @"quince": @15, @"veinte": @20, @"treinta": @30, @"cuarenta": @40,
+        @"cincuenta": @50, @"sesenta": @60, @"noventa": @90,
+        // Französisch („un“ wie im Spanischen)
+        @"une": @1, @"deux": @2, @"trois": @3, @"quatre": @4, @"cinq": @5, @"six": @6, @"sept": @7, @"huit": @8, @"neuf": @9,
+        @"dix": @10, @"quinze": @15, @"vingt": @20, @"trente": @30, @"quarante": @40, @"cinquante": @50, @"soixante": @60,
     };
     NSNumber *number = words[word];
     return number != nil ? number.integerValue : -1;
 }
 
-/// „30 Sekunden zurück“, „spul 10 Sekunden vor“, „skip forward 30 seconds“, „eine Minute zurück“.
+/// „30 Sekunden zurück“, „spul 10 Sekunden vor“, „skip forward 30 seconds“, „eine Minute zurück“,
+/// „30 segundos atrás“, „retrocede 10 segundos“, „recule de 30 secondes“, „avance d'une minute“.
 + (BrowserParsedCommand *)seekCommandInNormalizedText:(NSString *)normalized {
     static NSRegularExpression *numberFirst;
     static NSRegularExpression *directionFirst;
+    static NSRegularExpression *verbFirst;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSString *units = @"(sekunden|sekunde|sek|seconds|second|secs|sec|minuten|minute|min|minutes)";
-        NSString *directions = @"(vor|vorwärts|weiter|nach vorne|zurück|forward|ahead|back|backward|backwards)";
+        NSString *units = @"(sekunden|sekunde|sek|seconds|second|secs|sec|minuten|minute|min|minutes"
+                          @"|segundos|segundo|seg|minutos|minuto|secondes|seconde)";
+        NSString *directions = @"(vor|vorwärts|weiter|nach vorne|zurück|forward|ahead|back|backward|backwards"
+                               @"|adelante|hacia adelante|para adelante|atrás|atras|hacia atrás|hacia atras|para atrás|para atras"
+                               @"|en avant|en arrière|en arriere|arrière|arriere)";
+        NSString *verbs = @"spul|spule|spring|springe|geh|gehe|skip|jump|go|salta|saltar|ve|ir|vuelve|volver|saute|sauter|va|aller|reviens|revenir";
         numberFirst = [NSRegularExpression regularExpressionWithPattern:
-                       [NSString stringWithFormat:@"^(?:(?:spul|spule|spring|springe|geh|gehe|skip|jump|go) )?(\\S+) %@ %@$", units, directions]
+                       [NSString stringWithFormat:@"^(?:(?:%@) )?(\\S+) %@ %@$", verbs, units, directions]
                                                                 options:0 error:nil];
         directionFirst = [NSRegularExpression regularExpressionWithPattern:
-                          [NSString stringWithFormat:@"^(?:skip|jump|go|spul|spule|spring|springe) %@ (\\S+) %@$", directions, units]
+                          [NSString stringWithFormat:@"^(?:%@) %@ (\\S+) %@$", verbs, directions, units]
                                                                    options:0 error:nil];
+        // Verb trägt die Richtung: „retrocede 30 segundos“, „avance de 30 secondes“, „recule d une minute“.
+        verbFirst = [NSRegularExpression regularExpressionWithPattern:
+                     [NSString stringWithFormat:@"^(retrocede|retroceder|rebobina|rebobinar|recule|reculer|rembobine|rembobiner"
+                                                @"|adelanta|adelantar|avanza|avanzar|avance|avancer) (?:de |d )?(\\S+) %@$", units]
+                                                              options:0 error:nil];
     });
     NSString *numberWord = nil, *unit = nil, *direction = nil;
     NSRange all = NSMakeRange(0, normalized.length);
@@ -145,6 +209,12 @@
         direction = [normalized substringWithRange:[match rangeAtIndex:1]];
         numberWord = [normalized substringWithRange:[match rangeAtIndex:2]];
         unit = [normalized substringWithRange:[match rangeAtIndex:3]];
+    } else if ((match = [verbFirst firstMatchInString:normalized options:0 range:all]) != nil) {
+        NSString *verb = [normalized substringWithRange:[match rangeAtIndex:1]];
+        BOOL back = [verb hasPrefix:@"retroced"] || [verb hasPrefix:@"rebobin"] || [verb hasPrefix:@"recul"] || [verb hasPrefix:@"rembobin"];
+        direction = back ? @"back" : @"forward";
+        numberWord = [normalized substringWithRange:[match rangeAtIndex:2]];
+        unit = [normalized substringWithRange:[match rangeAtIndex:3]];
     } else {
         return nil;
     }
@@ -155,10 +225,28 @@
     if ([unit hasPrefix:@"min"]) {
         amount *= 60;
     }
-    BOOL backwards = [@[@"zurück", @"back", @"backward", @"backwards"] containsObject:direction];
+    BOOL backwards = [@[@"zurück", @"back", @"backward", @"backwards", @"atrás", @"atras", @"hacia atrás", @"hacia atras",
+                        @"para atrás", @"para atras", @"en arrière", @"en arriere", @"arrière", @"arriere"] containsObject:direction];
     return [BrowserParsedCommand commandWithName:@"seek"
                                         argument:[NSString stringWithFormat:@"%ld", (long)(backwards ? -amount : amount)]
                                           phrase:normalized];
+}
+
+/// Wie viele Originalwörter ab index eine mehrteilige Füllwortfolge bilden („S'il vous plaît,“ = 3), sonst 0.
++ (NSUInteger)tokensOfFillerSequenceInTokens:(NSArray<NSString *> *)tokens atIndex:(NSUInteger)index {
+    NSMutableArray<NSString *> *words = [NSMutableArray array];
+    for (NSUInteger i = index; i < tokens.count && i < index + 4; i++) {
+        for (NSString *word in [[self normalizedToken:tokens[i]] componentsSeparatedByString:@" "]) {
+            if (word.length > 0) {
+                [words addObject:word];
+            }
+        }
+        NSUInteger length = [self fillerSequenceLengthInWords:words atIndex:0];
+        if (length > 0 && length == words.count) {
+            return i - index + 1;
+        }
+    }
+    return 0;
 }
 
 /// Präfix wie „suche nach“ am Anfang: liefert den Rest im Originalwortlaut (ohne Satzzeichen am Ende).
@@ -171,11 +259,16 @@
         }
     }
     NSUInteger index = 0;
-    // Füllwörter und reine Satzzeichen vorne überspringen („Bitte suche …“).
+    // Füllwörter und reine Satzzeichen vorne überspringen („Bitte suche …“, „Por favor, busca …“).
     while (index < tokens.count) {
         NSString *normalized = [self normalizedToken:tokens[index]];
         if (normalized.length == 0 || [[self fillerWords] containsObject:normalized]) {
             index++;
+            continue;
+        }
+        NSUInteger skipped = [self tokensOfFillerSequenceInTokens:tokens atIndex:index];
+        if (skipped > 0) {
+            index += skipped;
             continue;
         }
         break;
@@ -190,12 +283,12 @@
         return nil;
     }
     NSString *rest = [[tokens subarrayWithRange:NSMakeRange(index, tokens.count - index)] componentsJoinedByString:@" "];
-    NSCharacterSet *trim = [NSCharacterSet characterSetWithCharactersInString:@" .!?,;:\"'„“”‚‘’«»"];
+    NSCharacterSet *trim = [NSCharacterSet characterSetWithCharactersInString:@" .!?,;:\"'„“”‚‘’«»¿¡"];
     rest = [rest stringByTrimmingCharactersInSet:trim];
     return rest.length > 0 ? rest : nil;
 }
 
-/// Beginnt der Text mit einem Fragewort (Deutsch/Englisch)? Für „frage …“ und „ask …“.
+/// Beginnt der Text mit einem Fragewort (Deutsch, Englisch, Spanisch, Französisch)? Für „frage …“, „ask …“, „pregunta …“, „demande …“.
 + (BOOL)textStartsWithQuestionWord:(NSString *)text {
     static NSSet<NSString *> *words;
     static dispatch_once_t onceToken;
@@ -204,7 +297,15 @@
                                       @"weshalb", @"wieso", @"wozu", @"womit", @"wofür", @"worüber", @"welche", @"welcher", @"welches",
                                       @"welchen", @"wieviel", @"wieviele", @"ob", @"gibt", @"steht", @"kostet", @"hat", @"ist", @"sind",
                                       @"when", @"who", @"whom", @"whose", @"what", @"how", @"where", @"why", @"which", @"does", @"do",
-                                      @"did", @"is", @"are", @"was", @"were", @"can", @"has", @"have"]];
+                                      @"did", @"is", @"are", @"was", @"were", @"can", @"has", @"have",
+                                      // Spanisch (Akzent oft weggelassen; „¿“ fällt bei der Normalisierung weg)
+                                      @"qué", @"que", @"quién", @"quien", @"quiénes", @"quienes", @"cómo", @"como", @"cuándo", @"cuando",
+                                      @"dónde", @"donde", @"adónde", @"adonde", @"cuál", @"cual", @"cuáles", @"cuales", @"cuánto", @"cuanto",
+                                      @"cuánta", @"cuanta", @"cuántos", @"cuantos", @"cuántas", @"cuantas", @"por", @"hay", @"es", @"son",
+                                      @"está", @"esta", @"tiene", @"cuesta", @"si",
+                                      // Französisch („qu'est-ce que“ → „qu est ce que“, „c'est quoi“ → „c est quoi“)
+                                      @"qui", @"quoi", @"quand", @"où", @"comment", @"combien", @"pourquoi", @"quel", @"quelle", @"quels",
+                                      @"quelles", @"lequel", @"laquelle", @"est", @"qu", @"y", @"c", @"coûte", @"coute"]];
     });
     NSString *first = [self normalizedWordsOfText:text].firstObject;
     return first != nil && [words containsObject:first];
@@ -241,9 +342,9 @@
             if (argument == nil) {
                 continue;
             }
-            if ([command.name isEqualToString:@"ask"] && ([prefix isEqualToString:@"frage"] || [prefix isEqualToString:@"ask"]) &&
+            if ([command.name isEqualToString:@"ask"] && [@[@"frage", @"ask", @"pregunta", @"demande"] containsObject:prefix] &&
                 ![self textStartsWithQuestionWord:argument]) {
-                // „Frage der Woche“, „ask jeeves“: Nomen bzw. Name, keine Frage an die Seite.
+                // „Frage der Woche“, „ask jeeves“, „pregunta del día“: Nomen bzw. Name, keine Frage an die Seite.
                 return nil;
             }
             if ([command.name isEqualToString:@"open"]) {

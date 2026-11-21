@@ -2,6 +2,7 @@
 
 #import "BrowserPreferencesStore.h"
 #import "BrowserTabViewModel.h"
+#import "BrowserLocalization.h"
 
 static NSString * const kHistoryDefaultsKey = @"HISTORY";
 static NSUInteger const kMaximumHistoryCount = 100;
@@ -82,7 +83,7 @@ static NSUInteger const kMaximumHistoryCount = 100;
     
     NSString *safeTitle = pageTitle ?: @"";
     NSString *safeURLString = currentURLString ?: @"";
-    tab.title = safeTitle.length > 0 ? safeTitle : @"Neuer Tab";
+    tab.title = safeTitle.length > 0 ? safeTitle : BLS(@"Neuer Tab");
     tab.URLString = safeURLString;
     
     [self persistHistoryItemWithURLString:safeURLString title:safeTitle];

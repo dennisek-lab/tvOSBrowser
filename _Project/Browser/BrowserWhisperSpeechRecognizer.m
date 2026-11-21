@@ -1,4 +1,5 @@
 #import "BrowserWhisperSpeechRecognizer.h"
+#import "BrowserLocalization.h"
 
 #import "BrowserSubtitleEngine.h"
 
@@ -80,10 +81,10 @@ static NSArray<NSString *> *BrowserWhisperCollapseRepeats(NSArray<NSString *> *w
 
 + (NSString *)unavailableReasonForLanguage:(NSString *)language {
     if (![BrowserSubtitleEngine isCompiledWithWhisper]) {
-        return @"whisper fehlt im Build";
+        return BLS(@"whisper fehlt im Build");
     }
     if ([BrowserSubtitleEngine modelPathForLanguage:language.length > 0 ? language : @"en"] == nil) {
-        return @"kein Sprachmodell in der App";
+        return BLS(@"kein Sprachmodell in der App");
     }
     return nil;
 }
@@ -172,8 +173,8 @@ static NSArray<NSString *> *BrowserWhisperCollapseRepeats(NSArray<NSString *> *w
         void (^handler)(BOOL, NSString *) = self.loadHandler;
         if (handler != nil) {
             NSString *message = loaded
-                ? [NSString stringWithFormat:@"Untertitel: Spracherkennung bereit (%@)", self.modelName]
-                : [NSString stringWithFormat:@"Untertitel: %@", error.localizedDescription ?: @"Modell konnte nicht geladen werden"];
+                ? [NSString stringWithFormat:BLS(@"Untertitel: Spracherkennung bereit (%@)"), self.modelName]
+                : [NSString stringWithFormat:BLS(@"Untertitel: %@"), error.localizedDescription ?: BLS(@"Modell konnte nicht geladen werden")];
             dispatch_async(dispatch_get_main_queue(), ^{
                 handler(loaded, message);
             });
