@@ -42,6 +42,7 @@
 #import "BrowserSpeechRecognizerStub.h"
 #import "BrowserAppleSpeechTranscriber.h"
 #import "BrowserWhisperSpeechRecognizer.h"
+#import "BrowserSubtitleEngine.h"
 #import "BrowserWebSubtitleController.h"
 #import "ViewController.h"
 #import "BrowserFilterListUpdater.h"
@@ -918,8 +919,11 @@ static NSHashTable<BrowserWebView *> *BrowserSelfTestClosedWebViews(void) {
                         return;
                     }
                     NSString *language = [options containsObject:@"auto"] ? @"auto" : ([options containsObject:@"en"] ? @"en" : nil);
-                    [self prepareWebSubtitleControllerUsingStub:[options containsObject:@"stub"] || [options containsObject:@"slow"]
-                                                       language:language];
+                    if (![self prepareWebSubtitleControllerUsingStub:[options containsObject:@"stub"] || [options containsObject:@"slow"]
+                                                            language:language]) {
+                        NSLog(@"[SelfTest] websubs nicht gestartet: %@", self.webSubtitleRecognizerHint);
+                        return;
+                    }
                     if ([options containsObject:@"slow"]) {
                         // Wie whisper: Abschnitt 3 s, Überlappung 0,5 s, 1,2 s Rechenzeit.
                         BrowserSpeechRecognizerStub *stub = [BrowserSpeechRecognizerStub new];
@@ -2475,17 +2479,20 @@ static NSString *BrowserDisplayHost(NSString *host) {
     if (!self.preferencesStore.webSubtitlesEnabled || self.webview == nil) {
         return;
     }
-    [self prepareWebSubtitleControllerUsingStub:NO language:nil];
+    if (![self prepareWebSubtitleControllerUsingStub:NO language:nil]) {
+        return;
+    }
     if (!self.webSubtitleController.running || self.webSubtitleController.webView != self.webview) {
         [self.webSubtitleController startForWebView:self.webview userInitiated:NO];
     }
 }
 
 /// Legt den Untertitel-Controller (Weg B) an bzw. setzt die passende Erkennung: whisper (Modell nach
-/// `autoSubtitlesLanguage` bzw. `language`, wie im nativen Player), den Platzhalter nur, wenn whisper oder ein
-/// Modell fehlt oder `useStub` (Selbsttest). Eine vorhandene whisper-Erkennung mit gleicher Sprache bleibt
-/// (Modell bleibt geladen); bei anderer Sprache wird der Controller vorher angehalten.
-- (void)prepareWebSubtitleControllerUsingStub:(BOOL)useStub language:(nullable NSString *)language {
+/// `autoSubtitlesLanguage` bzw. `language`, wie im nativen Player), den Platzhalter nur bei `useStub` (Selbsttest).
+/// Fehlt whisper oder ein Modell, wird angehalten und NO zurückgegeben (Grund in webSubtitleRecognizerHint): früher
+/// lief dann der Platzhalter und zeigte statt Text „[Ton erkannt: … dB]“. Eine vorhandene whisper-Erkennung mit
+/// gleicher Sprache bleibt (Modell bleibt geladen); bei anderer Sprache wird der Controller vorher angehalten.
+- (BOOL)prepareWebSubtitleControllerUsingStub:(BOOL)useStub language:(nullable NSString *)language {
     NSString *wanted = language.length > 0 ? language : (self.preferencesStore.autoSubtitlesLanguage ?: @"en");
     if (self.webSubtitleController == nil) {
         self.webSubtitleController = [[BrowserWebSubtitleController alloc] initWithRecognizer:[BrowserSpeechRecognizerStub new]];
@@ -2498,7 +2505,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
             controller.recognizer = [BrowserSpeechRecognizerStub new];
         }
         self.webSubtitleRecognizerHint = nil;
-        return;
+        return YES;
     }
     // Apples Spracherkennung (SubtitlesRecognizer=apple): whisper läuft auf „auto“ (nur Sprache, Rückfall).
     NSString *whisperWanted = [BrowserAppleSpeechTranscriber whisperLanguageForSubtitleLanguage:wanted];
@@ -2509,18 +2516,16 @@ static NSString *BrowserDisplayHost(NSString *host) {
         if (usable ? (apple == nil || ![apple.subtitleLanguage isEqualToString:wanted]) : apple != nil) {
             [self attachAppleSpeechToWebSubtitleController:controller language:wanted whisper:(BrowserWhisperSpeechRecognizer *)current];
         }
-        return;
+        return YES;
     }
     BrowserWhisperSpeechRecognizer *whisper = [[BrowserWhisperSpeechRecognizer alloc] initWithLanguage:whisperWanted];
     if (whisper == nil) {
         NSString *reason = [BrowserWhisperSpeechRecognizer unavailableReasonForLanguage:wanted] ?: @"nicht verfügbar";
-        NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@): Platzhalter-Erkennung, zeigt nur den Pegel", reason, wanted);
+        NSLog(@"[WebSubs] whisper nicht verfügbar (%@, Sprache %@, Modellordner %@): Untertitel in der Webseite aus",
+              reason, wanted, [BrowserSubtitleEngine modelsDirectory] ?: @"fehlt");
         self.webSubtitleRecognizerHint = [NSString stringWithFormat:@"Untertitel: %@", reason];
-        if (![current isKindOfClass:BrowserSpeechRecognizerStub.class]) {
-            [controller stop];
-            controller.recognizer = [BrowserSpeechRecognizerStub new];
-        }
-        return;
+        [controller stop];
+        return NO;
     }
     self.webSubtitleRecognizerHint = nil;
     __weak typeof(controller) weakController = controller;
@@ -2534,6 +2539,7 @@ static NSString *BrowserDisplayHost(NSString *host) {
     }
     controller.recognizer = whisper;
     [self attachAppleSpeechToWebSubtitleController:controller language:wanted whisper:whisper];
+    return YES;
 }
 
 /// Weg B: Apples Spracherkennung vor whisper schalten (nil, wenn nicht eingestellt oder nicht verfügbar).
@@ -2562,7 +2568,14 @@ static NSString *BrowserDisplayHost(NSString *host) {
         [self.webSubtitleController stop];
         return;
     }
-    [self prepareWebSubtitleControllerUsingStub:NO language:nil];
+    if (![self prepareWebSubtitleControllerUsingStub:NO language:nil]) {
+        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Untertitel nicht möglich"
+                                                                                 message:self.webSubtitleRecognizerHint
+                                                                          preferredStyle:UIAlertControllerStyleAlert];
+        [alertController addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alertController animated:YES completion:nil];
+        return;
+    }
     if (self.webview != nil) {
         [self.webSubtitleController startForWebView:self.webview userInitiated:YES];
         [self showWebSubtitleRecognizerHintIfNeeded];

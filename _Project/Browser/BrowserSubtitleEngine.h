@@ -31,6 +31,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// YES, wenn die App mit whisper.xcframework gebaut wurde (vendor/whisper.xcframework vorhanden).
 + (BOOL)isCompiledWithWhisper;
+/// Ordner WhisperModels im App-Paket, nil wenn er fehlt.
++ (nullable NSString *)modelsDirectory;
 /// Pfad des Modells im App-Paket (Ordner WhisperModels) für eine Sprache („auto“, „de“, „en“ …), nil wenn keins da ist.
 /// „en“ nimmt bevorzugt ein .en-Modell, alles andere ein mehrsprachiges (notfalls das englische).
 + (nullable NSString *)modelPathForLanguage:(NSString *)language;
