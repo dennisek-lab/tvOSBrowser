@@ -2,7 +2,7 @@
 //  BrowserIntelligence.h
 //  Browser
 //
-//  Fassade für die intelligenten Funktionen (PLAN.md Phase 6): Zusammenfassen, Spracherkennung,
+//  Fassade für die intelligenten Funktionen: Zusammenfassen, Spracherkennung,
 //  Übersetzen über den Google-Übersetzungs-Proxy (translate.goog). Rein Foundation, ohne UI;
 //  Anzeige und Auslöser liegen in BrowserIntelligenceController.
 //

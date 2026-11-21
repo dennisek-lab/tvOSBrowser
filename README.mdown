@@ -59,7 +59,7 @@ Bedienung
 | Siri-Taste halten | Im Adressfeld: Diktat (Adresse, Suchbegriff oder Sprachbefehl) |
 | TV-Taste, Lautstärke, Siri außerhalb von Textfeldern halten | gehören dem System; Apps bekommen sie nicht |
 
-Die Siri-Taste ist für Apps offiziell nicht abfragbar. Die App erkennt einen kurzen Siri-Druck daran, dass tvOS ihn als sehr kurzen Druck nach rechts ohne Klick des Clickpads meldet. Am Apple TV ist das noch nicht vollständig durchgetestet (`docs/GERAETETEST.md`, Abschnitt 3).
+Die Siri-Taste ist für Apps offiziell nicht abfragbar. Die App erkennt einen kurzen Siri-Druck daran, dass tvOS ihn als sehr kurzen Druck nach rechts ohne Klick des Clickpads meldet.
 
 **Adressleiste:** Ein Druck auf die Leiste (oder zweimal oben) öffnet die Tastatur direkt unter der Leiste, darunter Favoriten, oft besuchte und zuletzt besuchte Seiten. Ohne weiteren Klick die Siri-Taste halten und eine Adresse, einen Suchbegriff oder einen **Sprachbefehl** sagen, z. B. „Reader“, „zurück“, „neuer Tab“, „suche Wetter“, „öffne heise punkt de“, „30 Sekunden zurück“, „fasse zusammen“, „übersetzen“, „Übersetzung beenden“.
 
@@ -94,7 +94,7 @@ Funktionen
 
   ![Zusammenfassung](/docs/ai-screens/zusammenfassung-heise-de.png?raw=true "Zusammenfassen einer Seite")
 
-- **Siri:** App-Shortcuts sind eingebaut („Starte den Reader in tvOS Browser“). Ob Siri auf dem Apple TV sie auslöst, ist noch nicht bestätigt; die Sprachbefehle im Diktierfeld funktionieren unabhängig davon.
+- **Sprachbefehle:** funktionieren über das Diktat im Adressfeld (siehe Bedienung). App-Shortcuts für Siri („Starte den Reader in tvOS Browser“) sind eingebaut, siehe Grenzen.
 - **DNS über Cloudflare** (DoH) für die Webansicht, abschaltbar.
 
 
@@ -122,19 +122,15 @@ Hinweise und bekannte Grenzen
 - **DRM-Videos** (Netflix & Co.) laufen nicht; Untertitel aus der Webseite gehen nicht bei DRM, nativem HLS oder fremden Servern ohne CORS-Freigabe.
 - **Passkeys** werden nicht unterstützt; Logins per Passwort funktionieren.
 - **Apple Intelligence:** Foundation Models, Writing Tools und die öffentliche Translation-API sind für Apps auf tvOS gesperrt. Das Zusammenfassen läuft deshalb mit NaturalLanguage und ist einfacher (extraktive Zusammenfassung). Übersetzt wird über private Klassen des Translation-Frameworks, und zwar nur online über Apples Server (Offline-Modelle lassen sich aus der App nicht laden); ohne Netz springt bei Seiten Google ein, bei Untertiteln whisper. Auf Apples Weg bekommen Apples Server den Text, Google sieht die Seite nicht; nur der Rückfall über translate.goog lädt die Seite über Google (ohne Cookies und Anmeldung der Originalseite).
-- **Siri** löst auf dem Apple TV nach bisherigem Stand keine eigenen Phrasen von Drittanbieter-Apps aus.
-- **Gerätetests:** Manche neuen Funktionen sind bisher nur im tvOS-Simulator geprüft. Was am Apple TV noch offen ist, steht in `docs/GERAETETEST.md`.
+- **Siri** löst auf dem Apple TV keine eigenen Phrasen von Drittanbieter-Apps aus; die App-Shortcuts wirken dort deshalb nicht. Sprachbefehle laufen über das Diktat.
 - Whisper-Modelle (`_Project/Browser/WhisperModels/*.bin`) liegen nicht im Repo; `Installieren.command` bzw. `tools/fetch_whisper_model.sh` lädt sie.
 
 
 Für Entwickler
 =============
 
-- `PLAN.md` – Plan und Stand aller Phasen
 - `docs/ERWEITERUNGEN.md` – alle Eigenbauten, Risiken, Selbsttests, Logpräfixe
-- `docs/GERAETETEST.md` – offene Punkte für den Test am Apple TV
-- `docs/BERICHT-STABILITAET-LEISTUNG.md` – Stabilitäts- und Leistungsprüfung vom 8. November 2026 mit Messwerten am Apple TV
 - `docs/SIRI_STEUERUNG.md`, `docs/APPLE_INTELLIGENCE.md` – Befunde zu Siri und Apple Intelligence auf tvOS
 - Werbeblocker-Listen ohne App-Update: Das öffentliche Repo [`dennisek-lab/tvos-browser-filterlisten`](https://github.com/dennisek-lab/tvos-browser-filterlisten) baut sie täglich und veröffentlicht sie am Release `filterlisten-latest` (Abschnitt 6.10 in `docs/ERWEITERUNGEN.md`)
-- Bildschirmfotos für dieses README: eigener tvOS-Simulator, Debug-Build, Selbsttest-Schritte über `SIMCTL_CHILD_POINTER_SELFTEST` (Abschnitt 14 in `docs/ERWEITERUNGEN.md`), Aufnahme mit `xcrun simctl io <UDID> screenshot`
+- Bildschirmfotos für dieses README: tvOS-Simulator, Debug-Build, Selbsttest-Schritte über `SIMCTL_CHILD_POINTER_SELFTEST` (Abschnitt 14 in `docs/ERWEITERUNGEN.md`), Aufnahme mit `xcrun simctl io <UDID> screenshot`
 - `THIRD_PARTY_NOTICES.md` – Lizenzen (u. a. uBlock-Origin-Filterlisten, autoconsent, Readability, AdGuard Scriptlets, whisper.cpp)

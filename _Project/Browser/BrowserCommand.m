@@ -239,7 +239,7 @@ static void BrowserCommandExpandPatternLinear(NSString *pattern, NSMutableArray<
                 @"10": @[@"(vorspulen|spul vor|spule vor|skip forward|fast forward)"],
                 @"-10": @[@"(zurückspulen|spul zurück|spule zurück|skip back|rewind)"],
             } prefixes:@[]],
-            // Intelligente Funktionen (BrowserIntelligence, PLAN.md Phase 6).
+            // Intelligente Funktionen (BrowserIntelligence).
             [self commandWithName:@"summarize" title:@"Zusammenfassen" symbol:@"text.line.3.summary" argument:BrowserCommandArgumentNone video:NO
                          patterns:@{@"": @[@"(fasse|fass) (die seite |diese seite |den artikel |den text |das |)zusammen",
                                            @"(seite|artikel|text|) zusammenfassen", @"zusammenfassung( zeigen| anzeigen|)",
